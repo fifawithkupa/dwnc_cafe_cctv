@@ -1,0 +1,6 @@
+# 검증된 조합 (Python 3.9, macOS Intel 기준 — 2026-07-12)
+# 주의: numpy 2.x는 PyTorch와 충돌하므로 반드시 <2 유지
+ultralytics==8.4.82
+opencv-python==4.13.0.92
+numpy<2
+torch==2.2.2

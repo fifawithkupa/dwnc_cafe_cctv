@@ -1,0 +1,521 @@
+{
+  "schema_version": 1,
+  "fixture_id": "seatnow_test_video_15955486",
+  "active_ground_truth_profile": "project_literal_or_v1",
+  "annotation": {
+    "source": "manual_visual_observation",
+    "annotated_on": "2026-07-10",
+    "model_inference_used_as_ground_truth": false,
+    "representative_timestamps_seconds": [
+      0.0,
+      3.0,
+      6.0,
+      9.0,
+      12.0,
+      15.0,
+      18.0,
+      19.54
+    ],
+    "sampling_interval_seconds_for_contact_sheet": 0.5,
+    "time_boundary_uncertainty_seconds": 0.5,
+    "notes": [
+      "라벨은 원본 영상을 사람이 직접 관찰해 작성했다.",
+      "모델의 테이블 수, 박스, 클래스 또는 포즈 추론 결과를 정답으로 사용하지 않았다.",
+      "영상은 고정 CCTV가 아니라 좌측에서 우측으로 이동하는 팬 촬영이므로 화면 진입과 이탈은 점유 변화가 아니다."
+    ]
+  },
+  "video": {
+    "filename": "15955486_1920_1080_30fps.mp4",
+    "repository_relative_path": "sample_raw/15955486_1920_1080_30fps.mp4",
+    "sha256": "58c72e59e4f7812750cd6f8f9ca1cfee3a15df0de842fb12f9e541223bc4e05f",
+    "container": "mp4",
+    "video_codec": "h264",
+    "video_profile": "High",
+    "pixel_format": "yuv420p",
+    "color_space": "bt709",
+    "width_pixels": 1920,
+    "height_pixels": 1080,
+    "duration_seconds": 19.586233,
+    "decoded_frame_count": 587,
+    "frame_rate": {
+      "numerator": 30000,
+      "denominator": 1001,
+      "frames_per_second": 29.97002997002997
+    },
+    "file_size_bytes": 19663385,
+    "average_bit_rate_bps": 8031512,
+    "has_audio": false,
+    "has_timecode_data_stream": true,
+    "scene_count": 1,
+    "hard_cut_observed": false,
+    "camera": {
+      "fixed": false,
+      "motion": "continuous_left_to_right_pan_with_minor_handheld_jitter",
+      "implication": "semantic table IDs move across pixel coordinates and eventually leave the field of view"
+    }
+  },
+  "label_policy": {
+    "profile_id": "project_literal_or_v1",
+    "occupied_when_any": [
+      "a_non_excluded_object_is_associated_with_the_table",
+      "a_seated_customer_is_associated_with_the_table"
+    ],
+    "standing_or_walking_people_do_not_occupy_a_table": true,
+    "service_counter_is_not_a_customer_table": true,
+    "counter_staff_are_not_customers": true,
+    "mirror_reflections_are_not_independent_people_or_tables": true,
+    "out_of_view_tables_are_ignored_for_frame_scoring": true,
+    "border_crop_ignore_threshold_fraction": 0.3,
+    "border_crop_rule": "ignore a table for frame scoring when more than 30 percent of its semantic extent is outside the frame or its table surface cannot be identified",
+    "field_of_view_exit_is_an_occupancy_transition": false,
+    "policy_sensitive_tables": {
+      "B": {
+        "observed_items": [
+          "cup",
+          "saucer_or_small_dish",
+          "tabletop_item"
+        ],
+        "active_profile_state": "occupied",
+        "reason": "the current project rule treats a cup or other non-excluded tabletop object as occupancy",
+        "ambiguity": "the items may be an uncleared dish or a persistent tabletop fixture rather than evidence of a present customer",
+        "state_if_future_baseline_filtering_policy_is_enabled": "ignore"
+      },
+      "C": {
+        "observed_items": [
+          "bag_or_outerwear_like_item",
+          "additional_partially_occluded_belonging"
+        ],
+        "active_profile_state": "occupied",
+        "reason": "the current project rule treats personal belongings as occupancy",
+        "ambiguity": "the large plant heavily occludes the table boundary and the exact ownership and object type cannot be confirmed",
+        "state_if_future_baseline_filtering_or_uncertain_association_policy_is_enabled": "ignore"
+      }
+    }
+  },
+  "semantic_tables": {
+    "A": {
+      "name": "foreground_left_customer_table",
+      "description": "영상 초반 좌하단의 작은 테이블. 검은 상의 남성과 안경 쓴 여성이 앉아 있고 노트북 또는 메뉴와 컵류가 보인다.",
+      "manual_evidence": [
+        "two_seated_customers",
+        "laptop_or_menu",
+        "cup_like_item"
+      ],
+      "active_profile_state_when_scorable": "occupied",
+      "occupancy_basis": "seated_people_and_objects",
+      "manual_confidence": "high",
+      "scorable_intervals_seconds": [
+        [
+          0.0,
+          3.0
+        ]
+      ],
+      "border_or_exit_intervals_seconds": [
+        [
+          3.0,
+          19.586233
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    },
+    "B": {
+      "name": "left_wall_cup_table",
+      "description": "좌측 벽 벤치 앞 테이블. 사람은 없지만 컵, 받침 또는 작은 식기와 탁상 물체가 남아 있다.",
+      "manual_evidence": [
+        "cup",
+        "saucer_or_small_dish",
+        "tabletop_item"
+      ],
+      "active_profile_state_when_scorable": "occupied",
+      "occupancy_basis": "object_only_policy_sensitive",
+      "manual_confidence": "medium",
+      "scorable_intervals_seconds": [
+        [
+          0.0,
+          5.0
+        ]
+      ],
+      "border_or_exit_intervals_seconds": [
+        [
+          5.0,
+          19.586233
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    },
+    "C": {
+      "name": "plant_occluded_belongings_table",
+      "description": "중앙의 큰 식물 뒤 테이블. 가방이나 겉옷처럼 보이는 물체가 의자와 벤치 주변에 있으나 식물에 심하게 가려진다.",
+      "manual_evidence": [
+        "bag_or_outerwear_like_item",
+        "heavily_occluded_table_association"
+      ],
+      "active_profile_state_when_scorable": "occupied",
+      "occupancy_basis": "object_only_policy_sensitive",
+      "manual_confidence": "medium_low",
+      "scorable_intervals_seconds": [
+        [
+          0.0,
+          10.5
+        ]
+      ],
+      "border_or_exit_intervals_seconds": [
+        [
+          10.5,
+          19.586233
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    },
+    "D": {
+      "name": "counter_left_rear_customer_table",
+      "description": "카운터 왼쪽과 거울 기둥 뒤의 작은 테이블. 흰 상의 여성과 검은 상의 남성이 영상 전체에서 계속 앉아 있다.",
+      "manual_evidence": [
+        "two_seated_customers_throughout_clip"
+      ],
+      "active_profile_state_when_scorable": "occupied",
+      "occupancy_basis": "seated_people",
+      "manual_confidence": "high",
+      "scorable_intervals_seconds": [
+        [
+          0.0,
+          18.0
+        ]
+      ],
+      "border_or_exit_intervals_seconds": [
+        [
+          18.0,
+          19.586233
+        ]
+      ],
+      "world_state_during_border_interval": "occupied",
+      "observed_real_occupancy_transition": false
+    },
+    "E": {
+      "name": "foreground_round_table_one",
+      "description": "카운터 앞 소파 구역에 먼저 들어오는 원형 테이블. 사람과 점유 물체가 없다.",
+      "manual_evidence": [
+        "empty_table_surface",
+        "no_associated_seated_customer"
+      ],
+      "active_profile_state_when_scorable": "empty",
+      "occupancy_basis": "none",
+      "manual_confidence": "high",
+      "scorable_intervals_seconds": [
+        [
+          5.0,
+          19.586233
+        ]
+      ],
+      "not_yet_visible_intervals_seconds": [
+        [
+          0.0,
+          5.0
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    },
+    "F": {
+      "name": "foreground_round_table_two",
+      "description": "카운터 앞 소파 구역에 두 번째로 들어오는 원형 테이블. 사람과 점유 물체가 없다.",
+      "manual_evidence": [
+        "empty_table_surface",
+        "no_associated_seated_customer"
+      ],
+      "active_profile_state_when_scorable": "empty",
+      "occupancy_basis": "none",
+      "manual_confidence": "high",
+      "scorable_intervals_seconds": [
+        [
+          10.5,
+          19.586233
+        ]
+      ],
+      "not_yet_visible_intervals_seconds": [
+        [
+          0.0,
+          10.5
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    },
+    "G": {
+      "name": "right_wall_bench_table",
+      "description": "영상 후반 우측 벽 벤치 앞의 테이블. 사람과 점유 물체가 없다.",
+      "manual_evidence": [
+        "empty_table_surface",
+        "no_associated_seated_customer"
+      ],
+      "active_profile_state_when_scorable": "empty",
+      "occupancy_basis": "none",
+      "manual_confidence": "high",
+      "scorable_intervals_seconds": [
+        [
+          16.0,
+          19.586233
+        ]
+      ],
+      "not_yet_visible_intervals_seconds": [
+        [
+          0.0,
+          16.0
+        ]
+      ],
+      "observed_real_occupancy_transition": false
+    }
+  },
+  "unassigned_observations": [
+    {
+      "id": "bottom_right_border_table_candidate",
+      "interval_seconds": [
+        18.0,
+        19.586233
+      ],
+      "expected_state": "ignore",
+      "reason": "only a small border-cropped part is visible, so no stable A-through-G semantic ID is assigned"
+    }
+  ],
+  "timeline_interval_semantics": {
+    "start_inclusive": true,
+    "end_exclusive": true,
+    "last_interval_end_inclusive": true
+  },
+  "timeline": [
+    {
+      "start_seconds": 0.0,
+      "end_seconds": 3.0,
+      "expected": {
+        "occupied": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "empty": [],
+        "ignore": [
+          "E",
+          "F",
+          "G"
+        ]
+      },
+      "scorable_table_count": 4,
+      "notes": "A and D are people-occupied; B and C are object-occupied under the active literal OR policy."
+    },
+    {
+      "start_seconds": 3.0,
+      "end_seconds": 5.0,
+      "expected": {
+        "occupied": [
+          "B",
+          "C",
+          "D"
+        ],
+        "empty": [],
+        "ignore": [
+          "A",
+          "E",
+          "F",
+          "G"
+        ]
+      },
+      "scorable_table_count": 3,
+      "notes": "A leaves the frame because of the camera pan; this is not a vacancy event."
+    },
+    {
+      "start_seconds": 5.0,
+      "end_seconds": 6.5,
+      "expected": {
+        "occupied": [
+          "C",
+          "D"
+        ],
+        "empty": [
+          "E"
+        ],
+        "ignore": [
+          "A",
+          "B",
+          "F",
+          "G"
+        ]
+      },
+      "scorable_table_count": 3,
+      "notes": "B is at or beyond the frame boundary while E enters as an empty table."
+    },
+    {
+      "start_seconds": 6.5,
+      "end_seconds": 10.5,
+      "expected": {
+        "occupied": [
+          "C",
+          "D"
+        ],
+        "empty": [
+          "E"
+        ],
+        "ignore": [
+          "A",
+          "B",
+          "F",
+          "G"
+        ]
+      },
+      "scorable_table_count": 3,
+      "notes": "There is no observed customer sit or leave event."
+    },
+    {
+      "start_seconds": 10.5,
+      "end_seconds": 16.0,
+      "expected": {
+        "occupied": [
+          "D"
+        ],
+        "empty": [
+          "E",
+          "F"
+        ],
+        "ignore": [
+          "A",
+          "B",
+          "C",
+          "G"
+        ]
+      },
+      "scorable_table_count": 3,
+      "notes": "C leaves the scorable field of view and F enters empty."
+    },
+    {
+      "start_seconds": 16.0,
+      "end_seconds": 18.0,
+      "expected": {
+        "occupied": [
+          "D"
+        ],
+        "empty": [
+          "E",
+          "F",
+          "G"
+        ],
+        "ignore": [
+          "A",
+          "B",
+          "C"
+        ]
+      },
+      "scorable_table_count": 4,
+      "notes": "G becomes sufficiently visible and is empty."
+    },
+    {
+      "start_seconds": 18.0,
+      "end_seconds": 19.586233,
+      "expected": {
+        "occupied": [],
+        "empty": [
+          "E",
+          "F",
+          "G"
+        ],
+        "ignore": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      "world_state_notes": {
+        "D": "The two customers remain seated, but the table surface and semantic extent are outside the scorable frame boundary."
+      },
+      "scorable_table_count": 3,
+      "notes": "D must become IGNORE for frame scoring without emitting an occupied-to-empty transition."
+    }
+  ],
+  "expected_events": {
+    "customer_occupancy_transitions": [],
+    "expected_customer_occupancy_transition_count": 0,
+    "field_of_view_events_are_not_occupancy_events": true
+  },
+  "known_distractors": [
+    {
+      "type": "service_counter",
+      "description": "The large circular metal counter is not a customer table. Cups, bottles, appliances and trays on it must not occupy E, F or G."
+    },
+    {
+      "type": "counter_staff",
+      "description": "Staff stand, walk or lean behind the counter and must not be associated with customer tables."
+    },
+    {
+      "type": "mirrors",
+      "description": "The left wall mirror and mirrored pillar duplicate people and furniture; reflections are not independent entities."
+    },
+    {
+      "type": "large_plant",
+      "description": "The central plant severely occludes C and nearby furniture."
+    },
+    {
+      "type": "backlighting_and_parallax",
+      "description": "Bright windows, camera motion and depth parallax change apparent positions and visibility."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "metadata_matches_fixture",
+      "required": true,
+      "assertion": "The input SHA-256, filename, dimensions, frame-rate rational and duration match the video metadata in this fixture.",
+      "duration_tolerance_seconds": 0.01
+    },
+    {
+      "id": "manual_timeline_partition",
+      "required": true,
+      "assertion": "For each sampled timestamp, every semantic ID A through G is assigned to exactly one of occupied, empty or ignore according to the active profile timeline."
+    },
+    {
+      "id": "people_occupied_tables",
+      "required": true,
+      "assertion": "A and D are occupied whenever they are scorable; partial pose loss must not create a false vacancy event."
+    },
+    {
+      "id": "policy_sensitive_object_tables",
+      "required": true,
+      "assertion": "Under project_literal_or_v1, B and C are occupied while scorable. Under a future baseline-filtered policy they must be IGNORE rather than silently relabeled as EMPTY."
+    },
+    {
+      "id": "known_empty_tables",
+      "required": true,
+      "assertion": "E, F and G remain empty throughout every interval in which they are scorable.",
+      "maximum_false_occupied_frames_at_sampled_timestamps": 0
+    },
+    {
+      "id": "staff_excluded",
+      "required": true,
+      "assertion": "Standing, walking or leaning counter staff produce no customer-table occupancy evidence.",
+      "maximum_staff_caused_occupancy_events": 0
+    },
+    {
+      "id": "service_counter_excluded",
+      "required": true,
+      "assertion": "The circular service counter is never emitted as a customer table and its objects are not assigned to E, F or G."
+    },
+    {
+      "id": "mirror_reflections_excluded",
+      "required": true,
+      "assertion": "Mirror reflections do not create duplicate customers, tables or occupancy events.",
+      "maximum_reflection_caused_occupancy_events": 0
+    },
+    {
+      "id": "fov_exit_not_transition",
+      "required": true,
+      "assertion": "A, B, C and D changing to IGNORE because of camera motion never emits an occupied-to-empty transition.",
+      "expected_customer_occupancy_transition_count": 0
+    },
+    {
+      "id": "border_candidates_ignored",
+      "required": true,
+      "assertion": "Tables beyond the configured border-crop threshold, including the late bottom-right candidate and D after 18 seconds, are ignored for frame scoring."
+    },
+    {
+      "id": "semantic_identity_survives_camera_motion",
+      "required": true,
+      "assertion": "Per-frame detection-count changes caused by the camera pan are not interpreted as physical table additions, removals or occupancy changes."
+    }
+  ]
+}

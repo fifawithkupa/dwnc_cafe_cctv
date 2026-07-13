@@ -83,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
     parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
+    parser.add_argument("--no-layout-track", action="store_true", help="Keep layout zones fixed instead of drifting toward matching detections")
     return parser
 
 
@@ -154,6 +155,7 @@ def _make_analyzer(args: argparse.Namespace, layout=None) -> SeatNowAnalyzer:
         table_crop_confidence=args.crop_conf,
         maximum_table_crops=args.max_crops,
         infer_occluded_tables=not args.no_inferred_seats,
+        layout_tracking=not args.no_layout_track,
         device=args.device,
     )
     print(f"Loading detector: {det_path.name}", flush=True)
@@ -263,6 +265,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 if args.layout
                 else None
             ),
+            "layout_tracking": bool(args.layout) and not args.no_layout_track,
         },
     }
     print(

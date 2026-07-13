@@ -162,6 +162,11 @@ class AnalyzerConfig:
     moving_person_threshold: float = 0.025
     border_pixels: int = 3
     infer_occluded_tables: bool = True
+    # Layout mode: let zones drift toward matching furniture detections.
+    layout_tracking: bool = True
+    layout_track_alpha: float = 0.35
+    layout_track_table_confidence: float = 0.25
+    layout_track_chair_confidence: float = 0.30
     device: str = "cpu"
 
 
@@ -986,6 +991,9 @@ class SeatNowAnalyzer:
         # Duck-typed SeatLayout: only .tables, .chair_boxes(), .chair_assignments()
         # are used, so seatnow_layout is never imported here.
         self.layout = layout
+        # Lazy: created on the first analyzed frame, after the CLI has scaled
+        # the layout to the actual input resolution.
+        self.zone_tracker: Optional[LayoutZoneTracker] = None
         self.det_model_path = Path(det_model_path)
         self.pose_model_path = Path(pose_model_path)
         self.det_model = YOLO(str(self.det_model_path))
@@ -1164,13 +1172,40 @@ class SeatNowAnalyzer:
                     objects.append(detection)
 
         if self.layout is not None:
+            table_boxes = [table.box for table in self.layout.tables]
+            chair_boxes = self.layout.chair_boxes()
+            if self.config.layout_tracking:
+                if self.zone_tracker is None:
+                    self.zone_tracker = LayoutZoneTracker(
+                        table_boxes,
+                        chair_boxes,
+                        alpha=self.config.layout_track_alpha,
+                    )
+                self.zone_tracker.update(
+                    [
+                        detection
+                        for detection in detections
+                        if detection.name == "dining table"
+                        and detection.confidence
+                        >= self.config.layout_track_table_confidence
+                    ],
+                    [
+                        detection
+                        for detection in detections
+                        if detection.name in {"chair", "couch", "bench"}
+                        and detection.confidence
+                        >= self.config.layout_track_chair_confidence
+                    ],
+                )
+                table_boxes = self.zone_tracker.table_boxes
+                chair_boxes = self.zone_tracker.chair_boxes
             tables = [
-                Detection(name="dining table", box=table.box, confidence=1.0)
-                for table in self.layout.tables
+                Detection(name="dining table", box=box, confidence=1.0)
+                for box in table_boxes
             ]
             seat_detections = [
                 Detection(name="chair", box=box, confidence=1.0)
-                for box in self.layout.chair_boxes()
+                for box in chair_boxes
             ]
         else:
             seat_detections = [
@@ -1322,7 +1357,9 @@ class SeatNowAnalyzer:
                 assigned_unknown_people,
                 occupied_chairs,
             )
-            if is_severely_border_cropped(
+            # A manually drawn zone at the frame edge is intentional; the
+            # border-sliver rule only guards auto-detected partial tables.
+            if self.layout is None and is_severely_border_cropped(
                 table.box, width, height, self.config.border_pixels
             ):
                 state = OccupancyState.IGNORE

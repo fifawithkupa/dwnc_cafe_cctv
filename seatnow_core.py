@@ -887,10 +887,19 @@ def _inferred_group_box(group: Sequence[PoseObservation], width: int, height: in
 class SeatNowAnalyzer:
     """Run detector and pose model once per supplied BGR frame."""
 
-    def __init__(self, det_model_path: Path, pose_model_path: Path, config: AnalyzerConfig):
+    def __init__(
+        self,
+        det_model_path: Path,
+        pose_model_path: Path,
+        config: AnalyzerConfig,
+        layout: Optional[object] = None,
+    ):
         from ultralytics import YOLO
 
         self.config = config
+        # Duck-typed SeatLayout: only .tables, .chair_boxes(), .chair_assignments()
+        # are used, so seatnow_layout is never imported here.
+        self.layout = layout
         self.det_model_path = Path(det_model_path)
         self.pose_model_path = Path(pose_model_path)
         self.det_model = YOLO(str(self.det_model_path))
@@ -1068,23 +1077,33 @@ class SeatNowAnalyzer:
                 ):
                     objects.append(detection)
 
-        seat_detections = [
-            detection
-            for detection in detections
-            if detection.name in {"chair", "couch", "bench"}
-            and detection.confidence >= 0.20
-        ]
-        table_candidates = select_table_candidates(
-            table_candidates,
-            seat_detections,
-            (height, width),
-            table_confidence=self.config.table_confidence,
-            soft_area_fraction=self.config.maximum_table_area_fraction,
-            large_table_confidence=self.config.large_table_confidence,
-            hard_area_fraction=self.config.hard_table_area_fraction,
-            rescue_confidence=self.config.table_rescue_confidence,
-        )
-        tables = deduplicate_tables(table_candidates, self.config.table_overlap)
+        if self.layout is not None:
+            tables = [
+                Detection(name="dining table", box=table.box, confidence=1.0)
+                for table in self.layout.tables
+            ]
+            seat_detections = [
+                Detection(name="chair", box=box, confidence=1.0)
+                for box in self.layout.chair_boxes()
+            ]
+        else:
+            seat_detections = [
+                detection
+                for detection in detections
+                if detection.name in {"chair", "couch", "bench"}
+                and detection.confidence >= 0.20
+            ]
+            table_candidates = select_table_candidates(
+                table_candidates,
+                seat_detections,
+                (height, width),
+                table_confidence=self.config.table_confidence,
+                soft_area_fraction=self.config.maximum_table_area_fraction,
+                large_table_confidence=self.config.large_table_confidence,
+                hard_area_fraction=self.config.hard_table_area_fraction,
+                rescue_confidence=self.config.table_rescue_confidence,
+            )
+            tables = deduplicate_tables(table_candidates, self.config.table_overlap)
 
         pose_result = self.pose_model.predict(
             source=frame,
@@ -1150,12 +1169,17 @@ class SeatNowAnalyzer:
             seat_detections,
             [obj for obj in objects if id(obj) not in table_object_ids],
         )
-        chair_table_assignments = associate_chairs_to_tables(
-            tables, seat_detections, (height, width)
-        )
-        strong_chair_assignments = filter_strong_chair_links(
-            tables, seat_detections, chair_table_assignments, (height, width)
-        )
+        if self.layout is not None:
+            # 수동 연결은 항상 신뢰: 넓은/강한 링크 구분 없이 그대로 전파한다.
+            chair_table_assignments = self.layout.chair_assignments()
+            strong_chair_assignments = chair_table_assignments
+        else:
+            chair_table_assignments = associate_chairs_to_tables(
+                tables, seat_detections, (height, width)
+            )
+            strong_chair_assignments = filter_strong_chair_links(
+                tables, seat_detections, chair_table_assignments, (height, width)
+            )
         chair_people_assignments = associate_seated_people_to_chairs(
             seat_detections, poses
         )
@@ -1294,13 +1318,24 @@ class SeatNowAnalyzer:
                     chair_seated_people=chair_seated_people,
                     reason=reason,
                     provisional=provisional,
+                    source="layout" if self.layout is not None else "detected",
+                    layout_id=(
+                        self.layout.tables[index].id
+                        if self.layout is not None
+                        else None
+                    ),
+                    layout_name=(
+                        self.layout.tables[index].name
+                        if self.layout is not None
+                        else None
+                    ),
                 )
             )
 
         # A table is often completely occluded by the seated customer.  Do not
         # force that person onto an unrelated nearby table; surface an explicit
         # inferred occupied seat instead.  This remains distinguishable in logs.
-        if self.config.infer_occluded_tables:
+        if self.config.infer_occluded_tables and self.layout is None:
             supported_people = [
                 person
                 for person in unassigned_people

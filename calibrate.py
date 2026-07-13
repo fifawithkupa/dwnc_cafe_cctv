@@ -108,3 +108,197 @@ class CalibrationState:
             )
         state.selected = None
         return state
+
+
+def _grab_frame(video, at_seconds):
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import cv2
+
+    out = Path(tempfile.mkdtemp()) / "calib_frame.png"
+    subprocess.run(
+        [
+            "ffmpeg", "-loglevel", "error", "-ss", str(at_seconds),
+            "-i", str(video), "-frames:v", "1", "-y", str(out),
+        ],
+        check=True,
+    )
+    frame = cv2.imread(str(out))
+    if frame is None:
+        raise RuntimeError(f"Could not extract frame at {at_seconds}s from {video}")
+    return frame
+
+
+def _preseed(frame, det_model_path):
+    """Pre-populate state with detected tables and auto-linked chairs."""
+    from ultralytics import YOLO
+
+    from seatnow_core import (
+        Detection,
+        associate_chairs_to_tables,
+        deduplicate_tables,
+    )
+
+    model = YOLO(str(det_model_path))
+    result = model.predict(source=frame, conf=0.12, imgsz=1280, device="cpu", verbose=False)[0]
+    tables, chairs = [], []
+    if result.boxes is not None:
+        for box_result in result.boxes:
+            name = result.names[int(box_result.cls.item())]
+            confidence = float(box_result.conf.item())
+            box = tuple(float(v) for v in box_result.xyxy[0].tolist())
+            if name == "dining table":
+                tables.append(Detection(name=name, box=box, confidence=confidence))
+            elif name in {"chair", "couch", "bench"} and confidence >= 0.35:
+                chairs.append(Detection(name=name, box=box, confidence=confidence))
+    tables = deduplicate_tables(tables)
+    height, width = frame.shape[:2]
+    links = associate_chairs_to_tables(tables, chairs, (height, width))
+
+    state = CalibrationState()
+    for table_index, table in enumerate(tables):
+        state.add_table(table.box)
+        for chair_index in links[table_index]:
+            state.add_chair(chairs[chair_index].box)
+    state.selected = None
+    state._history.clear()
+    return state
+
+
+HELP_TEXT = "[t]able  [c]hair->selected  [d]elete  [u]ndo  [s]ave  [q]uit"
+
+TABLE_COLOR = (80, 200, 80)
+CHAIR_COLOR = (60, 200, 230)
+SELECT_COLOR = (60, 60, 235)
+
+
+def _draw(frame, state, mode, drag):
+    import cv2
+
+    canvas = frame.copy()
+    for ti, table in enumerate(state.tables):
+        tx1, ty1, tx2, ty2 = [int(v) for v in table["box"]]
+        selected = state.selected == ("table", ti, -1)
+        cv2.rectangle(canvas, (tx1, ty1), (tx2, ty2),
+                      SELECT_COLOR if selected else TABLE_COLOR, 3 if selected else 2)
+        cv2.putText(canvas, f"T{ti + 1}", (tx1, max(16, ty1 - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, TABLE_COLOR, 2, cv2.LINE_AA)
+        tcx, tcy = (tx1 + tx2) // 2, (ty1 + ty2) // 2
+        for ci, chair in enumerate(table["chairs"]):
+            cx1, cy1, cx2, cy2 = [int(v) for v in chair]
+            chair_selected = state.selected == ("chair", ti, ci)
+            cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2),
+                          SELECT_COLOR if chair_selected else CHAIR_COLOR, 2)
+            cv2.line(canvas, (tcx, tcy), ((cx1 + cx2) // 2, (cy1 + cy2) // 2),
+                     CHAIR_COLOR, 1, cv2.LINE_AA)
+    if drag is not None:
+        (x1, y1), (x2, y2) = drag
+        cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), SELECT_COLOR, 1)
+    cv2.putText(canvas, f"mode={mode}  {HELP_TEXT}", (12, 24),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    return canvas
+
+
+def run_gui(frame, state, output_path, source):
+    import cv2
+
+    from seatnow_layout import save_layout
+
+    mode = "table"
+    drag_start = None
+    drag_current = None
+    window = "SeatNow calibrate"
+    cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+
+    def on_mouse(event, x, y, flags, _param):
+        nonlocal drag_start, drag_current
+        if event == cv2.EVENT_LBUTTONDOWN:
+            drag_start = (x, y)
+            drag_current = (x, y)
+        elif event == cv2.EVENT_MOUSEMOVE and drag_start is not None:
+            drag_current = (x, y)
+        elif event == cv2.EVENT_LBUTTONUP and drag_start is not None:
+            x1, y1 = drag_start
+            box = (min(x1, x), min(y1, y), max(x1, x), max(y1, y))
+            drag_start = None
+            drag_current = None
+            if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                state.select_at(x, y)  # 클릭 = 선택
+            elif mode == "table":
+                state.add_table(box)
+            else:
+                if not state.add_chair(box):
+                    print("의자를 붙일 테이블을 먼저 클릭으로 선택하세요")
+
+    cv2.setMouseCallback(window, on_mouse)
+    while True:
+        drag = (drag_start, drag_current) if drag_start is not None else None
+        cv2.imshow(window, _draw(frame, state, mode, drag))
+        key = cv2.waitKey(30) & 0xFF
+        if key == ord("t"):
+            mode = "table"
+        elif key == ord("c"):
+            mode = "chair"
+        elif key == ord("d"):
+            state.delete_selected()
+        elif key == ord("u"):
+            state.undo()
+        elif key == ord("s"):
+            layout = state.to_layout(source)
+            if not layout.tables:
+                print("테이블이 없어 저장하지 않았습니다")
+                continue
+            save_layout(layout, output_path)
+            print(f"저장됨: {output_path} (테이블 {len(layout.tables)}개, "
+                  f"의자 {len(layout.chair_boxes())}개)")
+        elif key == ord("q") or key == 27:
+            break
+    cv2.destroyAllWindows()
+
+
+def main(argv=None) -> int:
+    import argparse
+    from pathlib import Path
+
+    from seatnow_layout import load_layout
+
+    parser = argparse.ArgumentParser(description="Register table/chair zones for SeatNow")
+    parser.add_argument("video", type=Path, help="Reference video (first frame is calibrated)")
+    parser.add_argument("--at", type=float, default=0.0, help="Timestamp (s) of the reference frame")
+    parser.add_argument("--output", type=Path, help="Layout JSON path (default: layouts/<video stem>.json)")
+    parser.add_argument("--edit", type=Path, help="Load an existing layout instead of auto pre-seeding")
+    parser.add_argument("--det-model", default="yolov8x.pt", help="Detector for pre-seeding (one-time, accuracy first)")
+    parser.add_argument("--no-preseed", action="store_true", help="Start from an empty canvas")
+    args = parser.parse_args(argv)
+
+    if not args.video.exists():
+        print(f"video not found: {args.video}")
+        return 1
+    frame = _grab_frame(args.video, args.at)
+    height, width = frame.shape[:2]
+
+    if args.edit is not None:
+        state = CalibrationState.from_layout(
+            load_layout(args.edit).scaled_to(width, height)
+        )
+    elif args.no_preseed:
+        state = CalibrationState()
+    else:
+        print("자동 탐지로 초기 배치를 채우는 중... (수십 초)")
+        state = _preseed(frame, args.det_model)
+
+    output = args.output or Path("layouts") / f"{args.video.stem}.json"
+    source = {
+        "video": str(args.video),
+        "frame_at_seconds": args.at,
+        "width": width,
+        "height": height,
+    }
+    run_gui(frame, state, output, source)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

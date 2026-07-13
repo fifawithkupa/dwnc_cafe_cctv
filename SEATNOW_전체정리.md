@@ -54,6 +54,9 @@ Seatify 논문엔 3번째 테스트(Hip-Knee 수직 거리)도 있었지만, **�
 - 고정 ROI 대신, 매 프레임 테이블 bounding box 탐지 → 테이블 중심 기준으로 반경 R의 ROI를 매번 재계산
 - 이유: 손님이 테이블/의자를 자주 옮기기 때문에 고정 좌표로는 안 됨
 
+### 레이아웃 모드 (`--layout`)
+캘리브레이션된 존(`calibrate.py`로 등록한 `layouts/*.json`)이 좌석 기준. 테이블/의자 탐지는 껐고 사람·물체 증거만 자동으로 채운다. 좌석 수가 고정되어 앱 표시가 안정적이며, 존 밖 탐지는 완전 무시되고 inferred-seat도 비활성. 경량 모델(yolov8n)과 병용을 전제로 한 운영 모드.
+
 ---
 
 ## 3. 구현된 코드 (영상 처리까지 완료)
@@ -65,6 +68,8 @@ Seatify 논문엔 3번째 테스트(Hip-Knee 수직 거리)도 있었지만, **�
 | `verify_seatnow.py` | 실행 결과 JSONL을 수동 라벨 정답(`tests/fixtures/test_video_expectations.json`)과 대조 검증 |
 | `tests/test_seatnow_core.py` | 유닛 테스트 54개 — 판정 로직은 전부 모델 없이 순수 함수로 테스트 (실제 실패 사례 좌표 기반 회귀 테스트 포함) |
 | `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용으로만 유지) |
+| `seatnow_layout.py` | 수동 좌석 레이아웃 로드/검증/스케일 |
+| `calibrate.py` | 클릭 캘리브레이션 도구 (테이블·의자 등록 → `layouts/*.json`) |
 
 - 사용 모델: pretrained YOLOv8x, YOLOv8x-pose
 - OpenCV 휠에 비디오 백엔드가 없는 환경이라 **영상 디코딩/인코딩은 ffmpeg 파이프로 직접 처리** (`FFmpegSampleReader`/`FFmpegVideoWriter`)
@@ -137,7 +142,7 @@ CCTV → NVR → 엣지 디바이스  →  Supabase   →  SeatNow 앱
 
 | 역할 | 선택 |
 |------|------|
-| CV 추론 | Python + Ultralytics YOLOv8 + OpenCV |
+| CV 추론 | Python + Ultralytics YOLOv8 (기본 yolov8n, 정확도 우선 시 yolov8x) + OpenCV |
 | 모델 서빙 | FastAPI (또는 Next.js API Route) |
 | 학습 환경 | Google Colab (T4 GPU) |
 | 실시간 DB | Supabase Realtime |

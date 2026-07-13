@@ -2314,7 +2314,7 @@ def render_frame(
         if evidence:
             label += f" | {evidence}"
         _draw_label(output, label, (x1, max(header_height + 4, y1)), color)
-        if debug and observation.source == "detected":
+        if debug and observation.source in ("detected", "layout"):
             surface = table_surface_box(track.current_box)
             sx1, sy1, sx2, sy2 = [int(round(value)) for value in surface]
             cv2.rectangle(output, (sx1, sy1), (sx2, sy2), (230, 170, 30), 1)

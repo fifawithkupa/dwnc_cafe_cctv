@@ -884,6 +884,92 @@ def _inferred_group_box(group: Sequence[PoseObservation], width: int, height: in
     )
 
 
+class LayoutZoneTracker:
+    """Drift calibrated layout zones toward matching furniture detections.
+
+    Zones follow furniture the detector can see and stay put otherwise, so a
+    manually drawn ROI for an undetectable table simply never moves.  Matching
+    is deliberately conservative: a detection that overlaps two zones about
+    equally is discarded, because dragging a zone onto the wrong table is
+    worse than not moving at all.  Zone count, ids, and chair links are fixed
+    by construction — only the boxes drift.
+    """
+
+    def __init__(
+        self,
+        table_boxes: Sequence[Box],
+        chair_boxes: Sequence[Box],
+        alpha: float = 0.35,
+        minimum_iou: float = 0.30,
+        ambiguity_margin: float = 0.10,
+    ):
+        self.table_boxes: List[Box] = [tuple(box) for box in table_boxes]
+        self.chair_boxes: List[Box] = [tuple(box) for box in chair_boxes]
+        self._calibrated_tables = list(self.table_boxes)
+        self._calibrated_chairs = list(self.chair_boxes)
+        self.alpha = alpha
+        self.minimum_iou = minimum_iou
+        self.ambiguity_margin = ambiguity_margin
+
+    def update(
+        self,
+        table_detections: Sequence[Detection],
+        chair_detections: Sequence[Detection],
+    ) -> None:
+        self.table_boxes = self._track(self.table_boxes, table_detections)
+        self.chair_boxes = self._track(self.chair_boxes, chair_detections)
+
+    def reset(self) -> None:
+        self.table_boxes = list(self._calibrated_tables)
+        self.chair_boxes = list(self._calibrated_chairs)
+
+    def _blend(self, zone: Box, target: Box) -> Box:
+        keep = 1.0 - self.alpha
+        return tuple(
+            keep * zone_value + self.alpha * target_value
+            for zone_value, target_value in zip(zone, target)
+        )
+
+    def _track(
+        self, zones: List[Box], detections: Sequence[Detection]
+    ) -> List[Box]:
+        candidates: List[Tuple[float, int, int]] = []
+        for det_index, detection in enumerate(detections):
+            overlaps = sorted(
+                (
+                    (box_iou(zone, detection.box), zone_index)
+                    for zone_index, zone in enumerate(zones)
+                ),
+                reverse=True,
+            )
+            qualified = [
+                (iou, zone_index)
+                for iou, zone_index in overlaps
+                if iou >= self.minimum_iou
+            ]
+            if not qualified:
+                continue
+            if (
+                len(qualified) >= 2
+                and qualified[0][0] - qualified[1][0] < self.ambiguity_margin
+            ):
+                continue  # 애매하면 정지: 잘못 따라가는 것이 최악의 실패다.
+            candidates.append((qualified[0][0], det_index, qualified[0][1]))
+
+        used_detections: set = set()
+        used_zones: set = set()
+        updated = list(zones)
+        for iou, det_index, zone_index in sorted(candidates, reverse=True):
+            if det_index in used_detections or zone_index in used_zones:
+                continue
+            used_detections.add(det_index)
+            used_zones.add(zone_index)
+            updated[zone_index] = self._blend(
+                zones[zone_index], detections[det_index].box
+            )
+        return updated
+
+
 class SeatNowAnalyzer:
     """Run detector and pose model once per supplied BGR frame."""
 

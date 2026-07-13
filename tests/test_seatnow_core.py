@@ -36,6 +36,7 @@ from seatnow_core import (
     frame_log_record,
     is_scene_change,
     occupancy_state_from_evidence,
+    track_to_dict,
 )
 
 
@@ -601,6 +602,30 @@ class TableTrackerTests(unittest.TestCase):
 
 
 class FrameLogTests(unittest.TestCase):
+    def test_layout_observation_gets_layout_label_and_log_fields(self):
+        observation = table_observation(
+            OccupancyState.OCCUPIED, box=(0.0, 0.0, 40.0, 80.0)
+        )
+        observation.source = "layout"
+        observation.layout_id = 7
+        observation.layout_name = "창가1"
+        track = Track(
+            track_id=1,
+            box=observation.box,
+            stable_state=observation.raw_state,
+            last_observation=observation,
+            first_seen=0.0,
+            last_seen=0.0,
+        )
+
+        record = track_to_dict(track)
+
+        self.assertEqual(track.label, "L007")
+        self.assertEqual(record["label"], "L007")
+        self.assertEqual(record["layout_id"], 7)
+        self.assertEqual(record["layout_name"], "창가1")
+        self.assertEqual(record["source"], "layout")
+
     def test_frame_log_contains_visible_counts_evidence_and_pose_counts(self):
         cup = Detection("cup", (10.0, 10.0, 20.0, 20.0), 0.87654)
         chair = Detection("chair", (0.0, 20.0, 35.0, 80.0), 0.81234)

@@ -124,6 +124,8 @@ class TableObservation:
     chair_seated_people: List[PoseObservation] = field(default_factory=list)
     reason: str = ""
     provisional: bool = False
+    layout_id: Optional[int] = None
+    layout_name: Optional[str] = None
 
 
 @dataclass
@@ -183,7 +185,10 @@ class Track:
 
     @property
     def label(self) -> str:
-        prefix = "S" if self.last_observation.source == "inferred-seat" else "T"
+        observation = self.last_observation
+        if observation.layout_id is not None:
+            return f"L{observation.layout_id:03d}"
+        prefix = "S" if observation.source == "inferred-seat" else "T"
         return f"{prefix}{self.track_id:03d}"
 
     @property
@@ -2190,6 +2195,8 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "id": track.track_id,
         "label": track.label,
         "source": observation.source,
+        "layout_id": observation.layout_id,
+        "layout_name": observation.layout_name,
         "box": [round(value, 2) for value in track.current_box],
         "predicted": track.predicted,
         "state": track.visible_state.value,

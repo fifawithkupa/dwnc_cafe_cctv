@@ -29,6 +29,7 @@ from seatnow_core import (
     probe_video,
     render_frame,
 )
+from seatnow_layout import load_layout
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
@@ -81,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="Draw pose and tabletop diagnostics")
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
+    parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
     return parser
 
 
@@ -117,6 +119,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--track-ttl cannot be negative")
     if args.max_samples is not None and args.max_samples < 1:
         raise ValueError("--max-samples must be at least 1")
+    if args.layout is not None and not args.layout.exists():
+        raise FileNotFoundError(f"Layout not found: {args.layout}")
     for label, value in (
         ("--table-conf", args.table_conf),
         ("--object-conf", args.object_conf),
@@ -129,7 +133,7 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise ValueError(f"{label} must be between 0 and 1")
 
 
-def _make_analyzer(args: argparse.Namespace) -> SeatNowAnalyzer:
+def _make_analyzer(args: argparse.Namespace, layout=None) -> SeatNowAnalyzer:
     det_path = _model_path(args.det_model)
     pose_path = _model_path(args.pose_model)
     if not det_path.exists():
@@ -154,13 +158,16 @@ def _make_analyzer(args: argparse.Namespace) -> SeatNowAnalyzer:
     )
     print(f"Loading detector: {det_path.name}", flush=True)
     print(f"Loading pose model: {pose_path.name}", flush=True)
-    return SeatNowAnalyzer(det_path, pose_path, config)
+    return SeatNowAnalyzer(det_path, pose_path, config, layout=layout)
 
 
 def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     frame = cv2.imread(str(args.input))
     if frame is None:
         raise RuntimeError(f"OpenCV could not read image: {args.input}")
+    if analyzer.layout is not None:
+        height, width = frame.shape[:2]
+        analyzer.layout = analyzer.layout.scaled_to(width, height)
     analysis = analyzer.analyze(frame, timestamp=0.0)
     tracker = TableTracker(occupy_confirmations=1, empty_confirmations=1, max_missed=0)
     update = tracker.update(analysis.tables, 0.0, frame.shape[:2])
@@ -177,6 +184,8 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
 
 def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     info = probe_video(args.input)
+    if analyzer.layout is not None:
+        analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
     output = args.output or _default_output(args.input, is_video=True)
     log_path = args.log or output.with_suffix(".jsonl")
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -249,6 +258,11 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "scene_reset": not args.no_scene_reset,
             "max_samples": args.max_samples,
             "device": args.device,
+            "layout": (
+                {"path": str(args.layout), "sha256": _sha256(args.layout)}
+                if args.layout
+                else None
+            ),
         },
     }
     print(
@@ -377,7 +391,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         suffix = args.input.suffix.lower()
         if suffix not in VIDEO_SUFFIXES | IMAGE_SUFFIXES:
             raise ValueError(f"Unsupported input extension: {suffix or '(none)'}")
-        analyzer = _make_analyzer(args)
+        layout = load_layout(args.layout) if args.layout else None
+        analyzer = _make_analyzer(args, layout=layout)
         if suffix in VIDEO_SUFFIXES:
             return process_video(args, analyzer)
         return process_image(args, analyzer)

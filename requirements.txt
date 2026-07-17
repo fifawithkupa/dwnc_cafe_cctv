@@ -1,6 +1,7 @@
 # 검증된 조합 (Python 3.9, macOS Intel 기준 — 2026-07-12)
 # 주의: numpy 2.x는 PyTorch와 충돌하므로 반드시 <2 유지
 ultralytics==8.4.82
-opencv-python==4.13.0.92
+# opencv 4.11+ 은 numpy>=2 를 요구하므로 numpy<2 와 호환되는 마지막 계열(4.10) 고정
+opencv-python==4.10.0.84
 numpy<2
 torch==2.2.2

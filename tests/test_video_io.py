@@ -40,7 +40,6 @@ class FFmpegVideoIOTests(unittest.TestCase):
 
         cls._temporary_directory = tempfile.TemporaryDirectory(
             prefix="seatnow-video-io-",
-            dir="/tmp",
         )
         cls.directory = Path(cls._temporary_directory.name)
         cls.source_path = cls.directory / "synthetic_source.mp4"

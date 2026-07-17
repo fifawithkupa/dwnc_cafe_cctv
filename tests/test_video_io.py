@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from seatnow_core import (
+    FFmpegBurstReader,
     FFmpegSampleReader,
     FFmpegVideoWriter,
     probe_video,
@@ -190,6 +191,51 @@ class FFmpegVideoIOTests(unittest.TestCase):
 
         self.assertIsNotNone(process.poll(), "ffmpeg process leaked")
         self.assertIsNone(close_error, f"early reader close raised: {close_error}")
+
+    def test_burst_reader_returns_centered_native_fps_frames(self) -> None:
+        reader = FFmpegBurstReader(self.source_path)
+        center_index, burst = reader.read_burst(1.0, n=2)
+
+        self.assertEqual(len(burst), 5)
+        self.assertEqual(center_index, 2)
+        expected = [0.8, 0.9, 1.0, 1.1, 1.2]
+        for (timestamp, frame), expected_ts in zip(burst, expected):
+            self.assertAlmostEqual(timestamp, expected_ts, places=6)
+            self.assertEqual(frame.shape, (self.HEIGHT, self.WIDTH, 3))
+            self.assertEqual(frame.dtype, np.uint8)
+        # testsrc2 animates, so consecutive frames must differ.
+        self.assertFalse(np.array_equal(burst[0][1], burst[-1][1]))
+
+    def test_burst_reader_head_shifts_instead_of_truncating(self) -> None:
+        reader = FFmpegBurstReader(self.source_path)
+        center_index, burst = reader.read_burst(0.0, n=2)
+
+        self.assertEqual(len(burst), 5)
+        self.assertEqual(center_index, 0)
+        self.assertAlmostEqual(burst[0][0], 0.0, places=6)
+
+    def test_burst_reader_truncates_at_end_of_video(self) -> None:
+        reader = FFmpegBurstReader(self.source_path)
+        center_index, burst = reader.read_burst(1.9, n=2)
+
+        self.assertLess(len(burst), 5)
+        self.assertGreaterEqual(len(burst), 1)
+        self.assertAlmostEqual(burst[center_index][0], 1.9, delta=0.11)
+
+    def test_burst_reader_n_zero_returns_single_frame(self) -> None:
+        reader = FFmpegBurstReader(self.source_path)
+        center_index, burst = reader.read_burst(1.0, n=0)
+
+        self.assertEqual(len(burst), 1)
+        self.assertEqual(center_index, 0)
+        self.assertAlmostEqual(burst[0][0], 1.0, places=6)
+
+    def test_burst_reader_past_end_returns_empty(self) -> None:
+        reader = FFmpegBurstReader(self.source_path)
+        center_index, burst = reader.read_burst(5.0, n=2)
+
+        self.assertEqual(burst, [])
+        self.assertEqual(center_index, 0)
 
     def test_writer_context_does_not_mask_body_exception(self) -> None:
         output_path = self.directory / "aborted_writer.mp4"

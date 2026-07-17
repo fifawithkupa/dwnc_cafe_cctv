@@ -126,6 +126,8 @@ class TableObservation:
     provisional: bool = False
     layout_id: Optional[int] = None
     layout_name: Optional[str] = None
+    # Burst-sample majority voting, e.g. {"occupied": 3, "empty": 2}.
+    vote_counts: Optional[Dict[str, int]] = None
 
 
 @dataclass
@@ -1132,6 +1134,7 @@ class SeatNowAnalyzer:
         frame: np.ndarray,
         timestamp: float = 0.0,
         global_motion_fraction: Point = (0.0, 0.0),
+        update_temporal: bool = True,
     ) -> FrameAnalysis:
         if frame is None or frame.size == 0:
             raise ValueError("Cannot analyze an empty frame")
@@ -1181,22 +1184,25 @@ class SeatNowAnalyzer:
                         chair_boxes,
                         alpha=self.config.layout_track_alpha,
                     )
-                self.zone_tracker.update(
-                    [
-                        detection
-                        for detection in detections
-                        if detection.name == "dining table"
-                        and detection.confidence
-                        >= self.config.layout_track_table_confidence
-                    ],
-                    [
-                        detection
-                        for detection in detections
-                        if detection.name in {"chair", "couch", "bench"}
-                        and detection.confidence
-                        >= self.config.layout_track_chair_confidence
-                    ],
-                )
+                # Burst side frames must not commit zone drift: applying the
+                # EMA once per burst frame would multiply the tuned alpha.
+                if update_temporal:
+                    self.zone_tracker.update(
+                        [
+                            detection
+                            for detection in detections
+                            if detection.name == "dining table"
+                            and detection.confidence
+                            >= self.config.layout_track_table_confidence
+                        ],
+                        [
+                            detection
+                            for detection in detections
+                            if detection.name in {"chair", "couch", "bench"}
+                            and detection.confidence
+                            >= self.config.layout_track_chair_confidence
+                        ],
+                    )
                 table_boxes = self.zone_tracker.table_boxes
                 chair_boxes = self.zone_tracker.chair_boxes
             tables = [
@@ -1270,12 +1276,16 @@ class SeatNowAnalyzer:
             ):
                 pose.state = PoseState.SEATED
                 pose.reason += f";chair_overlap={support:.2f}"
-        self._filter_moving_people(
-            poses,
-            timestamp,
-            (height, width),
-            global_motion_fraction,
-        )
+        # Burst side frames skip the motion filter: 1/fps spacing turns box
+        # jitter into spurious speed and would corrupt the pose history that
+        # the per-sample (center frame) comparison relies on.
+        if update_temporal:
+            self._filter_moving_people(
+                poses,
+                timestamp,
+                (height, width),
+                global_motion_fraction,
+            )
         suppress_conflicting_weak_seated_poses(poses)
 
         objects = self._crop_objects(frame, tables, objects)
@@ -1506,6 +1516,143 @@ class SeatNowAnalyzer:
             detections=detections,
             inference_ms=inference_ms,
         )
+
+
+def _match_observations_to_center(
+    center_tables: Sequence[TableObservation],
+    side_tables: Sequence[TableObservation],
+    iou_threshold: float,
+) -> List[Tuple[int, TableObservation]]:
+    """One-to-one match of a side frame's observations onto the center's."""
+    matches: List[Tuple[int, TableObservation]] = []
+    used_center: set = set()
+    used_side: set = set()
+    layout_positions = {
+        observation.layout_id: index
+        for index, observation in enumerate(center_tables)
+        if observation.layout_id is not None
+    }
+    for side_index, side in enumerate(side_tables):
+        if side.layout_id is None:
+            continue
+        center_index = layout_positions.get(side.layout_id)
+        if center_index is not None and center_index not in used_center:
+            matches.append((center_index, side))
+            used_center.add(center_index)
+            used_side.add(side_index)
+    candidate_pairs = []
+    for center_index, center in enumerate(center_tables):
+        if center_index in used_center or center.layout_id is not None:
+            continue
+        for side_index, side in enumerate(side_tables):
+            if side_index in used_side or side.layout_id is not None:
+                continue
+            if side.source != center.source:
+                continue
+            iou = box_iou(center.box, side.box)
+            if iou >= iou_threshold:
+                candidate_pairs.append((iou, center_index, side_index))
+    candidate_pairs.sort(key=lambda pair: pair[0], reverse=True)
+    for _, center_index, side_index in candidate_pairs:
+        if center_index in used_center or side_index in used_side:
+            continue
+        used_center.add(center_index)
+        used_side.add(side_index)
+        matches.append((center_index, side_tables[side_index]))
+    return matches
+
+
+def aggregate_burst_observations(
+    frame_tables: Sequence[Sequence[TableObservation]],
+    center_index: int,
+    iou_threshold: float = 0.30,
+) -> List[TableObservation]:
+    """Majority-vote per-seat raw states across a burst of frames.
+
+    The center frame's observations define the output (boxes, chair links,
+    layout ids).  Each side frame contributes one vote per matched table.
+    Ties — and votes without an occupied/empty majority — fall back to the
+    center frame's own raw state, preserving single-frame semantics.  A
+    center IGNORE (border crop / scene transition) passes through unchanged.
+    Center observations are updated in place and returned.
+    """
+    if not frame_tables:
+        return []
+    center_tables = list(frame_tables[center_index])
+    ballots: List[List[TableObservation]] = [
+        [observation] for observation in center_tables
+    ]
+    for frame_position, observations in enumerate(frame_tables):
+        if frame_position == center_index:
+            continue
+        for center_position, matched in _match_observations_to_center(
+            center_tables, observations, iou_threshold
+        ):
+            ballots[center_position].append(matched)
+    for center, ballot in zip(center_tables, ballots):
+        counts: Dict[str, int] = {}
+        for observation in ballot:
+            key = observation.raw_state.value
+            counts[key] = counts.get(key, 0) + 1
+        center.vote_counts = counts
+        if center.raw_state == OccupancyState.IGNORE:
+            continue
+        occupied_votes = counts.get(OccupancyState.OCCUPIED.value, 0)
+        empty_votes = counts.get(OccupancyState.EMPTY.value, 0)
+        if occupied_votes > empty_votes:
+            majority = OccupancyState.OCCUPIED
+        elif empty_votes > occupied_votes:
+            majority = OccupancyState.EMPTY
+        else:
+            continue
+        if majority == center.raw_state:
+            continue
+        donors = [
+            observation
+            for observation in ballot
+            if observation.raw_state == majority
+        ]
+        donor = max(donors, key=lambda observation: observation.raw_score)
+        center.raw_state = donor.raw_state
+        center.raw_score = donor.raw_score
+        center.reason = donor.reason
+        center.provisional = donor.provisional
+        center.objects = list(donor.objects)
+        center.seated_people = list(donor.seated_people)
+        center.occupied_chairs = list(donor.occupied_chairs)
+        center.chair_seated_people = list(donor.chair_seated_people)
+    return center_tables
+
+
+class AdaptiveCadenceController:
+    """Adaptive sample cadence for the two-stage judgment.
+
+    1차 판단 runs at base_seconds; while any stable-EMPTY seat has occupied
+    evidence pending confirmation (person sat down or an object appeared),
+    2차 판단 re-runs the same burst-vote analysis every fast_seconds.  The
+    decision is a pure function of tracker state, so exiting fast mode is
+    guaranteed by the existing pending-clearing paths in TableTracker.
+    """
+
+    def __init__(self, base_seconds: float = 15.0, fast_seconds: float = 5.0):
+        if base_seconds <= 0 or fast_seconds <= 0:
+            raise ValueError("Cadence intervals must be positive")
+        if fast_seconds > base_seconds:
+            raise ValueError("fast_seconds cannot exceed base_seconds")
+        self.base_seconds = float(base_seconds)
+        self.fast_seconds = float(fast_seconds)
+
+    @staticmethod
+    def wants_fast(tracks: Sequence["Track"]) -> bool:
+        return any(
+            track.stable_state == OccupancyState.EMPTY
+            and track.pending_state == OccupancyState.OCCUPIED
+            and track.pending_count >= 1
+            for track in tracks
+        )
+
+    def next_interval(self, tracks: Sequence["Track"]) -> float:
+        return self.fast_seconds if self.wants_fast(tracks) else self.base_seconds
 
 
 class TableTracker:
@@ -2115,6 +2262,99 @@ class FFmpegSampleReader:
                 raise RuntimeError(f"ffmpeg decode failed: {message}")
 
 
+class FFmpegBurstReader:
+    """Seek-based reader returning bursts of consecutive native-fps frames.
+
+    Each burst feeds the per-sample majority vote, so timestamps are
+    synthesized from the requested position instead of container PTS —
+    the same policy FFmpegSampleReader uses for its fps-filtered stream.
+    """
+
+    def __init__(self, path: Path, info: Optional[VideoInfo] = None):
+        self.path = Path(path)
+        self.info = info or probe_video(self.path)
+        if self.info.fps <= 0:
+            raise ValueError("Video fps must be positive for burst reading")
+
+    def read_burst(
+        self, center_seconds: float, n: int
+    ) -> Tuple[int, List[Tuple[float, np.ndarray]]]:
+        """Read up to 2n+1 consecutive frames centred on center_seconds.
+
+        Returns (center_index, [(timestamp, frame), ...]).  Bursts are
+        truncated near the end of the video; near the start they shift right
+        (the seek clamps to 0) and center_index moves accordingly.  An empty
+        list means no frame could be decoded at that position.
+        """
+        if n < 0:
+            raise ValueError("n cannot be negative")
+        if center_seconds < 0:
+            raise ValueError("center_seconds cannot be negative")
+        ffmpeg, _ = require_ffmpeg()
+        frame_interval = 1.0 / self.info.fps
+        start_seconds = max(0.0, center_seconds - n * frame_interval)
+        frame_count = 2 * n + 1
+        command = [
+            ffmpeg,
+            "-nostdin",
+            "-v",
+            "error",
+            "-ss",
+            f"{start_seconds:.9f}",
+            "-i",
+            str(self.path),
+            "-frames:v",
+            str(frame_count),
+            "-an",
+            "-sn",
+            "-dn",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "pipe:1",
+        ]
+        stderr_file = tempfile.TemporaryFile(mode="w+b")
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=stderr_file,
+        )
+        assert process.stdout is not None
+        frame_bytes = self.info.width * self.info.height * 3
+        frames: List[Tuple[float, np.ndarray]] = []
+        try:
+            for index in range(frame_count):
+                payload = _read_exact(process.stdout, frame_bytes)
+                if not payload:
+                    break
+                if len(payload) != frame_bytes:
+                    raise RuntimeError(
+                        f"ffmpeg returned a partial frame ({len(payload)}/{frame_bytes} bytes)"
+                    )
+                frame = np.frombuffer(payload, dtype=np.uint8).reshape(
+                    (self.info.height, self.info.width, 3)
+                ).copy()
+                frames.append((start_seconds + index * frame_interval, frame))
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            process.stdout.close()
+            return_code = _wait_process(process)
+            stderr = _read_stderr_file(stderr_file)
+            stderr_file.close()
+        if not frames and return_code != 0:
+            message = stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"ffmpeg burst decode failed: {message}")
+        if not frames:
+            return 0, []
+        center_index = min(
+            range(len(frames)),
+            key=lambda index: abs(frames[index][0] - center_seconds),
+        )
+        return center_index, frames
+
+
 class FFmpegVideoWriter:
     def __init__(self, path: Path, width: int, height: int, fps: float, crf: int = 20):
         if width <= 0 or height <= 0 or fps <= 0:
@@ -2258,6 +2498,7 @@ def render_frame(
     analysis: FrameAnalysis,
     update: TrackerUpdate,
     debug: bool = False,
+    cadence: Optional[str] = None,
 ) -> np.ndarray:
     output = frame.copy()
     occupied = sum(track.visible_state == OccupancyState.OCCUPIED for track in update.visible_tracks)
@@ -2273,9 +2514,12 @@ def render_frame(
     cv2.rectangle(overlay, (0, 0), (output.shape[1], header_height), (15, 18, 24), -1)
     cv2.addWeighted(overlay, 0.78, output, 0.22, 0, output)
     scale = max(0.65, min(output.shape[1], output.shape[0]) / 1150.0)
+    title = f"SeatNow  t={analysis.timestamp:05.1f}s"
+    if cadence == "fast":
+        title += "  [FAST RECHECK]"
     cv2.putText(
         output,
-        f"SeatNow  t={analysis.timestamp:05.1f}s",
+        title,
         (18, int(header_height * 0.43)),
         cv2.FONT_HERSHEY_SIMPLEX,
         scale,
@@ -2349,7 +2593,7 @@ def render_frame(
 
 def track_to_dict(track: Track) -> Dict[str, object]:
     observation = track.last_observation
-    return {
+    data: Dict[str, object] = {
         "id": track.track_id,
         "label": track.label,
         "source": observation.source,
@@ -2387,6 +2631,10 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "pending_state": track.pending_state.value if track.pending_state else None,
         "pending_count": track.pending_count,
     }
+    # Only burst-vote runs carry vote counts; keep legacy records unchanged.
+    if observation.vote_counts is not None:
+        data["vote_counts"] = observation.vote_counts
+    return data
 
 
 def frame_log_record(

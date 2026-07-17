@@ -1627,20 +1627,30 @@ def aggregate_burst_observations(
 class AdaptiveCadenceController:
     """Adaptive sample cadence for the two-stage judgment.
 
-    1차 판단 runs at base_seconds; while any stable-EMPTY seat has occupied
-    evidence pending confirmation (person sat down or an object appeared),
-    2차 판단 re-runs the same burst-vote analysis every fast_seconds.  The
-    decision is a pure function of tracker state, so exiting fast mode is
-    guaranteed by the existing pending-clearing paths in TableTracker.
+    1차 판단 runs at base_seconds.  When a stable-EMPTY seat gains occupied
+    evidence (person sat down or an object appeared), 2차 판단 runs the next
+    fast_cycles samples at fast_seconds UNCONDITIONALLY — the recheck series
+    completes even if the transition confirms or is refuted earlier, so a
+    detection at t=15 always yields fast results at t=20/25/30.  A fresh
+    trigger while counting down re-arms the full series.
     """
 
-    def __init__(self, base_seconds: float = 15.0, fast_seconds: float = 5.0):
+    def __init__(
+        self,
+        base_seconds: float = 15.0,
+        fast_seconds: float = 5.0,
+        fast_cycles: int = 3,
+    ):
         if base_seconds <= 0 or fast_seconds <= 0:
             raise ValueError("Cadence intervals must be positive")
         if fast_seconds > base_seconds:
             raise ValueError("fast_seconds cannot exceed base_seconds")
+        if fast_cycles < 1:
+            raise ValueError("fast_cycles must be at least 1")
         self.base_seconds = float(base_seconds)
         self.fast_seconds = float(fast_seconds)
+        self.fast_cycles = int(fast_cycles)
+        self.remaining_fast = 0
 
     @staticmethod
     def wants_fast(tracks: Sequence["Track"]) -> bool:
@@ -1652,7 +1662,11 @@ class AdaptiveCadenceController:
         )
 
     def next_interval(self, tracks: Sequence["Track"]) -> float:
-        return self.fast_seconds if self.wants_fast(tracks) else self.base_seconds
+        if self.wants_fast(tracks):
+            self.remaining_fast = self.fast_cycles
+        elif self.remaining_fast > 0:
+            self.remaining_fast -= 1
+        return self.fast_seconds if self.remaining_fast > 0 else self.base_seconds
 
 
 class TableTracker:

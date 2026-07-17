@@ -60,7 +60,8 @@ python3 -m venv venv
 ```
 
 주요 옵션: `--sample-seconds`(1차 판단 주기, 기본 15초), `--fast-sample-seconds`(2차 판단
-주기, 기본 5초 — empty 좌석에 착석/물건 증거가 뜨면 확정될 때까지 가속),
+주기, 기본 5초 — empty 좌석에 착석/물건 증거가 뜨면 `--fast-cycles`(기본 3)회 재판단을
+무조건 수행: 예. 15초 감지 → 20/25/30초 재판단 → 45초 base 복귀),
 `--median-frames N`(샘플 시점 ±N 연속 프레임 다수결, 기본 2 → 5장), `--no-adaptive`(주기
 고정), `--max-samples N`(스모크 테스트), `--no-video`(로그만). 전체는 `--help`.
 

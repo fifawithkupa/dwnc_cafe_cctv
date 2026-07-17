@@ -62,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-seconds", type=float, default=15.0, help="Base seconds between analyzed samples (1차 판단 주기)")
     parser.add_argument("--fast-sample-seconds", type=float, default=5.0, help="Accelerated cadence while an empty seat shows occupied evidence pending confirmation (2차 판단 주기)")
     parser.add_argument("--median-frames", type=int, default=2, help="Analyze ±N consecutive native-fps frames per sample and majority-vote per-seat states (0 = single frame)")
+    parser.add_argument("--fast-cycles", type=int, default=3, help="Number of fast-interval rechecks that always run after occupied evidence appears on an empty seat")
     parser.add_argument("--no-adaptive", action="store_true", help="Pin the cadence to --sample-seconds instead of accelerating on occupancy evidence")
     parser.add_argument("--start-seconds", type=float, default=0.0, help="Start analysis at this media timestamp")
     parser.add_argument("--imgsz", type=int, default=1280, help="YOLO inference image size")
@@ -120,6 +121,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--fast-sample-seconds cannot exceed --sample-seconds")
     if args.median_frames < 0:
         raise ValueError("--median-frames cannot be negative")
+    if args.fast_cycles < 1:
+        raise ValueError("--fast-cycles must be at least 1")
     if args.start_seconds < 0:
         raise ValueError("--start-seconds cannot be negative")
     if args.imgsz < 320 or args.pose_imgsz < 320 or args.crop_imgsz < 320:
@@ -235,6 +238,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 and not args.no_scene_reset
                 and args.median_frames == 2
                 and args.fast_sample_seconds == 5.0
+                and args.fast_cycles == 3
                 and not args.no_adaptive
             )
             else ("fast" if not args.table_crops and args.imgsz <= 960 else "custom")
@@ -258,6 +262,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "sample_seconds": args.sample_seconds,
             "fast_sample_seconds": args.fast_sample_seconds,
             "median_frames": args.median_frames,
+            "fast_cycles": args.fast_cycles,
             "adaptive_cadence": adaptive,
             "start_seconds": args.start_seconds,
             "imgsz": args.imgsz,
@@ -408,6 +413,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     fast_seconds=(
                         args.fast_sample_seconds if adaptive else args.sample_seconds
                     ),
+                    fast_cycles=args.fast_cycles,
                 )
                 previous_center = None
                 center_time = args.start_seconds
@@ -477,10 +483,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                                 "tracker_reset": True,
                             },
                         )
-                    fast_mode = adaptive and AdaptiveCadenceController.wants_fast(
-                        update.all_tracks
-                    )
                     next_interval = controller.next_interval(update.all_tracks)
+                    fast_mode = next_interval < controller.base_seconds
                     record = frame_log_record(processed, analysis, update)
                     record["scene_id"] = scene_id
                     for table in record["tables"]:

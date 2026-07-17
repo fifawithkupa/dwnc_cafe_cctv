@@ -2426,7 +2426,11 @@ class FFmpegVideoWriter:
         assert self.process.stdin is not None
         try:
             self.process.stdin.write(np.ascontiguousarray(frame).tobytes())
-        except BrokenPipeError as exc:
+        except OSError as exc:
+            # Windows surfaces a dead pipe as EINVAL rather than
+            # BrokenPipeError; either way the real cause is in ffmpeg stderr
+            # (e.g. "Permission denied" when the output file is locked by a
+            # media player).
             if self.process.poll() is None:
                 _wait_process(self.process)
             details = _read_stderr_file(self.stderr_file).decode(

@@ -494,8 +494,12 @@ class TableTrackerTests(unittest.TestCase):
             for track in second.visible_tracks
             if not track.predicted and track.last_observation.source == "detected"
         ]
-        self.assertEqual(len(detected_tracks), 1)
-        self.assertNotEqual(detected_tracks[0].track_id, inferred_id)
+        self.assertEqual(detected_tracks, [])
+        self.assertEqual(second.pending_layout_changes[0]["change_type"], "ADDED")
+        self.assertNotEqual(
+            second.pending_layout_changes[0].get("source_table_ids"),
+            [inferred_id],
+        )
 
     def test_close_inferred_to_detected_transition_merges_without_double_count(self):
         tracker = TableTracker(occupy_confirmations=1, empty_confirmations=1)
@@ -572,17 +576,16 @@ class TableTrackerTests(unittest.TestCase):
                 for event in left_view.events
             )
         )
-        self.assertEqual(
+        self.assertIn(
+            {
+                "type": "left_view",
+                "table_id": table_id,
+                "last_state": "occupied",
+                "timestamp": 2.0,
+            },
             left_view.events,
-            [
-                {
-                    "type": "left_view",
-                    "table_id": table_id,
-                    "last_state": "occupied",
-                    "timestamp": 2.0,
-                }
-            ],
         )
+        self.assertEqual(left_view.committed_layout_changes[0]["change_type"], "REMOVED")
 
     def test_border_ignore_is_excluded_without_empty_transition(self):
         tracker = TableTracker(

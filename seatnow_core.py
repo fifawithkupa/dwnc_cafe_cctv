@@ -189,6 +189,9 @@ class Track:
     display_box: Optional[Box] = None
     # Require repeated evidence before an inferred seat may be predicted.
     real_hits: int = 1
+    layout_version: int = 1
+    layout_state: str = "ACTIVE"
+    layout_changed_at: Optional[float] = None
 
     @property
     def label(self) -> str:
@@ -220,6 +223,49 @@ class TrackerUpdate:
     visible_tracks: List[Track]
     all_tracks: List[Track]
     events: List[Dict[str, object]]
+    layout_version: int = 1
+    layout_state: str = "STABLE"
+    raw_table_count: int = 0
+    stable_table_count: int = 0
+    pending_layout_changes: List[Dict[str, object]] = field(default_factory=list)
+    committed_layout_changes: List[Dict[str, object]] = field(default_factory=list)
+
+
+@dataclass
+class LayoutChangeCandidate:
+    candidate_id: str
+    change_type: str
+    source_table_ids: List[int]
+    candidate_bboxes: List[Box]
+    first_detected_time: float
+    last_detected_time: float
+    confirmation_count: int
+    required_confirmation_count: int
+    confidence: float
+    observation: TableObservation
+    old_bbox: Optional[Box] = None
+    missed_count: int = 0
+
+    @property
+    def bbox(self) -> Box:
+        return self.candidate_bboxes[-1]
+
+    def to_dict(self) -> Dict[str, object]:
+        data: Dict[str, object] = {
+            "candidate_id": self.candidate_id,
+            "change_type": self.change_type,
+            "source_table_ids": list(self.source_table_ids),
+            "candidate_bbox": [round(value, 2) for value in self.bbox],
+            "first_detected_time": round(self.first_detected_time, 6),
+            "last_detected_time": round(self.last_detected_time, 6),
+            "confirmation_count": self.confirmation_count,
+            "required_confirmation_count": self.required_confirmation_count,
+            "confidence": round(self.confidence, 4),
+            "missed_count": self.missed_count,
+        }
+        if self.old_bbox is not None:
+            data["old_bbox"] = [round(value, 2) for value in self.old_bbox]
+        return data
 
 
 @dataclass(frozen=True)
@@ -259,6 +305,33 @@ def box_iou(a: Box, b: Box) -> float:
     inter = intersection_area(a, b)
     union = box_area(a) + box_area(b) - inter
     return inter / union if union > 0 else 0.0
+
+
+def blend_boxes(previous: Box, current: Box, alpha: float) -> Box:
+    keep = 1.0 - alpha
+    return tuple(
+        keep * previous_value + alpha * current_value
+        for previous_value, current_value in zip(previous, current)
+    )
+
+
+def center_distance_ratio(a: Box, b: Box, frame_diagonal: float) -> float:
+    center_a = box_center(a)
+    center_b = box_center(b)
+    return math.hypot(center_a[0] - center_b[0], center_a[1] - center_b[1]) / max(
+        1.0, frame_diagonal
+    )
+
+
+def box_size_similarity(a: Box, b: Box) -> float:
+    a_width = max(1.0, a[2] - a[0])
+    a_height = max(1.0, a[3] - a[1])
+    b_width = max(1.0, b[2] - b[0])
+    b_height = max(1.0, b[3] - b[1])
+    width_similarity = min(a_width, b_width) / max(a_width, b_width)
+    height_similarity = min(a_height, b_height) / max(a_height, b_height)
+    area_similarity = min(box_area(a), box_area(b)) / max(1.0, max(box_area(a), box_area(b)))
+    return 0.35 * width_similarity + 0.35 * height_similarity + 0.30 * area_similarity
 
 
 def overlap_over_smaller(a: Box, b: Box) -> float:
@@ -1647,13 +1720,313 @@ class TableTracker:
         empty_confirmations: int = 3,
         max_missed: int = 3,
         maximum_center_distance: float = 0.16,
+        layout_add_confirmations: int = 3,
+        layout_move_confirmations: int = 3,
+        layout_remove_confirmations: int = 3,
+        layout_bbox_alpha: float = 0.25,
+        moved_table_min_center_shift_ratio: float = 0.04,
+        moved_table_max_search_distance_ratio: float = 0.30,
+        minimum_layout_size_similarity: float = 0.55,
+        max_temporary_missing_samples: int = 2,
     ):
         self.occupy_confirmations = max(1, occupy_confirmations)
         self.empty_confirmations = max(1, empty_confirmations)
         self.max_missed = max(0, max_missed)
         self.maximum_center_distance = maximum_center_distance
+        self.layout_add_confirmations = max(1, layout_add_confirmations)
+        self.layout_move_confirmations = max(1, layout_move_confirmations)
+        self.layout_remove_confirmations = max(1, layout_remove_confirmations)
+        self.layout_bbox_alpha = max(0.0, min(1.0, layout_bbox_alpha))
+        self.moved_table_min_center_shift_ratio = moved_table_min_center_shift_ratio
+        self.moved_table_max_search_distance_ratio = moved_table_max_search_distance_ratio
+        self.minimum_layout_size_similarity = minimum_layout_size_similarity
+        self.max_temporary_missing_samples = max(0, max_temporary_missing_samples)
         self.tracks: List[Track] = []
         self.next_id = 1
+        self.layout_version = 1
+        self.pending_additions: List[LayoutChangeCandidate] = []
+        self.pending_moves: Dict[int, LayoutChangeCandidate] = {}
+        self.next_candidate_id = 1
+
+    def _new_candidate_id(self, prefix: str) -> str:
+        candidate_id = f"{prefix}{self.next_candidate_id:03d}"
+        self.next_candidate_id += 1
+        return candidate_id
+
+    @staticmethod
+    def _initial_occupancy_from_observation(
+        observation: TableObservation,
+        timestamp: float,
+    ) -> Tuple[OccupancyState, Optional[OccupancyState], int]:
+        initial_state = observation.raw_state
+        pending_state = None
+        pending_count = 0
+        if (
+            observation.provisional
+            and initial_state == OccupancyState.OCCUPIED
+            and timestamp > 1e-6
+        ):
+            initial_state = OccupancyState.UNKNOWN
+            pending_state = OccupancyState.OCCUPIED
+            pending_count = 1
+        return initial_state, pending_state, pending_count
+
+    def _create_track(
+        self,
+        observation: TableObservation,
+        timestamp: float,
+    ) -> Track:
+        initial_state, pending_state, pending_count = self._initial_occupancy_from_observation(
+            observation, timestamp
+        )
+        track = Track(
+            track_id=self.next_id,
+            box=observation.box,
+            stable_state=initial_state,
+            last_observation=observation,
+            first_seen=timestamp,
+            last_seen=timestamp,
+            display_box=observation.box,
+            pending_state=pending_state,
+            pending_count=pending_count,
+            layout_version=self.layout_version,
+            layout_state="ACTIVE",
+            layout_changed_at=timestamp,
+        )
+        self.next_id += 1
+        self.tracks.append(track)
+        return track
+
+    def _layout_change_event(
+        self,
+        change_type: str,
+        timestamp: float,
+        *,
+        table_id: Optional[int] = None,
+        old_bbox: Optional[Box] = None,
+        new_bbox: Optional[Box] = None,
+        candidate: Optional[LayoutChangeCandidate] = None,
+    ) -> Dict[str, object]:
+        before = self.layout_version
+        self.layout_version += 1
+        event: Dict[str, object] = {
+            "type": "layout_change",
+            "change_type": change_type,
+            "layout_version_from": before,
+            "layout_version_to": self.layout_version,
+            "timestamp": timestamp,
+        }
+        if table_id is not None:
+            event["table_id"] = table_id
+        if old_bbox is not None:
+            event["old_bbox"] = [round(value, 2) for value in old_bbox]
+        if new_bbox is not None:
+            event["new_bbox"] = [round(value, 2) for value in new_bbox]
+        if candidate is not None:
+            event["candidate"] = candidate.to_dict()
+        return event
+
+    def _candidate_match_score(
+        self,
+        candidate: LayoutChangeCandidate,
+        observation: TableObservation,
+        frame_diagonal: float,
+    ) -> float:
+        iou = box_iou(candidate.bbox, observation.box)
+        distance = center_distance_ratio(candidate.bbox, observation.box, frame_diagonal)
+        distance_score = max(0.0, 1.0 - distance / 0.08)
+        size_score = box_size_similarity(candidate.bbox, observation.box)
+        return 0.50 * iou + 0.30 * distance_score + 0.20 * size_score
+
+    def _layout_move_score(
+        self,
+        track: Track,
+        observation: TableObservation,
+        frame_diagonal: float,
+    ) -> float:
+        distance = center_distance_ratio(track.box, observation.box, frame_diagonal)
+        if distance < self.moved_table_min_center_shift_ratio:
+            return 0.0
+        if distance > self.moved_table_max_search_distance_ratio:
+            return 0.0
+        size_score = box_size_similarity(track.box, observation.box)
+        if size_score < self.minimum_layout_size_similarity:
+            return 0.0
+        distance_score = max(
+            0.0,
+            1.0
+            - (
+                distance - self.moved_table_min_center_shift_ratio
+            )
+            / max(
+                1e-6,
+                self.moved_table_max_search_distance_ratio
+                - self.moved_table_min_center_shift_ratio,
+            ),
+        )
+        return 0.55 * size_score + 0.45 * distance_score
+
+    def _is_move_candidate(
+        self,
+        track: Track,
+        observation: TableObservation,
+        frame_diagonal: float,
+    ) -> bool:
+        if track.last_observation.source != observation.source:
+            return False
+        if track.last_observation.source == "inferred-seat":
+            return False
+        shift = center_distance_ratio(track.box, observation.box, frame_diagonal)
+        if shift < self.moved_table_min_center_shift_ratio:
+            return False
+        return box_size_similarity(track.box, observation.box) >= self.minimum_layout_size_similarity
+
+    def _commit_move(
+        self,
+        track: Track,
+        candidate: LayoutChangeCandidate,
+        timestamp: float,
+    ) -> Dict[str, object]:
+        observation = candidate.observation
+        old_bbox = track.box
+        event = self._layout_change_event(
+            "MOVED",
+            timestamp,
+            table_id=track.track_id,
+            old_bbox=old_bbox,
+            new_bbox=observation.box,
+            candidate=candidate,
+        )
+        initial_state, pending_state, pending_count = self._initial_occupancy_from_observation(
+            observation, timestamp
+        )
+        track.box = observation.box
+        track.display_box = observation.box
+        track.last_observation = observation
+        track.last_seen = timestamp
+        track.visible = True
+        track.predicted = False
+        track.missed = 0
+        track.velocity = (0.0, 0.0)
+        track.stable_state = initial_state
+        track.pending_state = pending_state
+        track.pending_count = pending_count
+        track.layout_version = self.layout_version
+        track.layout_state = "ACTIVE"
+        track.layout_changed_at = timestamp
+        return event
+
+    def _update_move_candidate(
+        self,
+        track: Track,
+        observation: TableObservation,
+        timestamp: float,
+        frame_diagonal: float,
+    ) -> Optional[Dict[str, object]]:
+        existing = self.pending_moves.get(track.track_id)
+        if existing is None or self._candidate_match_score(
+            existing, observation, frame_diagonal
+        ) < 0.45:
+            existing = LayoutChangeCandidate(
+                candidate_id=self._new_candidate_id("MOVE"),
+                change_type="MOVED",
+                source_table_ids=[track.track_id],
+                candidate_bboxes=[observation.box],
+                first_detected_time=timestamp,
+                last_detected_time=timestamp,
+                confirmation_count=1,
+                required_confirmation_count=self.layout_move_confirmations,
+                confidence=observation.table_confidence,
+                observation=observation,
+                old_bbox=track.box,
+            )
+            self.pending_moves[track.track_id] = existing
+        else:
+            existing.candidate_bboxes.append(
+                blend_boxes(existing.bbox, observation.box, self.layout_bbox_alpha)
+            )
+            existing.last_detected_time = timestamp
+            existing.confirmation_count += 1
+            existing.confidence = max(existing.confidence, observation.table_confidence)
+            existing.observation = observation
+            existing.missed_count = 0
+
+        track.layout_state = "MOVE_PENDING"
+        if existing.confirmation_count >= self.layout_move_confirmations:
+            del self.pending_moves[track.track_id]
+            return self._commit_move(track, existing, timestamp)
+        return None
+
+    def _update_add_candidates(
+        self,
+        observations: Sequence[TableObservation],
+        timestamp: float,
+        frame_diagonal: float,
+    ) -> Tuple[List[Track], List[Dict[str, object]]]:
+        committed_tracks: List[Track] = []
+        committed_events: List[Dict[str, object]] = []
+        used_candidates: set = set()
+        for observation in observations:
+            best_index = None
+            best_score = 0.0
+            for candidate_index, candidate in enumerate(self.pending_additions):
+                if candidate_index in used_candidates:
+                    continue
+                score = self._candidate_match_score(
+                    candidate, observation, frame_diagonal
+                )
+                if score > best_score:
+                    best_score = score
+                    best_index = candidate_index
+            if best_index is None or best_score < 0.45:
+                candidate = LayoutChangeCandidate(
+                    candidate_id=self._new_candidate_id("ADD"),
+                    change_type="ADDED",
+                    source_table_ids=[],
+                    candidate_bboxes=[observation.box],
+                    first_detected_time=timestamp,
+                    last_detected_time=timestamp,
+                    confirmation_count=1,
+                    required_confirmation_count=self.layout_add_confirmations,
+                    confidence=observation.table_confidence,
+                    observation=observation,
+                )
+                self.pending_additions.append(candidate)
+                best_index = len(self.pending_additions) - 1
+            else:
+                candidate = self.pending_additions[best_index]
+                candidate.candidate_bboxes.append(
+                    blend_boxes(candidate.bbox, observation.box, self.layout_bbox_alpha)
+                )
+                candidate.last_detected_time = timestamp
+                candidate.confirmation_count += 1
+                candidate.confidence = max(candidate.confidence, observation.table_confidence)
+                candidate.observation = observation
+                candidate.missed_count = 0
+            used_candidates.add(best_index)
+
+        next_pending: List[LayoutChangeCandidate] = []
+        for candidate_index, candidate in enumerate(self.pending_additions):
+            if candidate_index not in used_candidates:
+                candidate.missed_count += 1
+            if candidate.confirmation_count >= self.layout_add_confirmations:
+                event = self._layout_change_event(
+                    "ADDED",
+                    timestamp,
+                    new_bbox=candidate.observation.box,
+                    candidate=candidate,
+                )
+                track = self._create_track(candidate.observation, timestamp)
+                event["table_id"] = track.track_id
+                track.layout_version = self.layout_version
+                track.layout_state = "ACTIVE"
+                track.layout_changed_at = timestamp
+                committed_tracks.append(track)
+                committed_events.append(event)
+            elif candidate.missed_count <= self.max_temporary_missing_samples:
+                next_pending.append(candidate)
+        self.pending_additions = next_pending
+        return committed_tracks, committed_events
 
     def _predicted_center(self, track: Track, timestamp: float) -> Point:
         center = box_center(track.box)
@@ -1841,6 +2214,8 @@ class TableTracker:
             track.visible = False
             track.predicted = False
             track.display_box = None
+            if track.layout_state != "MOVE_PENDING":
+                track.layout_state = "ACTIVE"
 
         pairs: List[Tuple[float, int, int]] = []
         for track_index, track in enumerate(self.tracks):
@@ -1879,12 +2254,25 @@ class TableTracker:
 
         assigned_tracks = set()
         assigned_observations = set()
+        layout_candidate_observations = set()
+        committed_layout_changes: List[Dict[str, object]] = []
         selected_pairs = self._select_global_matches(
             pairs, len(self.tracks), len(observations)
         )
         for score, track_index, observation_index in selected_pairs:
             track = self.tracks[track_index]
             observation = observations[observation_index]
+            if self._is_move_candidate(track, observation, frame_diagonal):
+                event = self._update_move_candidate(
+                    track, observation, timestamp, frame_diagonal
+                )
+                layout_candidate_observations.add(observation_index)
+                if event:
+                    assigned_tracks.add(track_index)
+                    assigned_observations.add(observation_index)
+                    committed_layout_changes.append(event)
+                    events.append(event)
+                continue
             assigned_tracks.add(track_index)
             assigned_observations.add(observation_index)
             old_center = box_center(track.box)
@@ -1898,53 +2286,101 @@ class TableTracker:
                 0.45 * track.velocity[0] + 0.55 * measured_velocity[0],
                 0.45 * track.velocity[1] + 0.55 * measured_velocity[1],
             )
-            track.box = observation.box
-            track.display_box = observation.box
+            smoothed_box = blend_boxes(track.box, observation.box, self.layout_bbox_alpha)
+            raw_box = observation.box
+            observation.box = smoothed_box
+            # Keep the raw detection as the motion model anchor.  Smoothing is
+            # for the active layout/overlay; using it for velocity prediction
+            # makes adjacent panning tables steal each other's identity.
+            track.box = raw_box
+            track.display_box = smoothed_box
             track.last_observation = observation
             track.last_seen = timestamp
             track.visible = True
             track.missed = 0
             track.real_hits += 1
+            track.layout_state = "ACTIVE"
+            self.pending_moves.pop(track.track_id, None)
             event = self._apply_state(track, observation, timestamp)
             if event:
                 events.append(event)
 
-        for observation_index, observation in enumerate(observations):
-            if observation_index in assigned_observations:
+        move_pairs: List[Tuple[float, int, int]] = []
+        for track_index, track in enumerate(self.tracks):
+            if track_index in assigned_tracks:
                 continue
-            initial_state = observation.raw_state
-            pending_state = None
-            pending_count = 0
-            if (
-                observation.provisional
-                and initial_state == OccupancyState.OCCUPIED
-                and timestamp > 1e-6
-            ):
-                initial_state = OccupancyState.UNKNOWN
-                pending_state = OccupancyState.OCCUPIED
-                pending_count = 1
-            track = Track(
-                track_id=self.next_id,
-                box=observation.box,
-                stable_state=initial_state,
-                last_observation=observation,
-                first_seen=timestamp,
-                last_seen=timestamp,
-                display_box=observation.box,
-                pending_state=pending_state,
-                pending_count=pending_count,
-            )
-            self.next_id += 1
-            self.tracks.append(track)
-            events.append(
-                {
-                    "type": "entered_view",
-                    "table_id": track.track_id,
-                    "state": initial_state.value,
-                    "timestamp": timestamp,
-                }
-            )
+            for observation_index, observation in enumerate(observations):
+                if (
+                    observation_index in assigned_observations
+                    or observation_index in layout_candidate_observations
+                ):
+                    continue
+                if not self._is_move_candidate(track, observation, frame_diagonal):
+                    continue
+                score = self._layout_move_score(track, observation, frame_diagonal)
+                if score > 0.0:
+                    move_pairs.append((score, track_index, observation_index))
 
+        for _, track_index, observation_index in sorted(move_pairs, reverse=True):
+            if (
+                track_index in assigned_tracks
+                or observation_index in assigned_observations
+                or observation_index in layout_candidate_observations
+            ):
+                continue
+            track = self.tracks[track_index]
+            observation = observations[observation_index]
+            event = self._update_move_candidate(
+                track, observation, timestamp, frame_diagonal
+            )
+            layout_candidate_observations.add(observation_index)
+            if event:
+                assigned_tracks.add(track_index)
+                assigned_observations.add(observation_index)
+                committed_layout_changes.append(event)
+                events.append(event)
+
+        unassigned_observations = [
+            observation
+            for observation_index, observation in enumerate(observations)
+            if observation_index not in assigned_observations
+            and observation_index not in layout_candidate_observations
+        ]
+        if not self.tracks:
+            for observation in unassigned_observations:
+                track = self._create_track(observation, timestamp)
+                events.append(
+                    {
+                        "type": "entered_view",
+                        "table_id": track.track_id,
+                        "state": track.stable_state.value,
+                        "timestamp": timestamp,
+                    }
+                )
+        else:
+            committed_tracks, addition_events = self._update_add_candidates(
+                unassigned_observations,
+                timestamp,
+                frame_diagonal,
+            )
+            for event in addition_events:
+                committed_layout_changes.append(event)
+                events.append(event)
+            for track in committed_tracks:
+                events.append(
+                    {
+                        "type": "entered_view",
+                        "table_id": track.track_id,
+                        "state": track.stable_state.value,
+                        "timestamp": timestamp,
+                    }
+                )
+
+        removal_threshold = min(
+            self.max_missed + 1,
+            self.layout_remove_confirmations,
+        )
+        pending_removals: List[Dict[str, object]] = []
         surviving: List[Track] = []
         for track in self.tracks:
             if not track.visible:
@@ -1956,8 +2392,8 @@ class TableTracker:
                 inside_fraction = intersection_area(predicted_box, frame_box) / max(
                     1.0, box_area(predicted_box)
                 )
-                if (
-                    track.missed <= self.max_missed
+                can_hold_missing = (
+                    track.missed < removal_threshold
                     and inside_fraction >= 0.95
                     and track.stable_state
                     in (OccupancyState.OCCUPIED, OccupancyState.EMPTY)
@@ -1969,23 +2405,59 @@ class TableTracker:
                     and not is_severely_border_cropped(
                         predicted_box, width, height, pixels=3
                     )
-                ):
+                )
+                if can_hold_missing:
                     track.visible = True
                     track.predicted = True
                     track.display_box = predicted_box
-            if track.missed <= self.max_missed:
+                    track.layout_state = (
+                        "MOVE_PENDING"
+                        if track.track_id in self.pending_moves
+                        else "TEMP_MISSING"
+                    )
+                    pending_removals.append(
+                        {
+                            "candidate_id": f"REMOVE{track.track_id:03d}",
+                            "change_type": "REMOVED",
+                            "source_table_ids": [track.track_id],
+                            "old_bbox": [round(value, 2) for value in track.box],
+                            "confirmation_count": track.missed,
+                            "required_confirmation_count": removal_threshold,
+                            "last_detected_time": round(track.last_seen, 6),
+                        }
+                    )
+            if track.missed < removal_threshold:
                 surviving.append(track)
             else:
                 # Leaving the field of view is explicitly not an EMPTY event.
-                events.append(
-                    {
-                        "type": "left_view",
-                        "table_id": track.track_id,
-                        "last_state": track.stable_state.value,
-                        "timestamp": timestamp,
-                    }
-                )
+                left_event = {
+                    "type": "left_view",
+                    "table_id": track.track_id,
+                    "last_state": track.stable_state.value,
+                    "timestamp": timestamp,
+                }
+                events.append(left_event)
+                if track.last_observation.source != "inferred-seat":
+                    track.layout_state = "RETIRED"
+                    event = self._layout_change_event(
+                        "REMOVED",
+                        timestamp,
+                        table_id=track.track_id,
+                        old_bbox=track.box,
+                    )
+                    committed_layout_changes.append(event)
+                    events.append(event)
         self.tracks = surviving
+        pending_layout_changes = (
+            [candidate.to_dict() for candidate in self.pending_additions]
+            + [candidate.to_dict() for candidate in self.pending_moves.values()]
+            + pending_removals
+        )
+        layout_state = "STABLE"
+        if pending_layout_changes:
+            layout_state = "LAYOUT_CHANGE_PENDING"
+        if committed_layout_changes:
+            layout_state = "LAYOUT_CHANGED"
         return TrackerUpdate(
             visible_tracks=sorted(
                 [track for track in self.tracks if track.visible],
@@ -1993,6 +2465,18 @@ class TableTracker:
             ),
             all_tracks=list(self.tracks),
             events=events,
+            layout_version=self.layout_version,
+            layout_state=layout_state,
+            raw_table_count=len(observations),
+            stable_table_count=len(
+                [
+                    track
+                    for track in self.tracks
+                    if track.last_observation.source != "inferred-seat"
+                ]
+            ),
+            pending_layout_changes=pending_layout_changes,
+            committed_layout_changes=committed_layout_changes,
         )
 
 
@@ -2518,7 +3002,7 @@ def render_frame(
         _draw_label(output, "SCENE CHANGE - RESET / IGNORE", (output.shape[1] // 2, header_height), STATE_COLORS[OccupancyState.IGNORE])
     cv2.putText(
         output,
-        f"visible={len(update.visible_tracks)}  occupied={occupied}  empty={empty}  ignore={ignored}  inferred={inferred}  chairs={occupied_chairs}  inference={analysis.inference_ms:.0f}ms",
+        f"visible={len(update.visible_tracks)}  occupied={occupied}  empty={empty}  ignore={ignored}  inferred={inferred}  chairs={occupied_chairs}  layout=v{update.layout_version} {update.layout_state}  raw/stable={update.raw_table_count}/{update.stable_table_count}  inference={analysis.inference_ms:.0f}ms",
         (18, int(header_height * 0.80)),
         cv2.FONT_HERSHEY_SIMPLEX,
         scale * 0.75,
@@ -2538,6 +3022,7 @@ def render_frame(
             evidence = evidence[:39] + "..."
         label = (
             f"{track.label} {track.visible_state.value.upper()} "
+            f"layout=v{track.layout_version} {track.layout_state} "
             f"conf={observation.raw_score:.2f} table={observation.table_confidence:.2f}"
         )
         if track.predicted:
@@ -2565,6 +3050,28 @@ def render_frame(
                 )
 
     if debug:
+        for change in update.pending_layout_changes:
+            change_type = str(change.get("change_type", "PENDING"))
+            color = (80, 185, 230)
+            box_key = "candidate_bbox" if "candidate_bbox" in change else "old_bbox"
+            box = change.get(box_key)
+            if box and len(box) == 4:
+                x1, y1, x2, y2 = [int(round(float(value))) for value in box]
+                cv2.rectangle(output, (x1, y1), (x2, y2), color, 2)
+                label = (
+                    f"{change_type}_PENDING "
+                    f"confirm={change.get('confirmation_count', 0)}/"
+                    f"{change.get('required_confirmation_count', 0)}"
+                )
+                if change.get("source_table_ids"):
+                    label += f" table={change['source_table_ids']}"
+                _draw_label(output, label, (x1, max(header_height + 4, y1)), color)
+                old_box = change.get("old_bbox")
+                if change_type == "MOVED" and old_box and len(old_box) == 4:
+                    ox1, oy1, ox2, oy2 = [int(round(float(value))) for value in old_box]
+                    old_center = tuple(int(round(value)) for value in box_center((ox1, oy1, ox2, oy2)))
+                    new_center = tuple(int(round(value)) for value in box_center((x1, y1, x2, y2)))
+                    cv2.line(output, old_center, new_center, color, 2, cv2.LINE_AA)
         for pose in analysis.poses:
             color = {
                 PoseState.SEATED: (220, 70, 210),
@@ -2586,6 +3093,13 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "source": observation.source,
         "layout_id": observation.layout_id,
         "layout_name": observation.layout_name,
+        "layout_version": track.layout_version,
+        "layout_state": track.layout_state,
+        "layout_changed_at": (
+            round(track.layout_changed_at, 6)
+            if track.layout_changed_at is not None
+            else None
+        ),
         "box": [round(value, 2) for value in track.current_box],
         "predicted": track.predicted,
         "state": track.visible_state.value,
@@ -2617,6 +3131,8 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "chair_seated_people": len(observation.chair_seated_people),
         "pending_state": track.pending_state.value if track.pending_state else None,
         "pending_count": track.pending_count,
+        "missing_count": track.missed,
+        "occupancy_history_key": [track.layout_version, track.track_id],
     }
     # Only burst-vote runs carry vote counts; keep legacy records unchanged.
     if observation.vote_counts is not None:
@@ -2653,6 +3169,14 @@ def frame_log_record(
             "seated_poses": sum(pose.state == PoseState.SEATED for pose in analysis.poses),
             "standing_poses": sum(pose.state == PoseState.STANDING for pose in analysis.poses),
             "unknown_poses": sum(pose.state == PoseState.UNKNOWN for pose in analysis.poses),
+        },
+        "layout": {
+            "active_layout_version": update.layout_version,
+            "layout_state": update.layout_state,
+            "raw_table_count": update.raw_table_count,
+            "stable_table_count": update.stable_table_count,
+            "pending_changes": update.pending_layout_changes,
+            "committed_changes": update.committed_layout_changes,
         },
         "tables": [track_to_dict(track) for track in visible],
         "poses": [

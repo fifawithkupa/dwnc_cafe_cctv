@@ -84,6 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--occupy-confirm", type=int, default=2, help="Samples required to confirm an occupied state change")
     parser.add_argument("--empty-confirm", type=int, default=3, help="Samples required to confirm an empty state change")
     parser.add_argument("--track-ttl", type=int, default=3, help="Missed samples retained without becoming empty")
+    parser.add_argument("--table-layout-add-confirm", type=int, default=3, help="Repeated samples required before a new detected table joins the active layout")
+    parser.add_argument("--table-layout-move-confirm", type=int, default=3, help="Repeated samples required before a moved table bbox is committed")
+    parser.add_argument("--table-layout-remove-confirm", type=int, default=3, help="Repeated missed samples required before a table is retired from the active layout")
+    parser.add_argument("--table-layout-bbox-alpha", type=float, default=0.25, help="EMA alpha used to smooth stable table layout boxes")
     parser.add_argument("--no-inferred-seats", action="store_true", help="Disable occupied fallback for a seated person whose table is occluded")
     parser.add_argument("--no-video", action="store_true", help="Write the JSONL log but skip annotated MP4")
     parser.add_argument("--debug", action="store_true", help="Draw pose and tabletop diagnostics")
@@ -133,6 +137,14 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--occupy-confirm and --empty-confirm must be at least 1")
     if args.track_ttl < 0:
         raise ValueError("--track-ttl cannot be negative")
+    if (
+        args.table_layout_add_confirm < 1
+        or args.table_layout_move_confirm < 1
+        or args.table_layout_remove_confirm < 1
+    ):
+        raise ValueError("--table-layout-*-confirm values must be at least 1")
+    if not 0.0 <= args.table_layout_bbox_alpha <= 1.0:
+        raise ValueError("--table-layout-bbox-alpha must be between 0 and 1")
     if args.max_samples is not None and args.max_samples < 1:
         raise ValueError("--max-samples must be at least 1")
     if args.layout is not None and not args.layout.exists():
@@ -284,6 +296,12 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "occupy_confirmations": args.occupy_confirm,
             "empty_confirmations": args.empty_confirm,
             "track_ttl": args.track_ttl,
+            "table_layout": {
+                "add_confirmation_samples": args.table_layout_add_confirm,
+                "move_confirmation_samples": args.table_layout_move_confirm,
+                "remove_confirmation_samples": args.table_layout_remove_confirm,
+                "bbox_ema_alpha": args.table_layout_bbox_alpha,
+            },
             "scene_reset": not args.no_scene_reset,
             "max_samples": args.max_samples,
             "device": args.device,
@@ -318,6 +336,10 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             occupy_confirmations=args.occupy_confirm,
             empty_confirmations=args.empty_confirm,
             max_missed=args.track_ttl,
+            layout_add_confirmations=args.table_layout_add_confirm,
+            layout_move_confirmations=args.table_layout_move_confirm,
+            layout_remove_confirmations=args.table_layout_remove_confirm,
+            layout_bbox_alpha=args.table_layout_bbox_alpha,
         )
 
     tracker = new_tracker()

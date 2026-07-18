@@ -164,8 +164,6 @@ class AnalyzerConfig:
     moving_person_threshold: float = 0.025
     border_pixels: int = 3
     infer_occluded_tables: bool = True
-    table_roi_x_margin: float = 0.45
-    table_roi_y_margin: float = 0.60
     # Layout mode: let zones drift toward matching furniture detections.
     layout_tracking: bool = True
     layout_track_alpha: float = 0.35
@@ -316,22 +314,6 @@ def table_surface_box(box: Box) -> Box:
     )
 
 
-def table_occupancy_roi(
-    box: Box,
-    frame_shape: Tuple[int, int],
-    x_margin: float = 0.45,
-    y_margin: float = 0.60,
-) -> Box:
-    """Expanded table ROI used for occupancy evidence.
-
-    SeatNow intentionally judges evidence in a region around the physical
-    tabletop, not only the detector's tight table box.  This catches seated
-    customers and belongings on adjacent chairs without needing chair ROIs.
-    """
-    height, width = frame_shape
-    return clip_box(expand_box(box, x_margin, y_margin), width, height)
-
-
 def angle_degrees(a: Optional[Point], b: Optional[Point], c: Optional[Point]) -> Optional[float]:
     if a is None or b is None or c is None:
         return None
@@ -450,25 +432,20 @@ def deduplicate_tables(tables: Sequence[Detection], overlap_threshold: float = 0
 
 
 def _object_table_score(obj: Detection, table: Detection) -> float:
-    roi = table.box
+    surface = table_surface_box(table.box)
     object_area = box_area(obj.box)
-    roi_area = box_area(roi)
-    if object_area <= 0 or roi_area <= 0 or object_area > roi_area * 0.85:
+    table_area = box_area(table.box)
+    if object_area <= 0 or table_area <= 0 or object_area > table_area * 1.25:
         return 0.0
 
-    intersection_ratio = intersection_area(obj.box, roi) / object_area
-    center = box_center(obj.box)
+    intersection_ratio = intersection_area(obj.box, surface) / object_area
     bottom_center = ((obj.box[0] + obj.box[2]) / 2.0, obj.box[3])
-    center_distance = point_box_distance(center, roi)
-    bottom_distance = point_box_distance(bottom_center, roi)
-    maximum_distance = max(10.0, 0.08 * box_diagonal(roi))
-    proximity = max(
-        0.0,
-        1.0 - min(center_distance, bottom_distance) / maximum_distance,
-    )
-    if intersection_ratio < 0.12 and proximity <= 0.0:
+    anchor_distance = point_box_distance(bottom_center, surface)
+    maximum_distance = max(10.0, 0.18 * box_diagonal(table.box))
+    proximity = max(0.0, 1.0 - anchor_distance / maximum_distance)
+    if intersection_ratio < 0.08 and proximity <= 0.0:
         return 0.0
-    return 0.80 * min(1.0, intersection_ratio * 1.5) + 0.20 * proximity
+    return 0.65 * min(1.0, intersection_ratio * 2.0) + 0.35 * proximity
 
 
 def associate_objects(
@@ -487,22 +464,22 @@ def associate_objects(
 def _person_table_score(person: PoseObservation, table: Detection, frame_shape: Tuple[int, int]) -> float:
     height, width = frame_shape
     frame_diagonal = math.hypot(width, height)
-    roi = table.box
+    expanded = expand_box(table.box, 0.12, 0.18)
     person_height = max(1.0, person.box[3] - person.box[1])
-    roi_diagonal = box_diagonal(roi)
+    table_diagonal = box_diagonal(table.box)
     vertical_gap = max(0.0, table.box[1] - person.box[3])
-    if vertical_gap > max(0.24 * person_height, 0.10 * roi_diagonal):
+    if vertical_gap > max(0.24 * person_height, 0.10 * table_diagonal):
         return 0.0
-    distance = point_box_distance(person.anchor, roi)
-    maximum = max(0.15 * roi_diagonal, 0.025 * frame_diagonal)
+    distance = point_box_distance(person.anchor, expanded)
+    maximum = max(0.50 * table_diagonal, 0.040 * frame_diagonal)
     if distance > maximum:
         return 0.0
 
-    # A seated body should be inside or immediately beside the expanded table
-    # ROI, not arbitrarily far across the scene.
+    # A seated body should be beside/overlapping a table, not arbitrarily far
+    # across the scene.  IoU is only a bonus; it is not required.
     proximity = max(0.0, 1.0 - distance / maximum)
-    overlap_bonus = min(1.0, overlap_over_smaller(person.box, roi))
-    return 0.82 * proximity + 0.18 * overlap_bonus
+    overlap_bonus = min(1.0, overlap_over_smaller(person.box, expand_box(table.box, 0.20)))
+    return 0.78 * proximity + 0.22 * overlap_bonus
 
 
 def associate_people(
@@ -1157,26 +1134,6 @@ class SeatNowAnalyzer:
                 objects.append(mapped)
         return objects
 
-    def _occupancy_tables(
-        self,
-        tables: Sequence[Detection],
-        frame_shape: Tuple[int, int],
-    ) -> List[Detection]:
-        """Return table detections with the larger occupancy ROI as their box."""
-        return [
-            Detection(
-                name=table.name,
-                box=table_occupancy_roi(
-                    table.box,
-                    frame_shape,
-                    self.config.table_roi_x_margin,
-                    self.config.table_roi_y_margin,
-                ),
-                confidence=table.confidence,
-            )
-            for table in tables
-        ]
-
     def analyze(
         self,
         frame: np.ndarray,
@@ -1269,7 +1226,6 @@ class SeatNowAnalyzer:
             )
             tables = deduplicate_tables(table_candidates, self.config.table_overlap)
             seat_detections = []
-        occupancy_tables = self._occupancy_tables(tables, (height, width))
 
         pose_result = self.pose_model.predict(
             source=frame,
@@ -1327,30 +1283,30 @@ class SeatNowAnalyzer:
             )
         suppress_conflicting_weak_seated_poses(poses)
 
-        objects = self._crop_objects(frame, occupancy_tables, objects)
+        objects = self._crop_objects(frame, tables, objects)
         objects = filter_carried_objects(objects, poses)
-        object_assignments = associate_objects(occupancy_tables, objects)
+        object_assignments = associate_objects(tables, objects)
         chair_table_assignments: Dict[int, List[int]] = {
-            index: [] for index in range(len(occupancy_tables))
+            index: [] for index in range(len(tables))
         }
         strong_chair_assignments: Dict[int, List[int]] = {
-            index: [] for index in range(len(occupancy_tables))
+            index: [] for index in range(len(tables))
         }
         chair_people_assignments: Dict[int, List[PoseObservation]] = {}
         chair_object_assignments: Dict[int, List[Detection]] = {}
         linked_chair_person_ids: set = set()
         direct_table_poses = list(poses)
         people_assignments, unassigned_people = associate_people(
-            occupancy_tables, direct_table_poses, (height, width)
+            tables, direct_table_poses, (height, width)
         )
         unknown_assignments, _ = associate_people(
-            occupancy_tables,
+            tables,
             direct_table_poses,
             (height, width),
             allowed_states=(PoseState.UNKNOWN,),
         )
         observations: List[TableObservation] = []
-        for index, table in enumerate(occupancy_tables):
+        for index, table in enumerate(tables):
             assigned_objects = object_assignments[index]
             assigned_people = people_assignments[index]
             assigned_unknown_people = unknown_assignments[index]

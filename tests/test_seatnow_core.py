@@ -36,7 +36,6 @@ from seatnow_core import (
     frame_log_record,
     is_scene_change,
     occupancy_state_from_evidence,
-    table_occupancy_roi,
     track_to_dict,
 )
 
@@ -264,39 +263,14 @@ class AssociationTests(unittest.TestCase):
         self.assertNotIn(standing, assigned)
         self.assertNotIn(standing, unassigned)
 
-    def test_expanded_table_roi_accepts_seated_person_without_chair_roi(self):
-        table = Detection(
-            "dining table",
-            table_occupancy_roi((100.0, 100.0, 200.0, 200.0), (400, 400)),
-            0.9,
-        )
-        seated_near_chair_position = pose_observation(
-            PoseState.SEATED,
-            box=(230.0, 155.0, 290.0, 285.0),
-            anchor=(260.0, 220.0),
-        )
+    def test_table_object_assignment_uses_original_tabletop_roi(self):
+        table = Detection("dining table", (100.0, 100.0, 200.0, 200.0), 0.9)
+        cup_on_table = Detection("cup", (130.0, 95.0, 155.0, 130.0), 0.8)
+        bag_next_to_table = Detection("backpack", (225.0, 170.0, 265.0, 240.0), 0.82)
 
-        assignments, unassigned = associate_people(
-            [table], [seated_near_chair_position], frame_shape=(400, 400)
-        )
+        assignments = associate_objects([table], [cup_on_table, bag_next_to_table])
 
-        self.assertEqual(assignments[0], [seated_near_chair_position])
-        self.assertEqual(unassigned, [])
-
-    def test_expanded_table_roi_accepts_large_bag_next_to_table(self):
-        table = Detection(
-            "dining table",
-            table_occupancy_roi((100.0, 100.0, 200.0, 200.0), (400, 400)),
-            0.9,
-        )
-        bag_on_adjacent_chair = Detection(
-            "backpack", (225.0, 170.0, 265.0, 240.0), 0.82
-        )
-        far_bag = Detection("backpack", (320.0, 300.0, 360.0, 360.0), 0.7)
-
-        assignments = associate_objects([table], [bag_on_adjacent_chair, far_bag])
-
-        self.assertEqual(assignments[0], [bag_on_adjacent_chair])
+        self.assertEqual(assignments[0], [cup_on_table])
 
     def test_chair_is_linked_to_only_one_nearest_table(self):
         tables = [

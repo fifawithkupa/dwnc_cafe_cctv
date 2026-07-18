@@ -79,8 +79,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--object-conf", type=float, default=0.15, help="Customer-object confidence threshold")
     parser.add_argument("--pose-conf", type=float, default=0.20, help="Pose person confidence threshold")
     parser.add_argument("--keypoint-conf", type=float, default=0.30, help="Pose keypoint confidence threshold")
-    parser.add_argument("--table-roi-x-margin", type=float, default=0.45, help="Expand each table ROI horizontally by this fraction of table width for occupancy evidence")
-    parser.add_argument("--table-roi-y-margin", type=float, default=0.60, help="Expand each table ROI vertically by this fraction of table height for occupancy evidence")
     parser.add_argument("--angle", type=float, default=110.0, help="Sitting angle threshold in degrees")
     parser.add_argument("--device", default="cpu", help="Ultralytics device, e.g. cpu or 0")
     parser.add_argument("--occupy-confirm", type=int, default=2, help="Samples required to confirm an occupied state change")
@@ -131,8 +129,6 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--imgsz, --pose-imgsz and --crop-imgsz must be at least 320")
     if args.max_crops < 0:
         raise ValueError("--max-crops cannot be negative")
-    if args.table_roi_x_margin < 0 or args.table_roi_y_margin < 0:
-        raise ValueError("--table-roi-x-margin and --table-roi-y-margin cannot be negative")
     if args.occupy_confirm < 1 or args.empty_confirm < 1:
         raise ValueError("--occupy-confirm and --empty-confirm must be at least 1")
     if args.track_ttl < 0:
@@ -174,8 +170,6 @@ def _make_analyzer(args: argparse.Namespace, layout=None) -> SeatNowAnalyzer:
         table_crop_confidence=args.crop_conf,
         maximum_table_crops=args.max_crops,
         infer_occluded_tables=not args.no_inferred_seats,
-        table_roi_x_margin=args.table_roi_x_margin,
-        table_roi_y_margin=args.table_roi_y_margin,
         layout_tracking=not args.no_layout_track,
         device=args.device,
     )
@@ -238,8 +232,6 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 and args.max_crops == 4
                 and args.pose_conf == 0.20
                 and args.keypoint_conf == 0.30
-                and args.table_roi_x_margin == 0.45
-                and args.table_roi_y_margin == 0.60
                 and args.angle == 110.0
                 and args.max_table_area == 0.06
                 and not args.no_inferred_seats
@@ -279,8 +271,6 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "object_confidence": args.object_conf,
             "pose_confidence": args.pose_conf,
             "keypoint_confidence": args.keypoint_conf,
-            "table_roi_x_margin": args.table_roi_x_margin,
-            "table_roi_y_margin": args.table_roi_y_margin,
             "sitting_angle": args.angle,
             "maximum_table_area_fraction": args.max_table_area,
             "large_table_confidence": analyzer.config.large_table_confidence,

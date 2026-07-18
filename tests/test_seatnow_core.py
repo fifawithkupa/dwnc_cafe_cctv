@@ -36,6 +36,7 @@ from seatnow_core import (
     frame_log_record,
     is_scene_change,
     occupancy_state_from_evidence,
+    table_occupancy_roi,
     track_to_dict,
 )
 
@@ -263,6 +264,40 @@ class AssociationTests(unittest.TestCase):
         self.assertNotIn(standing, assigned)
         self.assertNotIn(standing, unassigned)
 
+    def test_expanded_table_roi_accepts_seated_person_without_chair_roi(self):
+        table = Detection(
+            "dining table",
+            table_occupancy_roi((100.0, 100.0, 200.0, 200.0), (400, 400)),
+            0.9,
+        )
+        seated_near_chair_position = pose_observation(
+            PoseState.SEATED,
+            box=(230.0, 155.0, 290.0, 285.0),
+            anchor=(260.0, 220.0),
+        )
+
+        assignments, unassigned = associate_people(
+            [table], [seated_near_chair_position], frame_shape=(400, 400)
+        )
+
+        self.assertEqual(assignments[0], [seated_near_chair_position])
+        self.assertEqual(unassigned, [])
+
+    def test_expanded_table_roi_accepts_large_bag_next_to_table(self):
+        table = Detection(
+            "dining table",
+            table_occupancy_roi((100.0, 100.0, 200.0, 200.0), (400, 400)),
+            0.9,
+        )
+        bag_on_adjacent_chair = Detection(
+            "backpack", (225.0, 170.0, 265.0, 240.0), 0.82
+        )
+        far_bag = Detection("backpack", (320.0, 300.0, 360.0, 360.0), 0.7)
+
+        assignments = associate_objects([table], [bag_on_adjacent_chair, far_bag])
+
+        self.assertEqual(assignments[0], [bag_on_adjacent_chair])
+
     def test_chair_is_linked_to_only_one_nearest_table(self):
         tables = [
             Detection("dining table", (100.0, 100.0, 200.0, 180.0), 0.9),
@@ -310,7 +345,7 @@ class AssociationTests(unittest.TestCase):
         self.assertEqual(assignments[0], [seated])
         self.assertNotIn(standing, assignments[0])
 
-    def test_table_or_rule_includes_occupied_linked_chair(self):
+    def test_table_or_rule_ignores_chair_only_roi(self):
         chair = Detection("chair", (100.0, 100.0, 200.0, 260.0), 0.91)
         cup = Detection("cup", (120.0, 100.0, 140.0, 130.0), 0.8)
         seated = pose_observation(PoseState.SEATED)
@@ -318,7 +353,7 @@ class AssociationTests(unittest.TestCase):
 
         self.assertEqual(
             occupancy_state_from_evidence([], [], [], [chair]),
-            OccupancyState.OCCUPIED,
+            OccupancyState.EMPTY,
         )
         self.assertEqual(
             occupancy_state_from_evidence([cup], [], [], []),

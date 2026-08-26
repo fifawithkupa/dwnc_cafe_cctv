@@ -50,7 +50,8 @@ python3 -m venv venv
 `--det-model yolov8x.pt --pose-model yolov8x-pose.pt` — 약 270MB, 역시 자동 다운로드).
 
 **샘플 영상(`sample_raw/`)과 결과(`sample_results/`)도 저장소에 없습니다** (용량·개인정보).
-팀 드라이브로 공유 — 받은 뒤 프로젝트 루트에 같은 이름의 폴더로 두면 됩니다.
+팀 구글 드라이브로 공유 — 받는 방법과 **"오프라인 사용 가능" 고정이 왜 필수인지**는
+[`ONBOARDING.md` §2](ONBOARDING.md) 참조.
 
 ## 실행
 

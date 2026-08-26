@@ -1013,6 +1013,47 @@ def _inferred_group_box(group: Sequence[PoseObservation], width: int, height: in
     )
 
 
+def model_backend(path: Path) -> str:
+    """Name the inference backend implied by a weights path.
+
+    SeatNow ships as ``.pt`` on a laptop and as an OpenVINO IR directory on the
+    edge box.  Ultralytics loads both, but every non-``.pt`` format needs an
+    explicit ``task=``, so the format has to be recognised before loading.
+    """
+    path = Path(path)
+    name = path.name.lower()
+    if path.is_dir() or name.endswith("_openvino_model"):
+        return "openvino"
+    suffix = path.suffix.lower()
+    return {
+        ".pt": "pytorch",
+        ".onnx": "onnx",
+        ".xml": "openvino",
+        ".engine": "tensorrt",
+        ".tflite": "tflite",
+        ".mlpackage": "coreml",
+        ".param": "ncnn",
+    }.get(suffix, "unknown")
+
+
+def load_model(path: Path, task: str):
+    """Load detect/pose weights in whichever exported format ``path`` names."""
+    from ultralytics import YOLO
+
+    if task not in ("detect", "pose"):
+        raise ValueError(f"Unsupported task: {task!r}")
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Model not found: {path}")
+    backend = model_backend(path)
+    if backend == "unknown":
+        raise ValueError(f"Unrecognised model format: {path}")
+    # A .pt file carries its own task metadata; exported formats do not.
+    if backend == "pytorch":
+        return YOLO(str(path))
+    return YOLO(str(path), task=task)
+
+
 class LayoutZoneTracker:
     """Drift calibrated layout zones toward matching furniture detections.
 
@@ -1109,8 +1150,6 @@ class SeatNowAnalyzer:
         config: AnalyzerConfig,
         layout: Optional[object] = None,
     ):
-        from ultralytics import YOLO
-
         self.config = config
         # Duck-typed SeatLayout: only .tables, .chair_boxes(), .chair_assignments()
         # are used, so seatnow_layout is never imported here.
@@ -1120,8 +1159,10 @@ class SeatNowAnalyzer:
         self.zone_tracker: Optional[LayoutZoneTracker] = None
         self.det_model_path = Path(det_model_path)
         self.pose_model_path = Path(pose_model_path)
-        self.det_model = YOLO(str(self.det_model_path))
-        self.pose_model = YOLO(str(self.pose_model_path))
+        self.det_model = load_model(self.det_model_path, "detect")
+        self.pose_model = load_model(self.pose_model_path, "pose")
+        self.det_backend = model_backend(self.det_model_path)
+        self.pose_backend = model_backend(self.pose_model_path)
         self.names = self.det_model.names
         self.previous_poses: List[PoseObservation] = []
         self.previous_pose_timestamp: Optional[float] = None

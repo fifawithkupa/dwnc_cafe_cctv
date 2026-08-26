@@ -28,6 +28,7 @@ from seatnow_core import (
     TableTracker,
     aggregate_burst_observations,
     frame_log_record,
+    model_backend,
     is_scene_change,
     probe_video,
     render_frame,
@@ -110,7 +111,18 @@ def _default_output(input_path: Path, is_video: bool) -> Path:
 
 
 def _sha256(path: Path) -> str:
+    """Digest a weights file, or a whole exported-model directory.
+
+    OpenVINO/NCNN exports are directories, so a run's model provenance can no
+    longer assume a single file.
+    """
     digest = hashlib.sha256()
+    if path.is_dir():
+        for member in sorted(path.rglob("*")):
+            if member.is_file():
+                digest.update(member.relative_to(path).as_posix().encode("utf-8"))
+                digest.update(_sha256(member).encode("ascii"))
+        return digest.hexdigest()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
@@ -192,8 +204,12 @@ def _make_analyzer(args: argparse.Namespace, layout=None) -> SeatNowAnalyzer:
         layout_tracking=not args.no_layout_track,
         device=args.device,
     )
-    print(f"Loading detector: {det_path.name}", flush=True)
-    print(f"Loading pose model: {pose_path.name}", flush=True)
+    print(
+        f"Loading detector: {det_path.name} [{model_backend(det_path)}]", flush=True
+    )
+    print(
+        f"Loading pose model: {pose_path.name} [{model_backend(pose_path)}]", flush=True
+    )
     return SeatNowAnalyzer(det_path, pose_path, config, layout=layout)
 
 
@@ -278,8 +294,10 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         "models": {
             "detector": str(analyzer.det_model_path),
             "detector_sha256": _sha256(analyzer.det_model_path),
+            "detector_backend": analyzer.det_backend,
             "pose": str(analyzer.pose_model_path),
             "pose_sha256": _sha256(analyzer.pose_model_path),
+            "pose_backend": analyzer.pose_backend,
         },
         "config": {
             "sample_seconds": args.sample_seconds,

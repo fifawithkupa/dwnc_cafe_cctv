@@ -93,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-inferred-seats", action="store_true", help="Disable occupied fallback for a seated person whose table is occluded")
     parser.add_argument("--no-video", action="store_true", help="Write the JSONL log but skip annotated MP4")
     parser.add_argument("--debug", action="store_true", help="Draw pose and tabletop diagnostics")
+    parser.add_argument("--log-detections", action="store_true", help="Add the detector's raw output and dropped-table rules to each JSONL record (diagnoses model miss vs. code rejection)")
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
     parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
@@ -211,7 +212,9 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     if not cv2.imwrite(str(output), rendered):
         raise RuntimeError(f"Failed to write image: {output}")
-    record = frame_log_record(0, analysis, update)
+    record = frame_log_record(
+        0, analysis, update, include_raw_detections=args.log_detections
+    )
     print(json.dumps(record, ensure_ascii=False, indent=2))
     print(f"Annotated image: {output}")
     return 0
@@ -303,6 +306,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "table_crop_confidence": args.crop_conf,
             "maximum_table_crops": args.max_crops,
             "infer_occluded_tables": not args.no_inferred_seats,
+            "log_detections": args.log_detections,
             "occupy_confirmations": args.occupy_confirm,
             "empty_confirmations": args.empty_confirm,
             "track_ttl": args.track_ttl,
@@ -414,7 +418,12 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                                 "tracker_reset": True,
                             },
                         )
-                    record = frame_log_record(frame_index, analysis, update)
+                    record = frame_log_record(
+                        frame_index,
+                        analysis,
+                        update,
+                        include_raw_detections=args.log_detections,
+                    )
                     record["scene_id"] = scene_id
                     for table in record["tables"]:
                         table["scene_id"] = scene_id
@@ -517,7 +526,12 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         )
                     next_interval = controller.next_interval(update.all_tracks)
                     fast_mode = next_interval < controller.base_seconds
-                    record = frame_log_record(processed, analysis, update)
+                    record = frame_log_record(
+                        processed,
+                        analysis,
+                        update,
+                        include_raw_detections=args.log_detections,
+                    )
                     record["scene_id"] = scene_id
                     for table in record["tables"]:
                         table["scene_id"] = scene_id

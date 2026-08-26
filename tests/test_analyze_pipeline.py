@@ -328,5 +328,81 @@ class LayoutChairPipelineTests(unittest.TestCase):
         self.assertEqual(len(analyzer.zone_tracker.chair_boxes), 1)
 
 
+class RawDetectionLoggingTests(unittest.TestCase):
+    """T2: the log must separate a model miss from a code rejection."""
+
+    def test_dropped_table_names_the_rule_that_rejected_it(self):
+        # 0.14 clears table_rescue_confidence (0.12) but not table_confidence
+        # (0.20), and no chairs back it, so the selection rules drop it.
+        weak_table = (500.0, 300.0, 780.0, 430.0)
+        analyzer = build_analyzer([("dining table", weak_table, 0.14)])
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.tables, [])
+        self.assertEqual(
+            [rule for _, rule in analysis.dropped_tables],
+            ["low_confidence_no_chair_support"],
+        )
+
+    def test_table_below_rescue_confidence_is_reported_separately(self):
+        analyzer = build_analyzer(
+            [("dining table", (500.0, 300.0, 780.0, 430.0), 0.05)]
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(
+            [rule for _, rule in analysis.dropped_tables],
+            ["below_rescue_confidence"],
+        )
+
+    def test_accepted_table_is_not_reported_as_dropped(self):
+        analyzer = build_analyzer(
+            [("dining table", (500.0, 300.0, 780.0, 430.0), 0.75)]
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(len(analysis.tables), 1)
+        self.assertEqual(analysis.dropped_tables, [])
+
+    def test_layout_mode_reports_no_dropped_tables(self):
+        layout = LayoutChairPipelineTests()._layout()
+        analyzer = build_analyzer(
+            [("dining table", (10.0, 10.0, 90.0, 90.0), 0.9)], layout=layout
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.dropped_tables, [])
+
+    def test_record_carries_raw_detections_only_when_requested(self):
+        from seatnow_core import TableTracker, frame_log_record
+
+        analyzer = build_analyzer(
+            [
+                ("dining table", (500.0, 300.0, 780.0, 430.0), 0.75),
+                ("dining table", (100.0, 300.0, 200.0, 380.0), 0.14),
+                ("chair", (560.0, 400.0, 700.0, 560.0), 0.85),
+            ]
+        )
+        analysis = analyzer.analyze(FRAME)
+        tracker = TableTracker()
+        update = tracker.update(analysis.tables, 0.0, FRAME.shape[:2])
+
+        plain = frame_log_record(0, analysis, update)
+        verbose = frame_log_record(0, analysis, update, include_raw_detections=True)
+
+        self.assertNotIn("raw_detections", plain)
+        raw = verbose["raw_detections"]
+        self.assertEqual(raw["counts"], {"chair": 1, "dining table": 2})
+        self.assertEqual(len(raw["items"]), 3)
+        self.assertEqual(
+            [entry["rule"] for entry in raw["dropped_tables"]],
+            ["low_confidence_no_chair_support"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

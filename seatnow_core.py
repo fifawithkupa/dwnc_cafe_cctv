@@ -145,6 +145,10 @@ class FrameAnalysis:
     inference_ms: float
     scene_change: bool = False
     scene_metrics: Dict[str, float] = field(default_factory=dict)
+    # Diagnostics: raw "dining table" boxes the selection rules rejected.
+    # A missed table is a model miss when it is absent here too, and a code
+    # miss when it appears here with the rule that dropped it.
+    dropped_tables: List[Tuple[Detection, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -653,6 +657,7 @@ def select_table_candidates(
     rescue_confidence: float = 0.12,
     rescue_chair_count: int = 2,
     rescue_chair_confidence: float = 0.35,
+    rejections: Optional[List[Tuple[Detection, str]]] = None,
 ) -> List[Detection]:
     """Accept table boxes on confidence, size, and chair-structure evidence.
 
@@ -663,7 +668,15 @@ def select_table_candidates(
     them or at least ``rescue_chair_count`` confident chairs support them; a
     merged box that swallows two independently accepted tables is vetoed so
     adjacent tables are not collapsed into one.
+
+    ``rejections`` optionally collects ``(detection, rule)`` pairs for every
+    candidate this function drops, so a missed table can be attributed to a
+    named rule instead of guessed at (see ``--log-detections``).
     """
+    def reject(candidate: Detection, rule: str) -> None:
+        if rejections is not None:
+            rejections.append((candidate, rule))
+
     height, width = frame_shape
     frame_area = float(max(1, width * height))
     confident_chairs = [
@@ -673,6 +686,7 @@ def select_table_candidates(
     for candidate in candidates:
         area_fraction = box_area(candidate.box) / frame_area
         if area_fraction > hard_area_fraction:
+            reject(candidate, "hard_area_cap")
             continue
         supporting_chairs = sum(
             _chair_table_score(chair, candidate, frame_shape) >= 0.35
@@ -686,8 +700,12 @@ def select_table_candidates(
                 or chair_backed
             ):
                 accepted.append(candidate)
+            else:
+                reject(candidate, "soft_area_cap_unsupported")
         elif candidate.confidence >= rescue_confidence and chair_backed:
             accepted.append(candidate)
+        else:
+            reject(candidate, "low_confidence_no_chair_support")
 
     kept: List[Detection] = []
     for outer in accepted:
@@ -700,6 +718,7 @@ def select_table_candidates(
             and overlap_over_smaller(inner.box, outer.box) >= 0.85
         )
         if contained >= 2:
+            reject(outer, "contains_multiple_tables")
             continue
         # An above-soft-cap box that meaningfully overlaps a smaller accepted
         # table is a merged/duplicated region; keeping it would steal the
@@ -712,9 +731,24 @@ def select_table_candidates(
             for other in accepted
             if other is not outer
         ):
+            reject(outer, "merged_over_smaller_table")
             continue
         kept.append(outer)
     return kept
+
+
+def _explain_dropped_tables(
+    selection_rejections: Sequence[Tuple[Detection, str]],
+    selected: Sequence[Detection],
+    survivors: Sequence[Detection],
+) -> List[Tuple[Detection, str]]:
+    """Label every table candidate that never became an observation."""
+    kept = {id(table) for table in survivors}
+    return list(selection_rejections) + [
+        (candidate, "deduplicated_overlap")
+        for candidate in selected
+        if id(candidate) not in kept
+    ]
 
 
 def filter_carried_objects(
@@ -1244,6 +1278,7 @@ class SeatNowAnalyzer:
 
         detections: List[Detection] = []
         table_candidates: List[Detection] = []
+        below_rescue_tables: List[Detection] = []
         objects: List[Detection] = []
         if det_result.boxes is not None:
             for box_result in det_result.boxes:
@@ -1256,6 +1291,8 @@ class SeatNowAnalyzer:
                 if name == "dining table":
                     if confidence >= self.config.table_rescue_confidence:
                         table_candidates.append(detection)
+                    else:
+                        below_rescue_tables.append(detection)
                 elif (
                     name not in EXCLUDED_OBJECT_CLASSES
                     and confidence >= self.config.object_confidence
@@ -1301,7 +1338,10 @@ class SeatNowAnalyzer:
                 Detection(name="chair", box=box, confidence=1.0)
                 for box in chair_boxes
             ]
+            # Layout zones are ground truth; nothing is "dropped" against them.
+            dropped_tables: List[Tuple[Detection, str]] = []
         else:
+            table_rejections: List[Tuple[Detection, str]] = []
             seat_detections = [
                 detection
                 for detection in detections
@@ -1317,8 +1357,12 @@ class SeatNowAnalyzer:
                 large_table_confidence=self.config.large_table_confidence,
                 hard_area_fraction=self.config.hard_table_area_fraction,
                 rescue_confidence=self.config.table_rescue_confidence,
+                rejections=table_rejections,
             )
             tables = deduplicate_tables(table_candidates, self.config.table_overlap)
+            dropped_tables = _explain_dropped_tables(
+                table_rejections, table_candidates, tables
+            )
 
         pose_result = self.pose_model.predict(
             source=frame,
@@ -1612,6 +1656,11 @@ class SeatNowAnalyzer:
             poses=poses,
             detections=detections,
             inference_ms=inference_ms,
+            dropped_tables=[
+                (detection, "below_rescue_confidence")
+                for detection in below_rescue_tables
+            ]
+            + dropped_tables,
         )
 
 
@@ -3195,13 +3244,44 @@ def track_to_dict(track: Track) -> Dict[str, object]:
     return data
 
 
+def raw_detection_record(analysis: FrameAnalysis) -> Dict[str, object]:
+    """Summarize the detector's own output, before SeatNow's selection rules.
+
+    Without this the log cannot separate "the model never saw it" from "the
+    code discarded it": the tracked-table list only shows what survived.
+    """
+    counts: Dict[str, int] = {}
+    for detection in analysis.detections:
+        counts[detection.name] = counts.get(detection.name, 0) + 1
+    return {
+        "counts": dict(sorted(counts.items())),
+        "items": [
+            {
+                "class": detection.name,
+                "confidence": round(detection.confidence, 4),
+                "box": [round(value, 2) for value in detection.box],
+            }
+            for detection in analysis.detections
+        ],
+        "dropped_tables": [
+            {
+                "rule": rule,
+                "confidence": round(detection.confidence, 4),
+                "box": [round(value, 2) for value in detection.box],
+            }
+            for detection, rule in analysis.dropped_tables
+        ],
+    }
+
+
 def frame_log_record(
     frame_index: int,
     analysis: FrameAnalysis,
     update: TrackerUpdate,
+    include_raw_detections: bool = False,
 ) -> Dict[str, object]:
     visible = update.visible_tracks
-    return {
+    record: Dict[str, object] = {
         "frame_index": frame_index,
         "timestamp": round(analysis.timestamp, 6),
         "inference_ms": round(analysis.inference_ms, 2),
@@ -3247,3 +3327,6 @@ def frame_log_record(
         ],
         "events": update.events,
     }
+    if include_raw_detections:
+        record["raw_detections"] = raw_detection_record(analysis)
+    return record

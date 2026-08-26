@@ -1,7 +1,25 @@
 # SeatNow 코드 작업 플랜
 
 > 작성: 2026-08-26 / 기준 커밋: `main` = `9c0aa4e`
+> 갱신: 2026-08-26 — Phase 1~2 및 T7 하네스 구현 완료 (아래 진행 상황 참조)
 > 근거: 저장소 코드 감사 + 하드웨어 구매 감사 결과 (`SEATNOW_전체정리.md` §9 참조)
+
+---
+
+## 0-a. 진행 상황 (2026-08-26)
+
+| 작업 | 상태 | 비고 |
+|---|---|---|
+| T1 회귀 복구 | ✅ 완료 | 방향 **(a) 의자 연결 복구** 채택. `tests/test_analyze_pipeline.py` 신설 |
+| T2 진단 로깅 | ✅ 완료 | `--log-detections` |
+| T3 평가셋 | ⏳ **코드 완료 / 라벨 대기** | `make_labels.py` + 다중 fixture 채점. **라벨링은 사람 작업** |
+| T4 익스포트+벤치 | ✅ 완료 | `export.py`, `bench.py`. 맥북 baseline 실행은 미수행 |
+| T5 RTSP 재송출 | ✅ 완료 | `rtsp_republish.py` (mediamtx 설치 필요) |
+| T6 엣지 벤치 | ⛔ 하드웨어 대기 | 도구는 준비됨 — 엣지에서 `bench.py` 실행만 하면 됨 |
+| T7 파라미터 스윕 | ⏳ 하네스 완료 / 실행 대기 | `bench_sweep.py`. T3 라벨 + T6 예산 필요 |
+| T8~T10 | ⬜ 미착수 | 엣지 도착 후 |
+| T11 파인튜닝 | ⬜ 조건부 | T7 결과에 따라 판단 |
+| T12 문서 | ✅ 완료 | README·전체정리 갱신 |
 
 ---
 
@@ -9,11 +27,11 @@
 
 | 항목 | 상태 |
 |---|---|
-| 판정 로직 | 완성도 높음. 단 **§9 회귀로 정확도 기준선이 무너져 있음** |
-| 영상 입력 | **로컬 파일 전용.** RTSP 경로 없음 (`seatnow.py:118`, `seatnow_core.py:2760`) |
-| 모델 배포 | **익스포트 경로 없음.** ONNX/OpenVINO/NCNN grep 0건 |
-| 배포 준비 | Dockerfile·systemd·CI **전부 없음** |
-| 평가 | fixture 1개(20초), 기록된 정확도 5/20. 스윕 하네스 없음 |
+| 판정 로직 | 완성도 높음. ~~§9 회귀~~ → **T1로 복구됨** |
+| 영상 입력 | **로컬 파일 전용.** RTSP 경로 없음 (`seatnow.py:118`, `seatnow_core.py:2760`) — T8에서 처리 |
+| 모델 배포 | ~~익스포트 경로 없음~~ → **`export.py`로 OpenVINO FP32/INT8** |
+| 배포 준비 | Dockerfile·systemd·CI **전부 없음** — T10 |
+| 평가 | ~~fixture 1개(20초)~~ → 다중 fixture 채점 + 커버리지 집계 가능. **라벨 입력 대기** |
 | 하드웨어 | 엣지 박스(중고 미니PC, Intel 6세대 i3급, ~10만원) 구매 진행 중. **카메라는 벤치 결과 후 구매** |
 | 카메라 대수 | **1대 확정** |
 
@@ -302,4 +320,32 @@ T6에서 나온 최대 프로파일이 있어야 해상도(2MP/4MP)를 제대로
 
 ## 4. 다음 액션
 
-**T1부터.** 방향 선택 필요: **(a) 의자 연결 복구** ← 권고 / (b) 확장 ROI 재도입 / (c) 정식 제거
+Phase 1~2 코드는 끝났다. 남은 병목은 **사람이 넣어야 하는 것 두 가지**다.
+
+### 액션 1 — 영상 라벨링 (T3, 코드로는 못 푸는 부분)
+
+```bash
+python make_labels.py sample_raw/<1시간영상>.mp4 --interval 30 \
+  --contact-sheet labels/<이름> --layout layouts/<레이아웃>.json
+# labels/<이름>/*.jpg 를 보며 각 interval의 occupied / empty / ignore 를 채운다
+python make_labels.py x --validate tests/fixtures/<이름>_expectations.json
+```
+
+- 모든 좌석은 매 interval마다 세 목록 중 **정확히 하나**에 들어가야 한다.
+  누락을 empty로 오해하지 않기 위한 규칙이며 `--validate`가 잡아준다
+- `ignore`는 회피가 아니라 **화각이 판단 불가한 좌석**의 라벨이다. 이 비율이
+  카메라 1대 결정(§2)의 재검토 근거가 된다
+- 1시간 영상 30초 간격 = 120 interval. 엣지케이스 10분은 10초 간격 권장
+
+### 액션 2 — 엣지 박스 도착 후 (T6)
+
+```bash
+python export.py --imgsz 640 960 1280
+python bench.py --frames sample_raw/<영상>.mp4 --label edge-box
+```
+`bench.py`가 프로파일별 tick 사용률과 PASS/CONDITIONAL/FAIL 등급을 그대로 출력한다.
+
+### 그 다음
+
+T3 + T6이 끝나면 `bench_sweep.py`로 T7을 돌려 배포 프로파일을 확정하고,
+그 결과를 보고 T11 파인튜닝 여부를 판단한다.

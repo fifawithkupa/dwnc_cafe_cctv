@@ -12,3 +12,4 @@ cctv_results/
 # 익스포트된 모델 디렉터리 (export.py 산출물)
 *_openvino_model/
 *.onnx
+bench/

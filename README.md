@@ -11,9 +11,16 @@
 |------|------|
 | `seatnow_core.py` | 본체: 추론·점유 판정·의자/물체/사람 연결·추적(디바운싱)·FFmpeg 영상 I/O·렌더링 |
 | `seatnow.py` | CLI 진입점 (이미지/영상 → 주석 영상 + JSONL 로그) |
-| `verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 |
-| `tests/` | 유닛 테스트 54개 (모델 없이 순수 로직 검증) |
-| `docs/superpowers/` | 설계 스펙·구현 계획 (진행 중: 수동 좌석 레이아웃/캘리브레이션) |
+| `seatnow_layout.py`, `calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존) 정의·로드 |
+| `verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 (영상 여러 개 동시 채점) |
+| `make_labels.py` | 라벨링용 대조표 프레임 추출 + fixture 스켈레톤 생성·검사 |
+| `export.py` | `.pt` → OpenVINO FP32/INT8 익스포트 (엣지 배포용) |
+| `bench.py` | 추론 latency 측정 → tick 예산 산출 |
+| `bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
+| `rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
+| `tests/` | 유닛 테스트 171개 (모델 없이 순수 로직 검증) |
+| `docs/superpowers/` | 설계 스펙·구현 계획 |
+| `plan.md` | 코드 작업 플랜 (T1~T12) |
 | `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용) |
 
 ## 환경 설정 (팀원용)
@@ -35,7 +42,7 @@ python3 -m venv venv
 
 # 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 54 tests ... OK
+# 기대: Ran 171 tests ... OK
 ```
 
 **모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
@@ -57,7 +64,34 @@ python3 -m venv venv
 
 # 수동 라벨 정답과 대조 (fixture 영상 결과에 대해)
 ./venv/bin/python verify_seatnow.py sample_results/<결과>.jsonl
+
+# 영상 여러 개를 한 번에 채점 (fixture는 영상 sha256으로 자동 매칭)
+./venv/bin/python verify_seatnow.py sample_results/*.jsonl --expectations tests/fixtures
 ```
+
+### 평가·벤치 도구
+
+```bash
+# 1. 새 영상 라벨링: 대조표 프레임 + fixture 스켈레톤 생성
+./venv/bin/python make_labels.py sample_raw/cafe_1h.mp4 --interval 30 \
+  --contact-sheet labels/cafe_1h --layout layouts/cafe.json
+#    → labels/cafe_1h/*.jpg 를 보며 occupied/empty/ignore 를 손으로 채운 뒤
+./venv/bin/python make_labels.py x --validate tests/fixtures/cafe_1h_expectations.json
+
+# 2. 엣지 배포용 익스포트 + 추론 latency/tick 예산 측정
+./venv/bin/python export.py --imgsz 640 960 1280
+./venv/bin/python bench.py --frames sample_raw/cafe_sample_1.mp4 --label macbook
+
+# 3. 파라미터 스윕 (라벨된 평가셋 필요)
+./venv/bin/python bench_sweep.py sample_raw/*.mp4 --dry-run
+
+# 4. 카메라 없이 RTSP 파이프라인 검증
+./venv/bin/python rtsp_republish.py sample_raw/cafe_sample_1.mp4
+```
+
+진단이 필요할 때는 `--log-detections` 를 붙이면 JSONL에 detect 원본 출력과
+테이블 후보 탈락 사유가 함께 남습니다 — "모델이 못 봤나" vs "코드가 버렸나"를
+로그만으로 구분할 수 있습니다.
 
 주요 옵션: `--sample-seconds`(1차 판단 주기, 기본 15초), `--fast-sample-seconds`(2차 판단
 주기, 기본 5초 — empty 좌석에 착석/물건 증거가 뜨면 `--fast-cycles`(기본 3)회 재판단을
@@ -69,17 +103,26 @@ python3 -m venv venv
 > 데모 시 `--sample-seconds 5 --fast-sample-seconds 2`처럼 줄여서 실행하세요.
 > 기존 단일 프레임·고정 주기 동작은 `--sample-seconds 1 --median-frames 0 --no-adaptive`.
 
-## 현재 상태 (2026-07-12)
+## 현재 상태 (2026-08-26)
 
-- ✅ 이미지/영상 점유 판정 + 시간 안정화(디바운싱·추적) 완료 — 시나리오 영상 7종 검증 통과
+- ✅ 이미지/영상 점유 판정 + 시간 안정화(디바운싱·추적) — 시나리오 영상 7종 검증 통과
 - ✅ 점유판정 개선: 테이블 선별 규칙(의자 구조 기반 구제), 들고 있는 짐 오탐 차단, 의자 위 짐 점유 인식
-- 🚧 **수동 좌석 캘리브레이션(레이아웃) 기능 구현 중** — 설계/계획:
+- ✅ **수동 좌석 캘리브레이션(레이아웃) 머지 완료** — 설계/계획:
   - 스펙: `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md`
   - 구현 계획(태스크 단위): `docs/superpowers/plans/2026-07-11-manual-seat-layout.md`
-- 다음: 레이아웃 완성 → 파일럿 카페 섭외 → YOLOv8n fine-tuning (Colab T4)
+- ✅ 의자→테이블 점유 전파 회귀 복구 (plan.md T1). `f1f41d5`가 제거하고
+  `70a86bc`가 되살리지 않아 `seat_detections`가 항상 비어 있던 문제
+- ✅ 진단 로깅(T2), 다중 영상 평가셋·커버리지 집계(T3), OpenVINO 익스포트·벤치(T4),
+  RTSP 재송출 하네스(T5), 파라미터 스윕 하네스(T7 코드)
+- 🚧 다음: 보유 영상 라벨링(T3 데이터) → 엣지 박스 벤치(T6) → RTSP 리더(T8) →
+  Quick Sync(T9) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
+
+작업 순서와 근거는 [`plan.md`](plan.md) 참조.
 
 ## 개발 규칙
 
 - 판정 로직 변경 시 반드시 유닛 테스트 추가 (`tests/test_seatnow_core.py` — 실패 사례의 실제 좌표로 회귀 테스트 작성하는 관례)
+- **`analyze()`의 배선을 바꿨다면 `tests/test_analyze_pipeline.py`에도 추가.**
+  헬퍼만 직접 호출하는 테스트는 "호출이 사라지는" 회귀를 못 잡는다 (T1이 그렇게 새어나갔다)
 - 커밋 전 `./venv/bin/python -m unittest discover tests` 통과 확인
 - 시나리오 영상 재실행 결과는 `sample_results/v5_*` 네이밍 사용

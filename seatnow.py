@@ -79,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--object-conf", type=float, default=0.15, help="Customer-object confidence threshold")
     parser.add_argument("--pose-conf", type=float, default=0.20, help="Pose person confidence threshold")
     parser.add_argument("--keypoint-conf", type=float, default=0.30, help="Pose keypoint confidence threshold")
+    parser.add_argument("--seat-conf", type=float, default=0.20, help="Chair/couch/bench confidence threshold for chair linking")
+    parser.add_argument("--strong-chair-link", type=float, default=0.75, help="Chair-to-table link score required to propagate occupancy")
     parser.add_argument("--angle", type=float, default=110.0, help="Sitting angle threshold in degrees")
     parser.add_argument("--device", default="cpu", help="Ultralytics device, e.g. cpu or 0")
     parser.add_argument("--occupy-confirm", type=int, default=2, help="Samples required to confirm an occupied state change")
@@ -156,6 +158,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         ("--keypoint-conf", args.keypoint_conf),
         ("--max-table-area", args.max_table_area),
         ("--crop-conf", args.crop_conf),
+        ("--seat-conf", args.seat_conf),
+        ("--strong-chair-link", args.strong_chair_link),
     ):
         if not 0.0 <= value <= 1.0:
             raise ValueError(f"{label} must be between 0 and 1")
@@ -182,6 +186,8 @@ def _make_analyzer(args: argparse.Namespace, layout=None) -> SeatNowAnalyzer:
         table_crop_confidence=args.crop_conf,
         maximum_table_crops=args.max_crops,
         infer_occluded_tables=not args.no_inferred_seats,
+        seat_confidence=args.seat_conf,
+        strong_chair_link=args.strong_chair_link,
         layout_tracking=not args.no_layout_track,
         device=args.device,
     )
@@ -245,6 +251,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 and args.pose_conf == 0.20
                 and args.keypoint_conf == 0.30
                 and args.angle == 110.0
+                and args.seat_conf == 0.20
+                and args.strong_chair_link == 0.75
                 and args.max_table_area == 0.06
                 and not args.no_inferred_seats
                 and not args.no_scene_reset
@@ -284,6 +292,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "pose_confidence": args.pose_conf,
             "keypoint_confidence": args.keypoint_conf,
             "sitting_angle": args.angle,
+            "seat_confidence": args.seat_conf,
+            "strong_chair_link": args.strong_chair_link,
             "maximum_table_area_fraction": args.max_table_area,
             "large_table_confidence": analyzer.config.large_table_confidence,
             "hard_table_area_fraction": analyzer.config.hard_table_area_fraction,

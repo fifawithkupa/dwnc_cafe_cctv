@@ -319,7 +319,13 @@ class AssociationTests(unittest.TestCase):
         self.assertEqual(assignments[0], [seated])
         self.assertNotIn(standing, assignments[0])
 
-    def test_table_or_rule_ignores_chair_only_roi(self):
+    def test_table_or_rule_covers_chair_only_evidence(self):
+        """An occupied linked chair occupies its table (regression: f1f41d5).
+
+        ``f1f41d5`` dropped chair propagation because the expanded table ROI
+        was supposed to cover the seats; ``70a86bc`` then reverted that ROI and
+        left occupancy with no path from chair to table at all.
+        """
         chair = Detection("chair", (100.0, 100.0, 200.0, 260.0), 0.91)
         cup = Detection("cup", (120.0, 100.0, 140.0, 130.0), 0.8)
         seated = pose_observation(PoseState.SEATED)
@@ -327,7 +333,12 @@ class AssociationTests(unittest.TestCase):
 
         self.assertEqual(
             occupancy_state_from_evidence([], [], [], [chair]),
-            OccupancyState.EMPTY,
+            OccupancyState.OCCUPIED,
+        )
+        # A chair carrying evidence outranks an ambiguous nearby pose.
+        self.assertEqual(
+            occupancy_state_from_evidence([], [], [unknown], [chair]),
+            OccupancyState.OCCUPIED,
         )
         self.assertEqual(
             occupancy_state_from_evidence([cup], [], [], []),

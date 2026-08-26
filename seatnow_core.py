@@ -39,6 +39,12 @@ class OccupancyState(str, Enum):
     IGNORE = "ignore"
 
 
+# Seat furniture a customer can sit on.  Chair links carry occupancy to the
+# table they belong to, so this set must stay in sync with the class names the
+# detector emits (see the fine-tuning class-reduction note in plan.md).
+SEAT_CLASSES = frozenset({"chair", "couch", "bench"})
+
+
 # Furniture, fixed fixtures, animals, and scene-level false positives must not
 # become a customer-belonging signal.  Portable classes that are not listed
 # here continue to follow SeatNow's "any non-person object" rule.
@@ -164,6 +170,10 @@ class AnalyzerConfig:
     moving_person_threshold: float = 0.025
     border_pixels: int = 3
     infer_occluded_tables: bool = True
+    # Chair linking: seats below this confidence are not trusted as structure,
+    # and only links at or above strong_chair_link propagate occupancy.
+    seat_confidence: float = 0.20
+    strong_chair_link: float = 0.75
     # Layout mode: let zones drift toward matching furniture detections.
     layout_tracking: bool = True
     layout_track_alpha: float = 0.35
@@ -842,13 +852,13 @@ def occupancy_state_from_evidence(
     unknown_people: Sequence[PoseObservation],
     occupied_chairs: Sequence[Detection],
 ) -> OccupancyState:
-    """Apply SeatNow's table ROI OR rule to already-associated evidence.
+    """Apply SeatNow's table OR rule to already-associated evidence.
 
-    Chair-only occupancy propagation is intentionally disabled: the table's
-    expanded ROI now owns seated-person and belonging evidence directly.
+    A chair carrying a seated customer or their belongings occupies the table
+    it is linked to: the tight tabletop box does not cover the seats around it,
+    and a cafe camera sees the chair long before it sees the tabletop.
     """
-    _ = occupied_chairs
-    if objects or direct_seated_people:
+    if objects or direct_seated_people or occupied_chairs:
         return OccupancyState.OCCUPIED
     if unknown_people:
         return OccupancyState.UNKNOWN
@@ -1254,11 +1264,12 @@ class SeatNowAnalyzer:
 
         if self.layout is not None:
             table_boxes = [table.box for table in self.layout.tables]
+            chair_boxes = self.layout.chair_boxes()
             if self.config.layout_tracking:
                 if self.zone_tracker is None:
                     self.zone_tracker = LayoutZoneTracker(
                         table_boxes,
-                        [],
+                        chair_boxes,
                         alpha=self.config.layout_track_alpha,
                     )
                 # Burst side frames must not commit zone drift: applying the
@@ -1272,24 +1283,34 @@ class SeatNowAnalyzer:
                             and detection.confidence
                             >= self.config.layout_track_table_confidence
                         ],
-                        [],
+                        [
+                            detection
+                            for detection in detections
+                            if detection.name in SEAT_CLASSES
+                            and detection.confidence
+                            >= self.config.layout_track_chair_confidence
+                        ],
                     )
                 table_boxes = self.zone_tracker.table_boxes
+                chair_boxes = self.zone_tracker.chair_boxes
             tables = [
                 Detection(name="dining table", box=box, confidence=1.0)
                 for box in table_boxes
             ]
-            seat_detections: List[Detection] = []
+            seat_detections: List[Detection] = [
+                Detection(name="chair", box=box, confidence=1.0)
+                for box in chair_boxes
+            ]
         else:
-            seat_context_detections = [
+            seat_detections = [
                 detection
                 for detection in detections
-                if detection.name in {"chair", "couch", "bench"}
-                and detection.confidence >= 0.20
+                if detection.name in SEAT_CLASSES
+                and detection.confidence >= self.config.seat_confidence
             ]
             table_candidates = select_table_candidates(
                 table_candidates,
-                seat_context_detections,
+                seat_detections,
                 (height, width),
                 table_confidence=self.config.table_confidence,
                 soft_area_fraction=self.config.maximum_table_area_fraction,
@@ -1298,7 +1319,6 @@ class SeatNowAnalyzer:
                 rescue_confidence=self.config.table_rescue_confidence,
             )
             tables = deduplicate_tables(table_candidates, self.config.table_overlap)
-            seat_detections = []
 
         pose_result = self.pose_model.predict(
             source=frame,
@@ -1359,16 +1379,51 @@ class SeatNowAnalyzer:
         objects = self._crop_objects(frame, tables, objects)
         objects = filter_carried_objects(objects, poses)
         object_assignments = associate_objects(tables, objects)
-        chair_table_assignments: Dict[int, List[int]] = {
-            index: [] for index in range(len(tables))
+        table_object_ids = {
+            id(obj)
+            for assigned in object_assignments.values()
+            for obj in assigned
         }
-        strong_chair_assignments: Dict[int, List[int]] = {
-            index: [] for index in range(len(tables))
+        # Belongings already claimed by a table must not be double-counted as
+        # chair evidence; only the leftovers can mark a chair occupied.
+        chair_object_assignments = associate_objects_to_chairs(
+            seat_detections,
+            [obj for obj in objects if id(obj) not in table_object_ids],
+        )
+        if self.layout is not None:
+            # A hand-drawn chair->table link is ground truth: propagate it
+            # without the geometric strong-link filter.
+            chair_table_assignments = self.layout.chair_assignments()
+            strong_chair_assignments = chair_table_assignments
+        else:
+            chair_table_assignments = associate_chairs_to_tables(
+                tables, seat_detections, (height, width)
+            )
+            strong_chair_assignments = filter_strong_chair_links(
+                tables,
+                seat_detections,
+                chair_table_assignments,
+                (height, width),
+                threshold=self.config.strong_chair_link,
+            )
+        chair_people_assignments = associate_seated_people_to_chairs(
+            seat_detections, poses
+        )
+        linked_chair_indices = {
+            chair_index
+            for chair_indices in strong_chair_assignments.values()
+            for chair_index in chair_indices
         }
-        chair_people_assignments: Dict[int, List[PoseObservation]] = {}
-        chair_object_assignments: Dict[int, List[Detection]] = {}
-        linked_chair_person_ids: set = set()
-        direct_table_poses = list(poses)
+        # A person counted through a chair link must not also be associated
+        # with the table directly, or one customer would score twice.
+        linked_chair_person_ids = {
+            id(person)
+            for chair_index in linked_chair_indices
+            for person in chair_people_assignments[chair_index]
+        }
+        direct_table_poses = [
+            person for person in poses if id(person) not in linked_chair_person_ids
+        ]
         people_assignments, unassigned_people = associate_people(
             tables, direct_table_poses, (height, width)
         )

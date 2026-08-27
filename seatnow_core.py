@@ -907,6 +907,45 @@ def occupancy_state_from_evidence(
     return OccupancyState.EMPTY
 
 
+def demote_seats_spanned_by_one_person(
+    observations: List[TableObservation],
+    units: Sequence[JudgementUnit],
+    poses: Sequence[PoseObservation],
+    minimum_overlap: float = 0.20,
+) -> None:
+    """Mark counted_zone seats UNKNOWN when one person box covers 2+ of them.
+
+    A single wide detection over two hand-drawn seat slots is ambiguous: it
+    may be one customer, or two sitting shoulder to shoulder.  Calling it one
+    occupied seat would inflate the free-seat count and send customers to a
+    full bar, so both slots become UNKNOWN instead.
+    """
+    seat_indices_by_zone: Dict[int, List[int]] = {}
+    for index, unit in enumerate(units):
+        if unit.kind == COUNTED_ZONE_KIND and unit.zone_id is not None:
+            seat_indices_by_zone.setdefault(unit.zone_id, []).append(index)
+    if not seat_indices_by_zone:
+        return
+
+    for pose in poses:
+        if pose.state == PoseState.STANDING:
+            continue
+        for indices in seat_indices_by_zone.values():
+            spanned = [
+                index
+                for index in indices
+                if index < len(observations)
+                and overlap_over_smaller(units[index].box, pose.box)
+                >= minimum_overlap
+            ]
+            if len(spanned) < 2:
+                continue
+            for index in spanned:
+                observations[index].raw_state = OccupancyState.UNKNOWN
+                observations[index].reason = "spans_multiple_seats"
+                observations[index].provisional = False
+
+
 def _touches_frame_border(box: Box, width: int, height: int, pixels: int) -> bool:
     x1, y1, x2, y2 = box
     return x1 <= pixels or y1 <= pixels or x2 >= width - 1 - pixels or y2 >= height - 1 - pixels
@@ -1682,6 +1721,9 @@ class SeatNowAnalyzer:
         # A table is often completely occluded by the seated customer.  Do not
         # force that person onto an unrelated nearby table; surface an explicit
         # inferred occupied seat instead.  This remains distinguishable in logs.
+        if self.layout is not None:
+            demote_seats_spanned_by_one_person(observations, layout_units, poses)
+
         if self.config.infer_occluded_tables and self.layout is None:
             supported_people = [
                 person

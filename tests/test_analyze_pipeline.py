@@ -462,6 +462,50 @@ class CountedZoneAnalyzeTests(unittest.TestCase):
         self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
         self.assertEqual(analysis.tables[1].raw_state, OccupancyState.EMPTY)
 
+    def test_person_spanning_two_seats_makes_both_unknown(self):
+        # 사람 박스 x 400~620 은 1번 칸(200~500)과 2번 칸(500~800)에 모두 걸친다.
+        # 겹침 비율은 각각 0.41 / 0.50 으로 minimum_overlap(0.20)을 넘는다.
+        analyzer = build_analyzer(
+            [],
+            poses=[("person", (400.0, 300.0, 620.0, 520.0), 0.72)],
+            keypoints=[
+                seated_keypoints(
+                    hip=(480.0, 430.0),
+                    knee=(560.0, 440.0),
+                    ankle=(550.0, 520.0),
+                    shoulder=(480.0, 330.0),
+                )
+            ],
+            layout=bar_layout(),
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.UNKNOWN)
+        self.assertEqual(analysis.tables[1].raw_state, OccupancyState.UNKNOWN)
+        self.assertEqual(analysis.tables[0].reason, "spans_multiple_seats")
+        self.assertFalse(analysis.tables[0].provisional)
+
+    def test_person_inside_one_seat_does_not_trigger_span_rule(self):
+        analyzer = build_analyzer(
+            [],
+            poses=[("person", (280.0, 300.0, 420.0, 520.0), 0.72)],
+            keypoints=[
+                seated_keypoints(
+                    hip=(320.0, 430.0),
+                    knee=(400.0, 440.0),
+                    ankle=(390.0, 520.0),
+                    shoulder=(320.0, 330.0),
+                )
+            ],
+            layout=bar_layout(),
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
+        self.assertNotEqual(analysis.tables[1].raw_state, OccupancyState.UNKNOWN)
+
 
 if __name__ == "__main__":
     unittest.main()

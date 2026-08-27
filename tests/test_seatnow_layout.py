@@ -54,7 +54,7 @@ class LoadLayoutTests(unittest.TestCase):
             load_layout(Path("/nonexistent/layout.json"))
 
     def test_wrong_schema_version_raises(self):
-        bad = dict(VALID, schema_version=2)
+        bad = dict(VALID, schema_version=99)
         with self.assertRaises(LayoutError):
             load_layout(write_json(bad))
 
@@ -112,6 +112,83 @@ class SaveLayoutTests(unittest.TestCase):
 
         self.assertEqual(reloaded.tables[0].box, layout.tables[0].box)
         self.assertEqual(len(reloaded.tables), 2)
+
+
+COUNTED_ZONE = {
+    "schema_version": 2,
+    "source": {"video": "v.mp4", "frame_at_seconds": 0.0, "width": 1280, "height": 720},
+    "tables": [
+        {
+            "id": 7,
+            "name": "BAR",
+            "kind": "counted_zone",
+            "box": [100.0, 100.0, 700.0, 300.0],
+            "seats": [
+                {"id": 1, "box": [100.0, 100.0, 250.0, 300.0]},
+                {"id": 2, "box": [250.0, 100.0, 380.0, 300.0]},
+            ],
+        }
+    ],
+}
+
+
+class CountedZoneTests(unittest.TestCase):
+    def test_loads_counted_zone_with_seats(self):
+        layout = load_layout(write_json(COUNTED_ZONE))
+
+        zone = layout.tables[0]
+        self.assertEqual(zone.kind, "counted_zone")
+        self.assertEqual(len(zone.seats), 2)
+        self.assertEqual(zone.seats[0].id, 1)
+        self.assertEqual(zone.seats[1].box, (250.0, 100.0, 380.0, 300.0))
+
+    def test_v1_layout_defaults_to_table_kind(self):
+        layout = load_layout(write_json(VALID))
+
+        self.assertEqual(layout.tables[0].kind, "table")
+        self.assertEqual(layout.tables[0].seats, ())
+
+    def test_rejects_counted_zone_without_seats(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["seats"] = []
+
+        with self.assertRaises(LayoutError):
+            load_layout(write_json(data))
+
+    def test_rejects_unknown_kind(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["kind"] = "sofa"
+
+        with self.assertRaises(LayoutError):
+            load_layout(write_json(data))
+
+    def test_rejects_seat_outside_zone_box(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["seats"][1]["box"] = [900.0, 100.0, 950.0, 300.0]
+
+        with self.assertRaises(LayoutError):
+            load_layout(write_json(data))
+
+    def test_rejects_seats_on_a_plain_table(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["kind"] = "table"
+
+        with self.assertRaises(LayoutError):
+            load_layout(write_json(data))
+
+    def test_scaled_to_scales_seats(self):
+        layout = load_layout(write_json(COUNTED_ZONE)).scaled_to(2560, 1440)
+
+        self.assertEqual(layout.tables[0].seats[0].box, (200.0, 200.0, 500.0, 600.0))
+
+    def test_round_trip_preserves_counted_zone(self):
+        layout = load_layout(write_json(COUNTED_ZONE))
+        path = Path(tempfile.mkdtemp()) / "round.json"
+        save_layout(layout, path)
+
+        reloaded = load_layout(path)
+        self.assertEqual(reloaded.tables[0].kind, "counted_zone")
+        self.assertEqual(len(reloaded.tables[0].seats), 2)
 
 
 if __name__ == "__main__":

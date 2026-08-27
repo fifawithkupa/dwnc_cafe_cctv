@@ -13,7 +13,12 @@ from typing import Dict, List, Tuple
 
 Box = Tuple[float, float, float, float]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = (1, 2)
+
+TABLE_KIND = "table"
+COUNTED_ZONE_KIND = "counted_zone"
+VALID_KINDS = (TABLE_KIND, COUNTED_ZONE_KIND)
 
 
 class LayoutError(ValueError):
@@ -33,8 +38,25 @@ def _parse_box(value, context: str) -> Box:
     return (x1, y1, x2, y2)
 
 
+def _box_contains(outer: Box, inner: Box, tolerance: float = 1.0) -> bool:
+    return (
+        inner[0] >= outer[0] - tolerance
+        and inner[1] >= outer[1] - tolerance
+        and inner[2] <= outer[2] + tolerance
+        and inner[3] <= outer[3] + tolerance
+    )
+
+
 @dataclass(frozen=True)
 class LayoutChair:
+    id: int
+    box: Box
+
+
+@dataclass(frozen=True)
+class LayoutSeat:
+    """One hand-drawn seat slot inside a counted_zone (bar counter etc.)."""
+
     id: int
     box: Box
 
@@ -45,6 +67,8 @@ class LayoutTable:
     name: str
     box: Box
     chairs: Tuple[LayoutChair, ...] = ()
+    kind: str = TABLE_KIND
+    seats: Tuple[LayoutSeat, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,6 +91,9 @@ class SeatLayout:
                 box=scale(table.box),
                 chairs=tuple(
                     replace(chair, box=scale(chair.box)) for chair in table.chairs
+                ),
+                seats=tuple(
+                    replace(seat, box=scale(seat.box)) for seat in table.seats
                 ),
             )
             for table in self.tables
@@ -96,10 +123,10 @@ def load_layout(path: Path) -> SeatLayout:
     except json.JSONDecodeError as exc:
         raise LayoutError(f"Layout is not valid JSON: {path}: {exc}") from exc
 
-    if data.get("schema_version") != SCHEMA_VERSION:
+    if data.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
         raise LayoutError(
             f"Unsupported schema_version {data.get('schema_version')!r} "
-            f"(expected {SCHEMA_VERSION}) in {path}"
+            f"(expected one of {SUPPORTED_SCHEMA_VERSIONS}) in {path}"
         )
     raw_tables = data.get("tables")
     if not isinstance(raw_tables, list) or not raw_tables:
@@ -123,12 +150,47 @@ def load_layout(path: Path) -> SeatLayout:
             )
             for chair_position, chair in enumerate(raw.get("chairs", []), start=1)
         )
+        kind = str(raw.get("kind", TABLE_KIND))
+        if kind not in VALID_KINDS:
+            raise LayoutError(
+                f"table {table_id}: unknown kind {kind!r} "
+                f"(expected one of {VALID_KINDS})"
+            )
+        box = _parse_box(raw.get("box"), f"table {table_id}")
+        seats = tuple(
+            LayoutSeat(
+                id=int(seat.get("id", seat_position)),
+                box=_parse_box(
+                    seat.get("box"), f"table {table_id} seat #{seat_position}"
+                ),
+            )
+            for seat_position, seat in enumerate(raw.get("seats", []), start=1)
+        )
+        if kind == COUNTED_ZONE_KIND:
+            if not seats:
+                raise LayoutError(
+                    f"table {table_id}: kind={COUNTED_ZONE_KIND} requires a "
+                    f"non-empty 'seats' list (capacity is len(seats))"
+                )
+            for seat in seats:
+                if not _box_contains(box, seat.box):
+                    raise LayoutError(
+                        f"table {table_id} seat {seat.id}: box {seat.box} is "
+                        f"outside the zone box {box}"
+                    )
+        elif seats:
+            raise LayoutError(
+                f"table {table_id}: 'seats' is only valid for "
+                f"kind={COUNTED_ZONE_KIND}"
+            )
         tables.append(
             LayoutTable(
                 id=table_id,
                 name=str(raw.get("name", f"T{table_id}")),
-                box=_parse_box(raw.get("box"), f"table {table_id}"),
+                box=box,
                 chairs=chairs,
+                kind=kind,
+                seats=seats,
             )
         )
     return SeatLayout(
@@ -146,10 +208,15 @@ def save_layout(layout: SeatLayout, path: Path) -> None:
             {
                 "id": table.id,
                 "name": table.name,
+                "kind": table.kind,
                 "box": [round(v, 2) for v in table.box],
                 "chairs": [
                     {"id": chair.id, "box": [round(v, 2) for v in chair.box]}
                     for chair in table.chairs
+                ],
+                "seats": [
+                    {"id": seat.id, "box": [round(v, 2) for v in seat.box]}
+                    for seat in table.seats
                 ],
             }
             for table in layout.tables

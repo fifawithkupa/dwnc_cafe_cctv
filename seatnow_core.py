@@ -21,6 +21,8 @@ from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from seatnow_layout import COUNTED_ZONE_KIND, JudgementUnit
+
 
 Box = Tuple[float, float, float, float]
 Point = Tuple[float, float]
@@ -132,6 +134,12 @@ class TableObservation:
     provisional: bool = False
     layout_id: Optional[int] = None
     layout_name: Optional[str] = None
+    # counted_zone (bar counter / wall desk): the zone this seat slot belongs
+    # to, so the report can group slots back into "3 of 6 in use".
+    layout_kind: str = "table"
+    layout_zone_id: Optional[int] = None
+    layout_zone_name: Optional[str] = None
+    layout_capacity: int = 1
     # Burst-sample majority voting, e.g. {"occupied": 3, "empty": 2}.
     vote_counts: Optional[Dict[str, int]] = None
 
@@ -1302,6 +1310,9 @@ class SeatNowAnalyzer:
         if frame is None or frame.size == 0:
             raise ValueError("Cannot analyze an empty frame")
         height, width = frame.shape[:2]
+        # Layout mode judges one unit per hand-drawn box: a plain table is one
+        # unit, a counted_zone contributes one per seat slot.
+        layout_units: Tuple[JudgementUnit, ...] = ()
         started = time.perf_counter()
         base_confidence = min(
             self.config.table_confidence,
@@ -1341,7 +1352,8 @@ class SeatNowAnalyzer:
                     objects.append(detection)
 
         if self.layout is not None:
-            table_boxes = [table.box for table in self.layout.tables]
+            layout_units = self.layout.judgement_units()
+            table_boxes = [unit.box for unit in layout_units]
             chair_boxes = self.layout.chair_boxes()
             if self.config.layout_tracking:
                 if self.zone_tracker is None:
@@ -1478,7 +1490,7 @@ class SeatNowAnalyzer:
         if self.layout is not None:
             # A hand-drawn chair->table link is ground truth: propagate it
             # without the geometric strong-link filter.
-            chair_table_assignments = self.layout.chair_assignments()
+            chair_table_assignments = self.layout.unit_chair_assignments()
             strong_chair_assignments = chair_table_assignments
         else:
             chair_table_assignments = associate_chairs_to_tables(
@@ -1635,14 +1647,34 @@ class SeatNowAnalyzer:
                     provisional=provisional,
                     source="layout" if self.layout is not None else "detected",
                     layout_id=(
-                        self.layout.tables[index].id
+                        layout_units[index].unit_id
                         if self.layout is not None
                         else None
                     ),
                     layout_name=(
-                        self.layout.tables[index].name
+                        layout_units[index].name
                         if self.layout is not None
                         else None
+                    ),
+                    layout_kind=(
+                        layout_units[index].kind
+                        if self.layout is not None
+                        else "table"
+                    ),
+                    layout_zone_id=(
+                        layout_units[index].zone_id
+                        if self.layout is not None
+                        else None
+                    ),
+                    layout_zone_name=(
+                        layout_units[index].zone_name
+                        if self.layout is not None
+                        else None
+                    ),
+                    layout_capacity=(
+                        layout_units[index].capacity
+                        if self.layout is not None
+                        else 1
                     ),
                 )
             )

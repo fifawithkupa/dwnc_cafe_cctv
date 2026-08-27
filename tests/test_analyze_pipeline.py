@@ -277,34 +277,20 @@ class OccludedSeatPipelineTests(unittest.TestCase):
 class LayoutChairPipelineTests(unittest.TestCase):
     """Calibrated chair zones must reach the analyzer in layout mode."""
 
-    class _FakeLayout:
-        def __init__(self, tables):
-            self.tables = tables
-
-        def chair_boxes(self):
-            return [chair.box for table in self.tables for chair in table.chairs]
-
-        def chair_assignments(self):
-            assignments = {}
-            cursor = 0
-            for index, table in enumerate(self.tables):
-                count = len(table.chairs)
-                assignments[index] = list(range(cursor, cursor + count))
-                cursor += count
-            return assignments
-
     def _layout(self):
-        from seatnow_layout import LayoutChair, LayoutTable
+        from seatnow_layout import LayoutChair, LayoutTable, SeatLayout
 
-        return self._FakeLayout(
-            [
+        return SeatLayout(
+            schema_version=2,
+            source={},
+            tables=(
                 LayoutTable(
                     id=1,
                     name="A1",
                     box=(500.0, 300.0, 780.0, 430.0),
                     chairs=(LayoutChair(id=1, box=(560.0, 400.0, 700.0, 560.0)),),
-                )
-            ]
+                ),
+            ),
         )
 
     def test_manual_chair_link_propagates_a_bag(self):
@@ -402,6 +388,79 @@ class RawDetectionLoggingTests(unittest.TestCase):
             [entry["rule"] for entry in raw["dropped_tables"]],
             ["low_confidence_no_chair_support"],
         )
+
+
+def bar_layout():
+    """A 2-seat bar zone inside FRAME (1280x720)."""
+    from seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
+
+    return SeatLayout(
+        schema_version=2,
+        source={},
+        tables=(
+            LayoutTable(
+                id=7,
+                name="BAR",
+                box=(200.0, 300.0, 800.0, 500.0),
+                kind="counted_zone",
+                seats=(
+                    LayoutSeat(id=1, box=(200.0, 300.0, 500.0, 500.0)),
+                    LayoutSeat(id=2, box=(500.0, 300.0, 800.0, 500.0)),
+                ),
+            ),
+        ),
+    )
+
+
+class CountedZoneAnalyzeTests(unittest.TestCase):
+    """A bar zone is judged one hand-drawn seat slot at a time."""
+
+    def test_zone_produces_one_observation_per_seat(self):
+        analyzer = build_analyzer([], layout=bar_layout())
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(len(analysis.tables), 2)
+        self.assertEqual(
+            [table.layout_name for table in analysis.tables], ["BAR-1", "BAR-2"]
+        )
+        self.assertEqual([table.layout_id for table in analysis.tables], [1, 2])
+        self.assertEqual(analysis.tables[0].layout_kind, "counted_zone")
+        self.assertEqual(analysis.tables[0].layout_zone_name, "BAR")
+        self.assertEqual(analysis.tables[0].layout_zone_id, 7)
+        self.assertEqual(analysis.tables[0].layout_capacity, 2)
+
+    def test_seated_person_occupies_only_their_own_seat(self):
+        # 사람 박스 x 280~420 은 1번 칸(200~500) 안에만 들어간다.
+        analyzer = build_analyzer(
+            [],
+            poses=[("person", (280.0, 300.0, 420.0, 520.0), 0.72)],
+            keypoints=[
+                seated_keypoints(
+                    hip=(320.0, 430.0),
+                    knee=(400.0, 440.0),
+                    ankle=(390.0, 520.0),
+                    shoulder=(320.0, 330.0),
+                )
+            ],
+            layout=bar_layout(),
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
+        self.assertEqual(analysis.tables[1].raw_state, OccupancyState.EMPTY)
+
+    def test_belongings_alone_occupy_a_seat(self):
+        analyzer = build_analyzer(
+            [("handbag", (300.0, 350.0, 380.0, 420.0), 0.55)],
+            layout=bar_layout(),
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
+        self.assertEqual(analysis.tables[1].raw_state, OccupancyState.EMPTY)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 Box = Tuple[float, float, float, float]
 
@@ -62,6 +62,25 @@ class LayoutSeat:
 
 
 @dataclass(frozen=True)
+class JudgementUnit:
+    """One box the pipeline judges independently.
+
+    A plain table is one unit.  A counted_zone becomes one unit per
+    hand-drawn seat slot, so the existing evidence association and
+    debouncing run per seat without a separate counting code path.
+    """
+
+    box: Box
+    unit_id: int
+    name: str
+    kind: str
+    capacity: int
+    zone_id: Optional[int] = None
+    zone_name: Optional[str] = None
+    seat_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
 class LayoutTable:
     id: int
     name: str
@@ -111,6 +130,58 @@ class SeatLayout:
             count = len(table.chairs)
             assignments[index] = list(range(cursor, cursor + count))
             cursor += count
+        return assignments
+
+    def judgement_units(self) -> Tuple[JudgementUnit, ...]:
+        """Flatten the layout into the boxes the pipeline judges one by one."""
+        units: List[JudgementUnit] = []
+        for table in self.tables:
+            if table.kind == COUNTED_ZONE_KIND:
+                capacity = len(table.seats)
+                for seat in table.seats:
+                    units.append(
+                        JudgementUnit(
+                            box=seat.box,
+                            unit_id=len(units) + 1,
+                            name=f"{table.name}-{seat.id}",
+                            kind=COUNTED_ZONE_KIND,
+                            capacity=capacity,
+                            zone_id=table.id,
+                            zone_name=table.name,
+                            seat_id=seat.id,
+                        )
+                    )
+            else:
+                units.append(
+                    JudgementUnit(
+                        box=table.box,
+                        unit_id=len(units) + 1,
+                        name=table.name,
+                        kind=TABLE_KIND,
+                        capacity=1,
+                    )
+                )
+        return tuple(units)
+
+    def unit_chair_assignments(self) -> Dict[int, List[int]]:
+        """Chair indices per judgement-unit index.
+
+        Chairs belong to plain tables only; counted_zone seats get an empty
+        list so downstream indexing stays uniform.
+        """
+        assignments: Dict[int, List[int]] = {}
+        unit_index = 0
+        chair_cursor = 0
+        for table in self.tables:
+            if table.kind == COUNTED_ZONE_KIND:
+                for _ in table.seats:
+                    assignments[unit_index] = []
+                    unit_index += 1
+                continue
+            count = len(table.chairs)
+            assignments[unit_index] = list(range(chair_cursor, chair_cursor + count))
+            chair_cursor += count
+            unit_index += 1
         return assignments
 
 

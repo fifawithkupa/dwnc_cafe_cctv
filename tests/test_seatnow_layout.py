@@ -191,5 +191,70 @@ class CountedZoneTests(unittest.TestCase):
         self.assertEqual(len(reloaded.tables[0].seats), 2)
 
 
+MIXED = {
+    "schema_version": 2,
+    "source": {"video": "v.mp4", "frame_at_seconds": 0.0, "width": 1280, "height": 720},
+    "tables": [
+        {
+            "id": 1,
+            "name": "창가1",
+            "box": [100.0, 200.0, 300.0, 400.0],
+            "chairs": [
+                {"id": 1, "box": [40.0, 210.0, 90.0, 390.0]},
+                {"id": 2, "box": [310.0, 210.0, 360.0, 390.0]},
+            ],
+        },
+        {
+            "id": 7,
+            "name": "BAR",
+            "kind": "counted_zone",
+            "box": [500.0, 100.0, 900.0, 300.0],
+            "seats": [
+                {"id": 1, "box": [500.0, 100.0, 700.0, 300.0]},
+                {"id": 2, "box": [700.0, 100.0, 900.0, 300.0]},
+            ],
+        },
+    ],
+}
+
+
+class JudgementUnitTests(unittest.TestCase):
+    def test_table_yields_one_unit_zone_yields_one_per_seat(self):
+        units = load_layout(write_json(MIXED)).judgement_units()
+
+        self.assertEqual(len(units), 3)
+        self.assertEqual(units[0].kind, "table")
+        self.assertEqual(units[0].name, "창가1")
+        self.assertEqual(units[0].capacity, 1)
+        self.assertEqual(units[1].kind, "counted_zone")
+        self.assertEqual(units[1].name, "BAR-1")
+        self.assertEqual(units[1].zone_name, "BAR")
+        self.assertEqual(units[1].zone_id, 7)
+        self.assertEqual(units[1].seat_id, 1)
+        self.assertEqual(units[1].capacity, 2)
+        self.assertEqual(units[2].name, "BAR-2")
+
+    def test_unit_ids_are_unique_and_sequential(self):
+        units = load_layout(write_json(MIXED)).judgement_units()
+
+        self.assertEqual([unit.unit_id for unit in units], [1, 2, 3])
+
+    def test_zone_seat_boxes_become_unit_boxes(self):
+        units = load_layout(write_json(MIXED)).judgement_units()
+
+        self.assertEqual(units[1].box, (500.0, 100.0, 700.0, 300.0))
+        self.assertEqual(units[2].box, (700.0, 100.0, 900.0, 300.0))
+
+    def test_chairs_map_to_unit_indices_zones_get_none(self):
+        layout = load_layout(write_json(MIXED))
+
+        self.assertEqual(layout.unit_chair_assignments(), {0: [0, 1], 1: [], 2: []})
+
+    def test_table_only_layout_matches_legacy_chair_assignments(self):
+        layout = load_layout(write_json(VALID))
+
+        self.assertEqual(layout.unit_chair_assignments(), layout.chair_assignments())
+
+
 if __name__ == "__main__":
     unittest.main()

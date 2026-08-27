@@ -76,51 +76,70 @@ tick마다 JSONL 최상위에 `seat_report`를 추가한다. 기존 `tables[]`�
 `predicted`, `raw_state` 등 디버깅 필드가 많아 앱 계약과 진단이 뒤엉킨다.
 분리하면 앱은 `seat_report`만, 개발은 `tables[]`를 본다.
 
-## 4. 구역 카운트 `counted_zone`
+## 4. 구역 좌석 `counted_zone`
+
+일자형/벽 책상처럼 한 면에 여러 명이 나란히 앉는 좌석을 다룬다.
+**보고는 구역 단위로 묶어서 하고("바: 6석 중 3석 사용"), 세는 것은 설치 때
+사람이 그어둔 좌석 칸으로 한다.**
 
 ### 4.1 레이아웃 스키마 (v2)
 
 ```jsonc
-{ "id": 7, "name": "BAR", "kind": "counted_zone", "capacity": 6,
-  "box": [x1, y1, x2, y2], "chairs": [] }
+{ "id": 7, "name": "BAR", "kind": "counted_zone",
+  "box": [x1, y1, x2, y2],
+  "seats": [
+    { "id": 1, "box": [x1, y1, x2, y2] },
+    { "id": 2, "box": [x1, y1, x2, y2] }
+    // ... 자리 수만큼
+  ],
+  "chairs": [] }
 ```
+
+`capacity`는 **저장하지 않고 `len(seats)`에서 파생한다.** 별도로 적으면
+둘이 어긋날 수 있고, 어긋났을 때 무엇이 맞는지 판단할 근거가 없다.
 
 `kind` 생략 시 `"table"`로 간주한다. **기존 v1 레이아웃 파일은 무수정으로 로드된다.**
 
-### 4.2 카운트 규칙
+### 4.2 좌석 칸은 사람이 긋는다
 
-구역을 좌석 경계로 쪼개지 **않는다.** 원근 때문에 일자 책상은 화면상 좌석 간격이
-불균등해서, 박스를 capacity등분하면 어긋난다. 대신 증거 클러스터를 세고
-capacity로 상한을 건다.
+자동 등분하지 않는다. 카메라가 바를 비스듬히 보므로 가까운 쪽 자리는 화면에서
+넓고 먼 쪽은 좁다. 구역 박스를 자리 수로 등분하면 실제 좌석과 어긋난다.
+
+설치 담당자가 화면을 보면서 직접 그으면 원근이 이미 반영된다. 추가 노동은
+**바형 좌석에만** 발생하고 (일반 테이블은 `_preseed`가 자동으로 잡는다),
+설치 1회로 끝난다 — `CLAUDE.md`의 수작업 예산 안에 들어간다.
+
+### 4.3 판정 규칙
+
+각 좌석 칸을 독립적으로 판정한 뒤 구역 단위로 합산한다.
 
 | 증거 | 판정 |
 |---|---|
-| 착석 포즈 사람의 anchor가 구역 안 | `occupied` +1 |
-| 비제외 클래스 객체가 구역 안 + 근처에 사람 없음 | `occupied` +1 (짐 점유) |
-| 사람은 있는데 포즈 판정 불가 | `unknown` +1 |
-| 사람과 짐이 서로 가까움 | 같은 자리로 병합 (중복 카운트 방지) |
-| **서 있는 사람**(`PoseState.STANDING`) | **세지 않는다** — 지나가는 손님·주문 대기 |
+| 착석 포즈 사람의 anchor가 칸 안 | 그 칸 `occupied` |
+| 비제외 클래스 객체가 칸 안 + 근처에 사람 없음 | 그 칸 `occupied` (짐 점유) |
+| 사람은 있는데 포즈 판정 불가 | 그 칸 `unknown` |
+| 사람 박스가 **두 칸 이상에 걸침** | 걸친 칸 전부 `unknown` |
+| 서 있는 사람(`PoseState.STANDING`) | 세지 않는다 — 지나가는 손님·주문 대기 |
+| 아무 증거 없음 | 그 칸 `empty` |
 
-`free = max(0, capacity - occupied - unknown)`
+구역 집계: `occupied` = 점유 칸 수, `unknown` = 판정불가 칸 수,
+`free` = 나머지. 칸 단위로 세므로 **합이 자리 수를 넘을 수 없다.**
 
-"근처에 사람 없음", "서로 가까움"의 판정은 새 임계값을 만들지 않고
+네 번째 규칙이 "두 명이 붙어 앉으면 1명으로 센다" 문제를 막는다. 한 사람의
+박스가 두 칸에 걸치면 그 안에 몇 명인지 단정하지 않고 `unknown`으로 낸다.
+빈자리를 부풀려 **"자리 있음"을 잘못 내보내는 것보다 "확인 안 됨"이 낫다**는
+§2 원칙을 그대로 따른다.
+
+"근처에 사람 없음"의 판정은 새 임계값을 만들지 않고
 `associate_objects_to_chairs` / `associate_seated_people_to_chairs`가 쓰는
-기존 연결 규칙을 구역 안에서 재사용한다. 조정 손잡이를 늘리지 않는 것이
+기존 연결 규칙을 칸 안에서 재사용한다. 조정 손잡이를 늘리지 않는 것이
 `CLAUDE.md`의 "매장별 튜닝 금지" 규칙과 맞다.
 
-이 방식은 **탐지 모델이 제일 잘하는 일(사람 박스 세기)에 기댄다.** 좌석 경계
-추정은 모델이 못 하는 일이고, 사람 수 세기는 잘한다. 짐 증거는 기존
-`EXCLUDED_OBJECT_CLASSES` 필터를 구역 안에서 그대로 재사용한다.
+### 4.4 디바운싱
 
-**수용하는 한계**: 두 명이 딱 붙어 앉으면 1명으로 셀 수 있다. 카메라 1대 + 가림
-전제에서 피할 수 없다. `occupied`를 과소 계상하는 방향이라 "빈자리를 부풀리는"
-쪽으로 틀린다. 사유 코드로 관측만 해두고, 데이터로 확인된 뒤에 대응한다.
-
-### 4.3 카운트 디바운싱
-
-기존 확정 임계값을 그대로 적용한다. 카운트 **증가는 2회**, **감소는 3회** 연속
-관측 후 반영 — 상태 디바운싱과 같은 비대칭(`occupy_confirmations=2`,
-`empty_confirmations=3`)이라 규칙이 하나로 유지된다.
+칸마다 기존 확정 임계값을 그대로 적용한다 — 점유 전환 2회, 이탈 전환 3회
+연속 관측 (`occupy_confirmations=2`, `empty_confirmations=3`). 일반 테이블과
+같은 규칙이라 디바운싱 로직을 하나로 유지한다.
 
 ## 5. UNKNOWN 사유 코드
 
@@ -139,14 +158,13 @@ capacity로 상한을 건다.
 | 그룹 | 코드 | 푸는 방법 |
 |---|---|---|
 | 설치 (→IGNORE) | `border_cropped`, `scene_change` | 카메라 재배치. 코드로 풀지 않는다 |
-| 기하·가림 (→UNKNOWN) | `occluded_lower_body`, `ambiguous_association` | 구제 경로 (의자 연결·짐 증거) |
+| 기하·가림 (→UNKNOWN) | `occluded_lower_body`, `ambiguous_association`, `spans_multiple_seats` | 구제 경로 (의자 연결·짐 증거), 좌석 칸 재조정 |
 | 모델 (→UNKNOWN) | `pose_low_keypoints`, `table_not_detected` | 파인튜닝(T11) 또는 imgsz 상향 |
 | 시간 (→UNKNOWN) | `track_predicted`, `pending_confirmation` | 아무것도 안 한다. 다음 tick에 해소 |
 | 확정 (→OCCUPIED) | `person_seated`, `belongings`, `occupied_chair` | 해당 없음 (정상 판정) |
 | 확정 (→EMPTY) | `no_customer_evidence` | 해당 없음 (정상 판정) |
-| 이상 | `count_exceeds_capacity` | 레이아웃 `capacity`가 틀렸다는 신호 → 검수 |
 
-마지막 그룹의 분리가 중요하다. `pending_confirmation`(확정 대기)은 **정상 동작인데
+**"시간" 그룹의 분리가 중요하다.** `pending_confirmation`(확정 대기)은 **정상 동작인데
 지금은 UNKNOWN에 섞인다.** 분리하지 않으면 "UNKNOWN 30%"의 상당 부분이 사실은
 고칠 게 없는 대기 상태인데 개선 대상으로 오해된다.
 
@@ -187,9 +205,9 @@ frame
 | 상황 | 처리 |
 |---|---|
 | `schema_version: 1` 레이아웃 | 그대로 로드, `kind="table"` 기본값 |
-| `counted_zone`인데 `capacity` 없음/0 이하 | `LayoutError` |
+| `counted_zone`인데 `seats`가 없거나 비어 있음 | `LayoutError` |
 | 모르는 `kind` 값 | `LayoutError` |
-| 카운트 > capacity | capacity로 클램프 + `count_exceeds_capacity` 기록 |
+| `seats` 박스가 구역 `box` 밖으로 벗어남 | `LayoutError` |
 
 `build_seat_report()`는 **예외를 삼키지 않는다.** 검증된 데이터에 대한 순수
 포매팅이라 여기서 터지면 버그지 운영 상황이 아니다. 24/7 복원력은 T10의
@@ -200,7 +218,8 @@ systemd 재시작이 담당하는 층이다.
 신규 `tests/test_seatnow_report.py`:
 
 - v1 레이아웃 하위 호환 — 기존 `layouts/*.json` 2개가 무수정 로드
-- 카운트 규칙 — 사람만 / 짐만 / 사람+짐 병합 / capacity 초과 / unknown 혼재
+- 칸 판정 규칙 — 사람만 / 짐만 / 두 칸 걸침 / 서 있는 사람 / unknown 혼재
+- 구역 합산이 자리 수를 넘지 않는지
 - 사유 코드 — 4개 그룹의 각 분기가 정확한 코드를 내는지
 - `totals.free`가 UNKNOWN을 절대 포함하지 않는지 (계약의 핵심)
 
@@ -208,8 +227,8 @@ systemd 재시작이 담당하는 층이다.
 
 라벨링 도구도 같이 가야 파일럿 매장 채점이 된다.
 
-- `make_labels.py` — `counted_zone`은 occupied/empty/ignore가 아니라
-  **인원 수**를 받는 스켈레톤 생성
+- `calibrate.py` — 바 구역을 그린 뒤 그 안에 **좌석 칸을 긋는 모드** 추가
+- `make_labels.py` — `counted_zone`의 칸별 정답을 받는 스켈레톤 생성
 - `verify_seatnow.py` — 카운트 정답 채점 + 사유 코드별 UNKNOWN 분포 집계
 
 ## 10. 범위 밖

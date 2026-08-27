@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 
 from seatnow_layout import COUNTED_ZONE_KIND, JudgementUnit
+from seatnow_report import build_seat_report
 
 
 Box = Tuple[float, float, float, float]
@@ -3327,6 +3328,10 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "source": observation.source,
         "layout_id": observation.layout_id,
         "layout_name": observation.layout_name,
+        "layout_kind": observation.layout_kind,
+        "layout_zone_id": observation.layout_zone_id,
+        "layout_zone_name": observation.layout_zone_name,
+        "layout_capacity": observation.layout_capacity,
         "layout_version": track.layout_version,
         "layout_state": track.layout_state,
         "layout_changed_at": (
@@ -3411,6 +3416,7 @@ def frame_log_record(
     include_raw_detections: bool = False,
 ) -> Dict[str, object]:
     visible = update.visible_tracks
+    table_dicts = [track_to_dict(track) for track in visible]
     record: Dict[str, object] = {
         "frame_index": frame_index,
         "timestamp": round(analysis.timestamp, 6),
@@ -3443,7 +3449,7 @@ def frame_log_record(
             "pending_changes": update.pending_layout_changes,
             "committed_changes": update.committed_layout_changes,
         },
-        "tables": [track_to_dict(track) for track in visible],
+        "tables": table_dicts,
         "poses": [
             {
                 "state": pose.state.value,
@@ -3457,6 +3463,7 @@ def frame_log_record(
         ],
         "events": update.events,
     }
+    record["seat_report"] = build_seat_report(table_dicts, analysis.timestamp)
     if include_raw_detections:
         record["raw_detections"] = raw_detection_record(analysis)
     return record

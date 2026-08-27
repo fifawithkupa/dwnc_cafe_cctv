@@ -748,6 +748,43 @@ class FrameLogTests(unittest.TestCase):
         self.assertEqual(record["events"], update.events)
         json.dumps(record)
 
+    def test_frame_log_record_carries_seat_report(self):
+        observation = table_observation(
+            OccupancyState.EMPTY, source="layout", reason="no_customer_evidence"
+        )
+        observation.layout_id = 1
+        observation.layout_name = "창가1"
+        track = Track(
+            track_id=1,
+            box=observation.box,
+            stable_state=OccupancyState.EMPTY,
+            last_observation=observation,
+            first_seen=0.0,
+            last_seen=0.0,
+        )
+        update = TrackerUpdate(
+            visible_tracks=[track], all_tracks=[track], events=[]
+        )
+        analysis = FrameAnalysis(
+            timestamp=0.0,
+            tables=[observation],
+            poses=[],
+            detections=[],
+            inference_ms=1.0,
+        )
+
+        record = frame_log_record(0, analysis, update)
+
+        self.assertIn("seat_report", record)
+        self.assertEqual(record["seat_report"]["totals"]["free"], 1)
+        self.assertEqual(record["seat_report"]["totals"]["capacity"], 1)
+        self.assertEqual(record["seat_report"]["seats"][0]["seat_id"], "창가1")
+        self.assertEqual(record["seat_report"]["seats"][0]["kind"], "table")
+        self.assertEqual(
+            record["seat_report"]["seats"][0]["reason_code"], "no_customer_evidence"
+        )
+        json.dumps(record)
+
 
 class TableCandidateSelectionTests(unittest.TestCase):
     """Regression tests built from the 2026-07 sample_raw probe evidence:

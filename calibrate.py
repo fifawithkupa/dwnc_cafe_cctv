@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from seatnow_layout import (
     SCHEMA_VERSION,
     LayoutChair,
+    LayoutSeat,
     LayoutTable,
     SeatLayout,
 )
@@ -37,8 +38,33 @@ class CalibrationState:
 
     def add_table(self, box: Box) -> None:
         self._snapshot()
-        self.tables.append({"box": tuple(box), "chairs": []})
+        self.tables.append(
+            {"box": tuple(box), "chairs": [], "kind": "table", "seats": []}
+        )
         self.selected = ("table", len(self.tables) - 1, -1)
+
+    def add_zone(self, box: Box) -> None:
+        """Add a counted_zone: a bar counter or wall desk the model cannot see.
+
+        Its capacity is however many seat slots get drawn inside it, so the
+        zone is useless until ``add_seat`` runs at least once.
+        """
+        self._snapshot()
+        self.tables.append(
+            {"box": tuple(box), "chairs": [], "kind": "counted_zone", "seats": []}
+        )
+        self.selected = ("table", len(self.tables) - 1, -1)
+
+    def add_seat(self, box: Box) -> bool:
+        """Draw one seat slot inside the selected counted_zone."""
+        table_index = self._selected_table_index()
+        if table_index is None:
+            return False
+        if self.tables[table_index].get("kind") != "counted_zone":
+            return False
+        self._snapshot()
+        self.tables[table_index]["seats"].append(tuple(box))
+        return True
 
     def add_chair(self, box: Box) -> bool:
         table_index = self._selected_table_index()
@@ -61,6 +87,9 @@ class CalibrationState:
             for ci, chair in enumerate(table["chairs"]):
                 if _contains(chair, x, y):
                     candidates.append((_area(chair), ("chair", ti, ci)))
+            for si, seat in enumerate(table.get("seats", [])):
+                if _contains(seat, x, y):
+                    candidates.append((_area(seat), ("seat", ti, si)))
         self.selected = min(candidates)[1] if candidates else None
 
     def delete_selected(self) -> None:
@@ -70,6 +99,8 @@ class CalibrationState:
         kind, ti, ci = self.selected
         if kind == "table":
             del self.tables[ti]
+        elif kind == "seat":
+            del self.tables[ti]["seats"][ci]
         else:
             del self.tables[ti]["chairs"][ci]
         self.selected = None
@@ -83,11 +114,22 @@ class CalibrationState:
         tables = tuple(
             LayoutTable(
                 id=index,
-                name=f"T{index}",
+                name=(
+                    f"BAR{index}"
+                    if table.get("kind") == "counted_zone"
+                    else f"T{index}"
+                ),
                 box=table["box"],
                 chairs=tuple(
                     LayoutChair(id=chair_index, box=chair)
                     for chair_index, chair in enumerate(table["chairs"], start=1)
+                ),
+                kind=table.get("kind", "table"),
+                seats=tuple(
+                    LayoutSeat(id=seat_index, box=seat)
+                    for seat_index, seat in enumerate(
+                        table.get("seats", []), start=1
+                    )
                 ),
             )
             for index, table in enumerate(self.tables, start=1)
@@ -104,6 +146,8 @@ class CalibrationState:
                 {
                     "box": tuple(table.box),
                     "chairs": [tuple(chair.box) for chair in table.chairs],
+                    "kind": table.kind,
+                    "seats": [tuple(seat.box) for seat in table.seats],
                 }
             )
         state.selected = None
@@ -167,10 +211,14 @@ def _preseed(frame, det_model_path):
     return state
 
 
-HELP_TEXT = "[t]able  [c]hair->selected  [d]elete  [u]ndo  [s]ave  [q]uit"
+HELP_TEXT = (
+    "[t]able  [c]hair  [z]one(bar)  seat[x]  [d]elete  [u]ndo  [s]ave  [q]uit"
+)
 
 TABLE_COLOR = (80, 200, 80)
 CHAIR_COLOR = (60, 200, 230)
+ZONE_COLOR = (200, 140, 60)
+SEAT_COLOR = (230, 190, 90)
 SELECT_COLOR = (60, 60, 235)
 
 
@@ -180,11 +228,26 @@ def _draw(frame, state, mode, drag):
     canvas = frame.copy()
     for ti, table in enumerate(state.tables):
         tx1, ty1, tx2, ty2 = [int(v) for v in table["box"]]
+        is_zone = table.get("kind") == "counted_zone"
+        base_color = ZONE_COLOR if is_zone else TABLE_COLOR
         selected = state.selected == ("table", ti, -1)
         cv2.rectangle(canvas, (tx1, ty1), (tx2, ty2),
-                      SELECT_COLOR if selected else TABLE_COLOR, 3 if selected else 2)
-        cv2.putText(canvas, f"T{ti + 1}", (tx1, max(16, ty1 - 6)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, TABLE_COLOR, 2, cv2.LINE_AA)
+                      SELECT_COLOR if selected else base_color, 3 if selected else 2)
+        seats = table.get("seats", [])
+        label = f"BAR{ti + 1} ({len(seats)}석)" if is_zone else f"T{ti + 1}"
+        cv2.putText(canvas, label, (tx1, max(16, ty1 - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, base_color, 2, cv2.LINE_AA)
+        for si, seat in enumerate(seats):
+            sx1, sy1, sx2, sy2 = [int(v) for v in seat]
+            seat_selected = state.selected == ("seat", ti, si)
+            cv2.rectangle(canvas, (sx1, sy1), (sx2, sy2),
+                          SELECT_COLOR if seat_selected else SEAT_COLOR, 2)
+            cv2.putText(canvas, str(si + 1), (sx1 + 6, sy2 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, SEAT_COLOR, 2, cv2.LINE_AA)
+        if is_zone and not seats:
+            cv2.putText(canvas, "! seat[x]로 자리 칸을 그으세요",
+                        (tx1, min(canvas.shape[0] - 8, ty2 + 22)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 235), 2, cv2.LINE_AA)
         tcx, tcy = (tx1 + tx2) // 2, (ty1 + ty2) // 2
         for ci, chair in enumerate(table["chairs"]):
             cx1, cy1, cx2, cy2 = [int(v) for v in chair]
@@ -228,6 +291,11 @@ def run_gui(frame, state, output_path, source):
                 state.select_at(x, y)  # 클릭 = 선택
             elif mode == "table":
                 state.add_table(box)
+            elif mode == "zone":
+                state.add_zone(box)
+            elif mode == "seat":
+                if not state.add_seat(box):
+                    print("자리 칸을 넣을 바 구역([z])을 먼저 클릭으로 선택하세요")
             else:
                 if not state.add_chair(box):
                     print("의자를 붙일 테이블을 먼저 클릭으로 선택하세요")
@@ -241,6 +309,10 @@ def run_gui(frame, state, output_path, source):
             mode = "table"
         elif key == ord("c"):
             mode = "chair"
+        elif key == ord("z"):
+            mode = "zone"
+        elif key == ord("x"):
+            mode = "seat"
         elif key == ord("d"):
             state.delete_selected()
         elif key == ord("u"):
@@ -250,9 +322,30 @@ def run_gui(frame, state, output_path, source):
             if not layout.tables:
                 print("테이블이 없어 저장하지 않았습니다")
                 continue
+            # 자리 칸이 없는 바 구역은 저장해도 다시 못 연다 (capacity=len(seats)).
+            empty_zones = [
+                table.name
+                for table in layout.tables
+                if table.kind == "counted_zone" and not table.seats
+            ]
+            if empty_zones:
+                print(
+                    f"자리 칸이 없는 바 구역이 있어 저장하지 않았습니다: "
+                    f"{', '.join(empty_zones)} — seat[x]로 칸을 긋거나 [d]로 지우세요"
+                )
+                continue
             save_layout(layout, output_path)
-            print(f"저장됨: {output_path} (테이블 {len(layout.tables)}개, "
-                  f"의자 {len(layout.chair_boxes())}개)")
+            zones = [table for table in layout.tables if table.kind == "counted_zone"]
+            summary = (
+                f"테이블 {len(layout.tables) - len(zones)}개, "
+                f"의자 {len(layout.chair_boxes())}개"
+            )
+            if zones:
+                summary += (
+                    f", 바 구역 {len(zones)}개"
+                    f"({sum(len(zone.seats) for zone in zones)}석)"
+                )
+            print(f"저장됨: {output_path} ({summary})")
         elif key == ord("q") or key == 27:
             break
     cv2.destroyAllWindows()

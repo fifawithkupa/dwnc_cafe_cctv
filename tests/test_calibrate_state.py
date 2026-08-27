@@ -81,5 +81,72 @@ class CalibrationStateTests(unittest.TestCase):
         self.assertEqual(restored.tables[0]["chairs"], [(40.0, 110.0, 90.0, 190.0)])
 
 
+class CountedZoneCalibrationTests(unittest.TestCase):
+    """일자형/벽 책상: 구역을 치고 그 안에 자리마다 칸을 긋는다."""
+
+    def test_add_zone_then_seats(self):
+        state = CalibrationState()
+        state.add_zone((100.0, 100.0, 500.0, 300.0))
+
+        self.assertTrue(state.add_seat((100.0, 100.0, 300.0, 300.0)))
+        self.assertTrue(state.add_seat((300.0, 100.0, 500.0, 300.0)))
+
+        self.assertEqual(state.tables[0]["kind"], "counted_zone")
+        self.assertEqual(len(state.tables[0]["seats"]), 2)
+
+    def test_add_seat_without_a_zone_selected_fails(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 300.0))
+
+        self.assertFalse(state.add_seat((110.0, 110.0, 200.0, 290.0)))
+
+    def test_undo_removes_last_seat(self):
+        state = CalibrationState()
+        state.add_zone((100.0, 100.0, 500.0, 300.0))
+        state.add_seat((100.0, 100.0, 300.0, 300.0))
+        state.add_seat((300.0, 100.0, 500.0, 300.0))
+
+        state.undo()
+
+        self.assertEqual(len(state.tables[0]["seats"]), 1)
+
+    def test_plain_tables_keep_table_kind(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 300.0))
+
+        self.assertEqual(state.tables[0]["kind"], "table")
+        self.assertEqual(state.tables[0]["seats"], [])
+
+    def test_zone_round_trips_through_layout(self):
+        state = CalibrationState()
+        state.add_zone((100.0, 100.0, 500.0, 300.0))
+        state.add_seat((100.0, 100.0, 300.0, 300.0))
+        state.add_seat((300.0, 100.0, 500.0, 300.0))
+
+        layout = state.to_layout({"width": 1280, "height": 720})
+        restored = CalibrationState.from_layout(layout)
+
+        self.assertEqual(layout.tables[0].kind, "counted_zone")
+        self.assertEqual(len(layout.tables[0].seats), 2)
+        self.assertEqual(restored.tables[0]["kind"], "counted_zone")
+        self.assertEqual(
+            restored.tables[0]["seats"],
+            [(100.0, 100.0, 300.0, 300.0), (300.0, 100.0, 500.0, 300.0)],
+        )
+
+    def test_zone_layout_is_loadable_by_the_analyzer(self):
+        """to_layout 결과가 judgement_units()로 바로 펼쳐져야 한다."""
+        state = CalibrationState()
+        state.add_table((600.0, 100.0, 800.0, 300.0))
+        state.add_zone((100.0, 100.0, 500.0, 300.0))
+        state.add_seat((100.0, 100.0, 300.0, 300.0))
+        state.add_seat((300.0, 100.0, 500.0, 300.0))
+
+        units = state.to_layout({"width": 1280, "height": 720}).judgement_units()
+
+        self.assertEqual([unit.kind for unit in units], ["table", "counted_zone", "counted_zone"])
+        self.assertEqual(units[1].capacity, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

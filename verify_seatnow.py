@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from seatnow_report import ACTIONABLE_GROUPS, REASON_GROUPS
+
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_EXPECTATIONS = PROJECT_DIR / "tests" / "fixtures" / "test_video_expectations.json"
@@ -158,6 +160,58 @@ def coverage_metrics(records: Sequence[Dict[str, object]]) -> Dict[str, object]:
     }
 
 
+def summarize_unknown_reasons(
+    records: Sequence[Dict[str, object]]
+) -> Dict[str, object]:
+    """Break the UNKNOWN rate down by what would actually fix it.
+
+    "UNKNOWN 34% = geometry 22% + model 8% + time 4%" turns the next
+    engineering decision into a table lookup instead of an argument.  The
+    ``time`` group (waiting for confirmation) is deliberately excluded from
+    ``actionable_unknown_ticks``: it is normal operation, not a defect.
+    """
+    group_of = {
+        code.value: group
+        for group, codes in REASON_GROUPS.items()
+        for code in codes
+    }
+    by_group: Dict[str, int] = {group: 0 for group in REASON_GROUPS}
+    by_code: Dict[str, int] = {}
+    total = 0
+    unknown = 0
+
+    def record_code(code: str, count: int) -> None:
+        by_code[code] = by_code.get(code, 0) + count
+        group = group_of.get(code)
+        if group:
+            by_group[group] = by_group.get(group, 0) + count
+
+    for record in records:
+        report = record.get("seat_report") or {}
+        for seat in report.get("seats") or []:
+            if seat.get("kind") == "counted_zone":
+                total += int(seat.get("capacity") or 0)
+                unknown += int(seat.get("unknown") or 0)
+                for code, count in (seat.get("reason_codes") or {}).items():
+                    record_code(str(code), int(count))
+                continue
+            total += 1
+            if seat.get("state") != "unknown":
+                continue
+            unknown += 1
+            record_code(str(seat.get("reason_code") or ""), 1)
+
+    actionable = sum(by_group.get(group, 0) for group in ACTIONABLE_GROUPS)
+    return {
+        "total_seat_ticks": total,
+        "unknown_seat_ticks": unknown,
+        "unknown_rate": round(unknown / total, 4) if total else 0.0,
+        "by_group": by_group,
+        "by_code": dict(sorted(by_code.items())),
+        "actionable_unknown_ticks": actionable,
+    }
+
+
 def expected_interval(expectations: Dict[str, object], timestamp: float) -> Dict[str, object]:
     timeline = expectations["timeline"]
     for index, interval in enumerate(timeline):
@@ -263,6 +317,7 @@ def verify_records(
         "checks": checks,
         "required_checks": required,
         "coverage": coverage_metrics(records),
+        "unknown_reasons": summarize_unknown_reasons(records),
         "metadata_checks": metadata_checks,
         "profile": run.get("profile"),
         "frames_total": len(frames),
@@ -336,6 +391,32 @@ def print_coverage(coverage: Dict[str, object], indent: str = "  ") -> None:
             )
 
 
+GROUP_NOTES = {
+    "install": "카메라 재설치",
+    "geometry": "가림·구제 로직",
+    "model": "모델(파인튜닝·해상도)",
+    "time": "확정 대기 — 고칠 것 없음",
+}
+
+
+def print_unknown_reasons(breakdown: Dict[str, object], indent: str = "  ") -> None:
+    total = breakdown["total_seat_ticks"]
+    if not total:
+        return
+    print(
+        f"{indent}UNKNOWN: {breakdown['unknown_seat_ticks']}/{total} "
+        f"({breakdown['unknown_rate'] * 100:.1f}%)  "
+        f"개선 대상 {breakdown['actionable_unknown_ticks']}건"
+    )
+    for group, count in breakdown["by_group"].items():
+        if not count or group == "settled":
+            continue
+        share = count / total * 100
+        print(f"{indent}  {group:<9s} {count:4d} ({share:4.1f}%)  {GROUP_NOTES[group]}")
+    for code, count in breakdown["by_code"].items():
+        print(f"{indent}    - {code:<24s} {count}")
+
+
 def print_suite_report(suite: Dict[str, object]) -> None:
     for report in suite["reports"]:
         print_report(report)
@@ -365,6 +446,8 @@ def print_report(report: Dict[str, object]) -> None:
         print(f"  {mark}  {name}{suffix}")
     if report.get("coverage"):
         print_coverage(report["coverage"])
+    if report.get("unknown_reasons"):
+        print_unknown_reasons(report["unknown_reasons"])
     mismatches = [frame for frame in report["frames"] if not frame["exact_counts"]]
     if mismatches:
         print("Mismatched timestamps:")

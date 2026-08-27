@@ -45,13 +45,21 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def seat_names_from_layout(layout) -> List[str]:
+    """Label targets are judgement units: a bar zone contributes one per seat.
+
+    Labelling a whole bar as a single row would make its per-seat judgements
+    unscorable, so the skeleton lists BAR-1, BAR-2, … just like the analyzer.
+    """
+    return [unit.name for unit in layout.judgement_units()]
+
+
 def seat_ids(layout_path: Optional[Path], count: int) -> List[str]:
     """Seat labels for the timeline: from a calibrated layout, or A, B, C…"""
     if layout_path is not None:
         from seatnow_layout import load_layout
 
-        layout = load_layout(layout_path)
-        return [table.name for table in layout.tables]
+        return seat_names_from_layout(load_layout(layout_path))
     return [chr(ord("A") + index) for index in range(count)]
 
 

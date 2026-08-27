@@ -24,7 +24,7 @@ sudo apt install ffmpeg
 
 ```bash
 python -m unittest discover tests
-# 기대: Ran 171 tests ... OK
+# 기대: Ran 229 tests ... OK
 ```
 
 ## 2. 샘플 영상은 구글 드라이브에 있다 — 반드시 "오프라인 사용 가능"으로 고정할 것

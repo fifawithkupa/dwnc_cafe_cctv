@@ -11,14 +11,15 @@
 |------|------|
 | `seatnow_core.py` | 본체: 추론·점유 판정·의자/물체/사람 연결·추적(디바운싱)·FFmpeg 영상 I/O·렌더링 |
 | `seatnow.py` | CLI 진입점 (이미지/영상 → 주석 영상 + JSONL 로그) |
-| `seatnow_layout.py`, `calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존) 정의·로드 |
+| `seatnow_layout.py`, `calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존, 바 구역·자리 칸) 정의·로드 |
+| `seatnow_report.py` | 앱용 좌석 가용성 계약(`seat_report`) 생성 + UNKNOWN 사유 코드 |
 | `verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 (영상 여러 개 동시 채점) |
 | `make_labels.py` | 라벨링용 대조표 프레임 추출 + fixture 스켈레톤 생성·검사 |
 | `export.py` | `.pt` → OpenVINO FP32/INT8 익스포트 (엣지 배포용) |
 | `bench.py` | 추론 latency 측정 → tick 예산 산출 |
 | `bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
 | `rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
-| `tests/` | 유닛 테스트 171개 (모델 없이 순수 로직 검증) |
+| `tests/` | 유닛 테스트 229개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
 | `plan.md` | 코드 작업 플랜 (T1~T12) |
 | `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용) |
@@ -42,7 +43,7 @@ python3 -m venv venv
 
 # 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 171 tests ... OK
+# 기대: Ran 229 tests ... OK
 ```
 
 **모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
@@ -73,6 +74,14 @@ python3 -m venv venv
 ### 평가·벤치 도구
 
 ```bash
+# 0. 설치 시 좌석 캘리브레이션 (1회)
+#    yolov8x가 테이블·의자를 미리 잡아주고, 사람은 잘못 잡힌 것만 지우고
+#    못 잡은 것만 추가한다. 일자형·벽 책상은 모델이 절대 못 잡으므로
+#    [z]로 바 구역을 치고 [x]로 자리마다 칸을 긋는다 (칸 수 = 자리 수).
+./venv/bin/python calibrate.py sample_raw/cafe_sample_angle1.mov \
+  --output layouts/cafe_angle1.json
+#    키: [t]able [c]hair [z]one(bar) seat[x] [d]elete [u]ndo [s]ave [q]uit
+
 # 1. 새 영상 라벨링: 대조표 프레임 + fixture 스켈레톤 생성
 ./venv/bin/python make_labels.py sample_raw/cafe_1h.mp4 --interval 30 \
   --contact-sheet labels/cafe_1h --layout layouts/cafe.json

@@ -78,5 +78,37 @@ class ValidateTests(unittest.TestCase):
         self.assertIn("timeline is empty", validate(fixture([])))
 
 
+class CountedZoneSkeletonTests(unittest.TestCase):
+    """바 구역은 자리 칸마다 하나씩 라벨을 받아야 한다."""
+
+    def _layout(self):
+        from seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
+
+        return SeatLayout(
+            schema_version=2,
+            source={},
+            tables=(
+                LayoutTable(
+                    id=7,
+                    name="BAR",
+                    box=(200.0, 300.0, 800.0, 500.0),
+                    kind="counted_zone",
+                    seats=(
+                        LayoutSeat(id=1, box=(200.0, 300.0, 500.0, 500.0)),
+                        LayoutSeat(id=2, box=(500.0, 300.0, 800.0, 500.0)),
+                    ),
+                ),
+                LayoutTable(id=1, name="창가1", box=(900.0, 300.0, 1100.0, 500.0)),
+            ),
+        )
+
+    def test_zone_seats_appear_as_individual_label_targets(self):
+        from make_labels import seat_names_from_layout
+
+        self.assertEqual(
+            seat_names_from_layout(self._layout()), ["BAR-1", "BAR-2", "창가1"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

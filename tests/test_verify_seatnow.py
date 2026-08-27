@@ -157,5 +157,74 @@ class CoverageMetricsTests(unittest.TestCase):
         self.assertEqual(coverage["ignore_ratio"], 0.0)
 
 
+class ReasonBreakdownTests(unittest.TestCase):
+    """UNKNOWN은 "무엇으로 푸는가"로 쪼개져야 다음 할 일이 정해진다."""
+
+    def test_unknown_reasons_are_grouped_by_what_fixes_them(self):
+        from verify_seatnow import summarize_unknown_reasons
+
+        records = [
+            {
+                "seat_report": {
+                    "seats": [
+                        {"seat_id": "T1", "kind": "table", "state": "unknown",
+                         "reason_code": "occluded_lower_body"},
+                        {"seat_id": "T2", "kind": "table", "state": "unknown",
+                         "reason_code": "pose_low_keypoints"},
+                        {"seat_id": "T3", "kind": "table", "state": "unknown",
+                         "reason_code": "pending_confirmation"},
+                        {"seat_id": "T4", "kind": "table", "state": "empty",
+                         "reason_code": "no_customer_evidence"},
+                    ]
+                }
+            }
+        ]
+
+        breakdown = summarize_unknown_reasons(records)
+
+        self.assertEqual(breakdown["total_seat_ticks"], 4)
+        self.assertEqual(breakdown["unknown_seat_ticks"], 3)
+        self.assertEqual(breakdown["by_group"]["geometry"], 1)
+        self.assertEqual(breakdown["by_group"]["model"], 1)
+        self.assertEqual(breakdown["by_group"]["time"], 1)
+        # 확정 대기(time)는 고칠 게 없으므로 개선 대상에서 빠진다
+        self.assertEqual(breakdown["actionable_unknown_ticks"], 2)
+
+    def test_counted_zone_contributes_capacity_and_reason_counts(self):
+        from verify_seatnow import summarize_unknown_reasons
+
+        records = [
+            {
+                "seat_report": {
+                    "seats": [
+                        {
+                            "seat_id": "BAR",
+                            "kind": "counted_zone",
+                            "capacity": 4,
+                            "occupied": 1,
+                            "free": 1,
+                            "unknown": 2,
+                            "reason_codes": {"spans_multiple_seats": 2},
+                        }
+                    ]
+                }
+            }
+        ]
+
+        breakdown = summarize_unknown_reasons(records)
+
+        self.assertEqual(breakdown["total_seat_ticks"], 4)
+        self.assertEqual(breakdown["unknown_seat_ticks"], 2)
+        self.assertEqual(breakdown["by_group"]["geometry"], 2)
+
+    def test_records_without_seat_report_are_skipped(self):
+        from verify_seatnow import summarize_unknown_reasons
+
+        breakdown = summarize_unknown_reasons([{"tables": []}])
+
+        self.assertEqual(breakdown["total_seat_ticks"], 0)
+        self.assertEqual(breakdown["unknown_rate"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

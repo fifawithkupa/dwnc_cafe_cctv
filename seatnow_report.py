@@ -111,3 +111,97 @@ def classify_reason(raw_state: str, reason: str, predicted: bool) -> ReasonCode:
     if raw_state == "ignore":
         return ReasonCode.BORDER_CROPPED
     return ReasonCode.AMBIGUOUS_ASSOCIATION
+
+
+SCHEMA_VERSION = 1
+
+# IGNORE never reaches the app: it means the camera cannot see the seat at
+# all, which is an installation defect rather than a seat to reason about.
+_COUNTABLE_STATES = ("occupied", "empty", "unknown")
+
+
+def _seat_name(table: Dict[str, Any]) -> str:
+    return str(table.get("layout_name") or table.get("label") or "?")
+
+
+def build_seat_report(
+    tables: Sequence[Dict[str, Any]], tick_at: float
+) -> Dict[str, Any]:
+    """Turn tracker output into the app-facing availability contract.
+
+    ``free`` counts only confirmed empties.  UNKNOWN is never rounded into
+    availability -- "3 free, 2 unconfirmed" is honest, "5 free" is not.
+    """
+    plain: List[Dict[str, Any]] = []
+    zones: Dict[str, Dict[str, Any]] = {}
+    zone_order: List[str] = []
+
+    for table in tables:
+        state = str(table.get("state", "unknown"))
+        if state not in _COUNTABLE_STATES:
+            continue
+        code = classify_reason(
+            str(table.get("raw_state", state)),
+            str(table.get("reason", "")),
+            bool(table.get("predicted", False)),
+        )
+        if str(table.get("layout_kind", "table")) != "counted_zone":
+            plain.append(
+                {
+                    "seat_id": _seat_name(table),
+                    "kind": "table",
+                    "capacity": 1,
+                    "state": state,
+                    "reason_code": code.value,
+                    "confidence": round(float(table.get("confidence", 0.0)), 4),
+                }
+            )
+            continue
+
+        zone_name = str(table.get("layout_zone_name") or "?")
+        if zone_name not in zones:
+            zones[zone_name] = {
+                "seat_id": zone_name,
+                "kind": "counted_zone",
+                "capacity": 0,
+                "occupied": 0,
+                "free": 0,
+                "unknown": 0,
+                "reason_codes": {},
+            }
+            zone_order.append(zone_name)
+        zone = zones[zone_name]
+        zone["capacity"] += 1
+        if state == "occupied":
+            zone["occupied"] += 1
+        elif state == "empty":
+            zone["free"] += 1
+        else:
+            zone["unknown"] += 1
+            counts = zone["reason_codes"]
+            counts[code.value] = counts.get(code.value, 0) + 1
+
+    seats: List[Dict[str, Any]] = plain + [zones[name] for name in zone_order]
+
+    totals = {"capacity": 0, "occupied": 0, "free": 0, "unknown": 0}
+    for seat in seats:
+        if seat["kind"] == "counted_zone":
+            totals["capacity"] += seat["capacity"]
+            totals["occupied"] += seat["occupied"]
+            totals["free"] += seat["free"]
+            totals["unknown"] += seat["unknown"]
+            continue
+        totals["capacity"] += 1
+        if seat["state"] == "empty":
+            totals["free"] += 1
+        elif seat["state"] == "occupied":
+            totals["occupied"] += 1
+        else:
+            totals["unknown"] += 1
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tick_at": round(float(tick_at), 6),
+        "seats": seats,
+        "totals": totals,
+    }

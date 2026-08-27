@@ -507,5 +507,40 @@ class CountedZoneAnalyzeTests(unittest.TestCase):
         self.assertNotEqual(analysis.tables[1].raw_state, OccupancyState.UNKNOWN)
 
 
+class UnknownReasonPromotionTests(unittest.TestCase):
+    """The pose-level cause must survive the trip up to the table."""
+
+    TABLE = (500.0, 300.0, 780.0, 430.0)
+    PERSON = (565.0, 300.0, 695.0, 440.0)
+
+    def _keypoints_upper_body_only(self):
+        from seatnow_core import L_HIP, L_SHO, R_HIP, R_SHO
+
+        rows = [[0.0, 0.0, 0.0] for _ in range(17)]
+        rows[L_SHO] = [590.0, 330.0, 0.9]
+        rows[R_SHO] = [670.0, 330.0, 0.9]
+        rows[L_HIP] = [595.0, 430.0, 0.9]
+        rows[R_HIP] = [665.0, 430.0, 0.9]
+        return rows
+
+    def test_occluded_pose_reason_reaches_the_table_observation(self):
+        analyzer = build_analyzer(
+            [("dining table", self.TABLE, 0.75)],
+            poses=[("person", self.PERSON, 0.72)],
+            keypoints=[self._keypoints_upper_body_only()],
+        )
+
+        analysis = analyzer.analyze(FRAME)
+
+        tables = [table for table in analysis.tables if table.source == "detected"]
+        self.assertEqual(tables[0].raw_state, OccupancyState.UNKNOWN)
+        self.assertTrue(
+            tables[0].reason.startswith(
+                "nearby_person_pose_unknown:compact_occluded_pose"
+            ),
+            tables[0].reason,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

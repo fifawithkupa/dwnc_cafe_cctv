@@ -1662,7 +1662,22 @@ class SeatNowAnalyzer:
             elif evidence_state == OccupancyState.UNKNOWN:
                 state = OccupancyState.UNKNOWN
                 score = max(person.confidence for person in assigned_unknown_people)
-                reason = "nearby_person_pose_unknown"
+                # Keep the pose-level cause.  Collapsing every case into one
+                # string is why the UNKNOWN rate could not be attacked: the
+                # log said "someone nearby is unreadable" but never why.
+                cause = next(
+                    (
+                        person.reason
+                        for person in assigned_unknown_people
+                        if person.reason
+                    ),
+                    "",
+                )
+                reason = (
+                    f"nearby_person_pose_unknown:{cause}"
+                    if cause
+                    else "nearby_person_pose_unknown"
+                )
                 provisional = False
             else:
                 state = OccupancyState.EMPTY

@@ -97,7 +97,28 @@ python3 -m venv venv
 
 # 4. 카메라 없이 RTSP 파이프라인 검증
 ./venv/bin/python rtsp_republish.py sample_raw/cafe_sample_1.mp4
+
+# 5. 엣지 박스 검수 (새 박스에서 제일 먼저)
+./venv/bin/python check_edge.py
+
+# 6. 디코딩 비용 측정 → 살 카메라의 해상도·코덱 결정
+./venv/bin/python bench_decode.py --source sample_raw/cafe_sample_angle1.mov
 ```
+
+### 엣지 박스 세팅
+
+새로 산 미니PC를 켜서 "이 박스로 어떤 카메라를 살 수 있나"를 재는 데까지의 절차는
+[`docs/edge-setup.md`](docs/edge-setup.md)에 있습니다 (Windows·Linux 양쪽).
+
+`bench.py`가 재는 **추론**은 프레임을 `imgsz`로 줄여서 넣기 때문에 카메라 해상도와
+거의 무관합니다. 카메라 해상도가 실제로 잡아먹는 것은 24시간 도는 **디코딩**이고,
+그것을 재는 것이 `bench_decode.py`입니다. 두 도구의 결과가 합쳐져야 카메라를 고를
+수 있습니다.
+
+디코딩은 `--hwaccel`(기본 `auto`)로 하드웨어 가속을 씁니다. **켜졌는지 꺼졌는지가
+항상 화면에 찍힙니다** — ffmpeg는 하드웨어 디코딩에 실패해도 조용히 소프트웨어로
+넘어가므로, 후보마다 실제로 프레임이 나오는지 확인하고 나온 것만 채택합니다.
+이 노트북 실측으로 하드웨어 디코딩은 비용을 3~6배 줄입니다.
 
 진단이 필요할 때는 `--log-detections` 를 붙이면 JSONL에 detect 원본 출력과
 테이블 후보 탈락 사유가 함께 남습니다 — "모델이 못 봤나" vs "코드가 버렸나"를
@@ -124,8 +145,11 @@ python3 -m venv venv
   `70a86bc`가 되살리지 않아 `seat_detections`가 항상 비어 있던 문제
 - ✅ 진단 로깅(T2), 다중 영상 평가셋·커버리지 집계(T3), OpenVINO 익스포트·벤치(T4),
   RTSP 재송출 하네스(T5), 파라미터 스윕 하네스(T7 코드)
-- 🚧 다음: 보유 영상 라벨링(T3 데이터) → 엣지 박스 벤치(T6) → RTSP 리더(T8) →
-  Quick Sync(T9) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
+- ✅ 좌석 리포트 출력 계약 `seat_report` + 바형 좌석 칸 (T13)
+- ✅ Quick Sync 하드웨어 디코딩(T9), 디코딩 벤치 `bench_decode.py`,
+  엣지 박스 검수 `check_edge.py`, 설치 절차 `docs/edge-setup.md`
+- 🚧 다음: 엣지 박스 도착 → `check_edge.py` → `bench.py` → `bench_decode.py`
+  → 카메라 확정 → RTSP 리더(T8) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
 
 작업 순서와 근거는 [`plan.md`](plan.md) 참조.
 

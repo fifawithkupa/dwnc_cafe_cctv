@@ -33,6 +33,7 @@ from seatnow_core import (
     probe_video,
     render_frame,
 )
+from seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwaccel
 from seatnow_layout import load_layout
 
 
@@ -97,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-detections", action="store_true", help="Add the detector's raw output and dropped-table rules to each JSONL record (diagnoses model miss vs. code rejection)")
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
+    parser.add_argument(
+        "--hwaccel",
+        default=HWACCEL_AUTO,
+        choices=HWACCEL_CHOICES,
+        help="영상 디코딩에 쓸 하드웨어 가속기 (auto = OS에 맞는 것을 실제로 시험해보고 고름)",
+    )
     parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
     parser.add_argument("--no-layout-track", action="store_true", help="Keep layout zones fixed instead of drifting toward matching detections")
     return parser
@@ -251,6 +258,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         f"{info.duration:.3f}s, codec={info.codec}",
         flush=True,
     )
+    hwaccel = resolve_hwaccel(args.hwaccel, args.input)
+    print(hwaccel.describe(), flush=True)
     adaptive = not args.no_adaptive
     # --median-frames 0 --no-adaptive reproduces the original fixed-interval
     # single-frame pipeline exactly (streaming reader, no vote fields).
@@ -399,6 +408,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     args.sample_seconds,
                     info,
                     start_seconds=args.start_seconds,
+                    hwaccel_args=hwaccel.args,
                 )
                 previous_sample = None
                 for frame_index, timestamp, frame in reader:
@@ -466,7 +476,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     if args.max_samples is not None and processed >= args.max_samples:
                         break
             else:
-                reader = FFmpegBurstReader(args.input, info)
+                reader = FFmpegBurstReader(args.input, info, hwaccel_args=hwaccel.args)
                 controller = AdaptiveCadenceController(
                     base_seconds=args.sample_seconds,
                     fast_seconds=(

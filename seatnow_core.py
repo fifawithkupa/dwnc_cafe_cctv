@@ -2883,6 +2883,7 @@ class FFmpegSampleReader:
         sample_seconds: float,
         info: Optional[VideoInfo] = None,
         start_seconds: float = 0.0,
+        hwaccel_args: Sequence[str] = (),
     ):
         if sample_seconds <= 0:
             raise ValueError("sample_seconds must be positive")
@@ -2892,16 +2893,22 @@ class FFmpegSampleReader:
         self.sample_seconds = float(sample_seconds)
         self.start_seconds = float(start_seconds)
         self.info = info or probe_video(self.path)
+        self.hwaccel_args = tuple(hwaccel_args)
         self.process: Optional[subprocess.Popen] = None
         self.stderr_file = None
 
-    def __iter__(self) -> Iterator[Tuple[int, float, np.ndarray]]:
-        ffmpeg, _ = require_ffmpeg()
-        command = [
+    def build_command(self, ffmpeg: str) -> List[str]:
+        """Assemble the decode command.
+
+        Hardware decoding flags are input options, so they have to precede
+        ``-i``; keeping the assembly here lets it be checked without ffmpeg.
+        """
+        return [
             ffmpeg,
             "-nostdin",
             "-v",
             "error",
+            *self.hwaccel_args,
             "-i",
             str(self.path),
             "-ss",
@@ -2917,6 +2924,10 @@ class FFmpegSampleReader:
             "bgr24",
             "pipe:1",
         ]
+
+    def __iter__(self) -> Iterator[Tuple[int, float, np.ndarray]]:
+        ffmpeg, _ = require_ffmpeg()
+        command = self.build_command(ffmpeg)
         self.stderr_file = tempfile.TemporaryFile(mode="w+b")
         self.process = subprocess.Popen(
             command,
@@ -2972,11 +2983,47 @@ class FFmpegBurstReader:
     the same policy FFmpegSampleReader uses for its fps-filtered stream.
     """
 
-    def __init__(self, path: Path, info: Optional[VideoInfo] = None):
+    def __init__(
+        self,
+        path: Path,
+        info: Optional[VideoInfo] = None,
+        hwaccel_args: Sequence[str] = (),
+    ):
         self.path = Path(path)
         self.info = info or probe_video(self.path)
+        self.hwaccel_args = tuple(hwaccel_args)
         if self.info.fps <= 0:
             raise ValueError("Video fps must be positive for burst reading")
+
+    def build_command(
+        self, ffmpeg: str, start_seconds: float, frame_count: int
+    ) -> List[str]:
+        """Assemble the burst command.
+
+        ``-ss`` stays ahead of ``-i`` because that is input seeking, which is
+        what makes a burst cheap; the hardware flags go in front of both.
+        """
+        return [
+            ffmpeg,
+            "-nostdin",
+            "-v",
+            "error",
+            *self.hwaccel_args,
+            "-ss",
+            f"{start_seconds:.9f}",
+            "-i",
+            str(self.path),
+            "-frames:v",
+            str(frame_count),
+            "-an",
+            "-sn",
+            "-dn",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "pipe:1",
+        ]
 
     def read_burst(
         self, center_seconds: float, n: int
@@ -2996,26 +3043,7 @@ class FFmpegBurstReader:
         frame_interval = 1.0 / self.info.fps
         start_seconds = max(0.0, center_seconds - n * frame_interval)
         frame_count = 2 * n + 1
-        command = [
-            ffmpeg,
-            "-nostdin",
-            "-v",
-            "error",
-            "-ss",
-            f"{start_seconds:.9f}",
-            "-i",
-            str(self.path),
-            "-frames:v",
-            str(frame_count),
-            "-an",
-            "-sn",
-            "-dn",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "bgr24",
-            "pipe:1",
-        ]
+        command = self.build_command(ffmpeg, start_seconds, frame_count)
         stderr_file = tempfile.TemporaryFile(mode="w+b")
         process = subprocess.Popen(
             command,

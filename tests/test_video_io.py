@@ -251,3 +251,63 @@ class FFmpegVideoIOTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HwaccelCommandTests(unittest.TestCase):
+    """Command construction only — these never launch ffmpeg."""
+
+    def _info(self):
+        from seatnow_core import VideoInfo
+
+        return VideoInfo(
+            width=1920,
+            height=1080,
+            fps=30.0,
+            duration=60.0,
+            codec="h264",
+            source_frames=1800,
+        )
+
+    def test_sample_reader_defaults_to_software_decoding(self) -> None:
+        reader = FFmpegSampleReader(
+            Path("clip.mp4"), sample_seconds=1.0, info=self._info()
+        )
+        command = reader.build_command("ffmpeg")
+        self.assertNotIn("-hwaccel", command)
+
+    def test_sample_reader_puts_hwaccel_before_the_input(self) -> None:
+        reader = FFmpegSampleReader(
+            Path("clip.mp4"),
+            sample_seconds=1.0,
+            info=self._info(),
+            hwaccel_args=("-hwaccel", "qsv"),
+        )
+        command = reader.build_command("ffmpeg")
+        self.assertLess(command.index("-hwaccel"), command.index("-i"))
+        self.assertEqual(command[command.index("-hwaccel") + 1], "qsv")
+
+    def test_burst_reader_defaults_to_software_decoding(self) -> None:
+        reader = FFmpegBurstReader(Path("clip.mp4"), info=self._info())
+        command = reader.build_command("ffmpeg", start_seconds=1.5, frame_count=5)
+        self.assertNotIn("-hwaccel", command)
+        self.assertIn("-ss", command)
+
+    def test_burst_reader_puts_hwaccel_before_the_input(self) -> None:
+        reader = FFmpegBurstReader(
+            Path("clip.mp4"),
+            info=self._info(),
+            hwaccel_args=("-hwaccel", "vaapi"),
+        )
+        command = reader.build_command("ffmpeg", start_seconds=1.5, frame_count=5)
+        self.assertLess(command.index("-hwaccel"), command.index("-i"))
+        self.assertEqual(command[command.index("-hwaccel") + 1], "vaapi")
+
+    def test_burst_reader_keeps_input_seeking(self) -> None:
+        """-ss before -i is input seeking; moving it would change behaviour."""
+        reader = FFmpegBurstReader(
+            Path("clip.mp4"),
+            info=self._info(),
+            hwaccel_args=("-hwaccel", "qsv"),
+        )
+        command = reader.build_command("ffmpeg", start_seconds=1.5, frame_count=5)
+        self.assertLess(command.index("-ss"), command.index("-i"))

@@ -41,6 +41,10 @@ class ReasonCode(str, Enum):
     BELONGINGS = "belongings"
     OCCUPIED_CHAIR = "occupied_chair"
     NO_CUSTOMER_EVIDENCE = "no_customer_evidence"
+    # Bar seat: belongings were seen and deliberately not counted, because at
+    # a counter one customer's things span several stools.  Named separately
+    # from a genuinely bare seat so the choice stays measurable.
+    BELONGINGS_ONLY = "belongings_only"
 
 
 REASON_GROUPS: Dict[str, Tuple[ReasonCode, ...]] = {
@@ -57,6 +61,7 @@ REASON_GROUPS: Dict[str, Tuple[ReasonCode, ...]] = {
         ReasonCode.BELONGINGS,
         ReasonCode.OCCUPIED_CHAIR,
         ReasonCode.NO_CUSTOMER_EVIDENCE,
+        ReasonCode.BELONGINGS_ONLY,
     ),
 }
 
@@ -95,6 +100,8 @@ def classify_reason(raw_state: str, reason: str, predicted: bool) -> ReasonCode:
         return ReasonCode.SCENE_CHANGE
     if text.startswith("nearby_person_pose_unknown"):
         return ReasonCode.AMBIGUOUS_ASSOCIATION
+    if text.startswith("belongings_only"):
+        return ReasonCode.BELONGINGS_ONLY
     if text.startswith("no_customer_evidence"):
         return ReasonCode.NO_CUSTOMER_EVIDENCE
 

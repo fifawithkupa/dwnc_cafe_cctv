@@ -187,12 +187,17 @@ class CountedZoneTests(unittest.TestCase):
         with self.assertRaises(LayoutError):
             load_layout(write_json(data))
 
-    def test_rejects_seat_outside_zone_box(self):
+    def test_accepts_seat_outside_zone_box(self):
+        # The zone box is a label and a grouping, never a judgement box:
+        # judgement and tracking both read seat.box alone.  Requiring
+        # containment only made the installer redraw a box that changes
+        # nothing, and the person drawing the zone is the one who decides
+        # where it goes.
         data = json.loads(json.dumps(COUNTED_ZONE))
         data["tables"][0]["seats"][1]["box"] = [900.0, 100.0, 950.0, 300.0]
 
-        with self.assertRaises(LayoutError):
-            load_layout(write_json(data))
+        layout = load_layout(write_json(data))
+        self.assertEqual(layout.tables[0].seats[1].box, (900.0, 100.0, 950.0, 300.0))
 
     def test_rejects_seats_on_a_plain_table(self):
         data = json.loads(json.dumps(COUNTED_ZONE))

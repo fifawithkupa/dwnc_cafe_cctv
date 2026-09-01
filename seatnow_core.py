@@ -894,14 +894,33 @@ def occupancy_state_from_evidence(
     direct_seated_people: Sequence[PoseObservation],
     unknown_people: Sequence[PoseObservation],
     occupied_chairs: Sequence[Detection],
+    require_person: bool = False,
 ) -> OccupancyState:
     """Apply SeatNow's table OR rule to already-associated evidence.
 
     A chair carrying a seated customer or their belongings occupies the table
     it is linked to: the tight tabletop box does not cover the seats around it,
     and a cafe camera sees the chair long before it sees the tabletop.
+
+    ``require_person`` switches to the bar-counter rule, where belongings
+    alone leave the seat available.  One customer at a counter spreads a
+    laptop, a cup and a bag across two or three seat widths; every slot would
+    see objects and one person would eat three seats.  A table cannot do that
+    because it is a single unit.  Asked to move their things off a spare
+    stool, most people do, so the seat is in practice available.
+
+    An unreadable person still yields UNKNOWN either way: somebody is there,
+    and rounding that to available is the error that sends a customer to a
+    taken seat.
     """
-    if objects or direct_seated_people or occupied_chairs:
+    has_person = bool(direct_seated_people)
+    if require_person:
+        if has_person:
+            return OccupancyState.OCCUPIED
+        if unknown_people:
+            return OccupancyState.UNKNOWN
+        return OccupancyState.EMPTY
+    if objects or has_person or occupied_chairs:
         return OccupancyState.OCCUPIED
     if unknown_people:
         return OccupancyState.UNKNOWN
@@ -1595,11 +1614,18 @@ class SeatNowAnalyzer:
                 for chair_index in occupied_chair_indices
                 for person in chair_people_assignments[chair_index]
             ]
+            # Bar seats need a person; a table takes belongings as evidence.
+            seat_requires_person = (
+                self.layout is not None
+                and index < len(layout_units)
+                and layout_units[index].kind == COUNTED_ZONE_KIND
+            )
             evidence_state = occupancy_state_from_evidence(
                 assigned_objects,
                 assigned_people,
                 assigned_unknown_people,
                 occupied_chairs,
+                require_person=seat_requires_person,
             )
             # A manually drawn zone at the frame edge is intentional; the
             # border-sliver rule only guards auto-detected partial tables.
@@ -1683,7 +1709,15 @@ class SeatNowAnalyzer:
             else:
                 state = OccupancyState.EMPTY
                 score = table.confidence
-                reason = "no_customer_evidence"
+                # Say when belongings were seen and deliberately not counted,
+                # so the choice stays measurable instead of vanishing into
+                # the same code as a genuinely bare seat.
+                reason = (
+                    "belongings_only"
+                    if seat_requires_person
+                    and (assigned_objects or occupied_chairs)
+                    else "no_customer_evidence"
+                )
                 provisional = False
             if state in (OccupancyState.IGNORE,):
                 provisional = False

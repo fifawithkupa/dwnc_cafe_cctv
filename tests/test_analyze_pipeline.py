@@ -451,7 +451,12 @@ class CountedZoneAnalyzeTests(unittest.TestCase):
         self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
         self.assertEqual(analysis.tables[1].raw_state, OccupancyState.EMPTY)
 
-    def test_belongings_alone_occupy_a_seat(self):
+    def test_belongings_alone_leave_a_bar_seat_available(self):
+        # A counter customer spreads a laptop, a cup and a bag across two or
+        # three stool widths; counting objects would have one person eat
+        # three seats.  A table cannot do that because it is a single unit,
+        # so only bar seats take this rule.  The reason is recorded rather
+        # than dropped, so the choice stays measurable.
         analyzer = build_analyzer(
             [("handbag", (300.0, 350.0, 380.0, 420.0), 0.55)],
             layout=bar_layout(),
@@ -459,8 +464,10 @@ class CountedZoneAnalyzeTests(unittest.TestCase):
 
         analysis = analyzer.analyze(FRAME)
 
-        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.OCCUPIED)
+        self.assertEqual(analysis.tables[0].raw_state, OccupancyState.EMPTY)
+        self.assertEqual(analysis.tables[0].reason, "belongings_only")
         self.assertEqual(analysis.tables[1].raw_state, OccupancyState.EMPTY)
+        self.assertEqual(analysis.tables[1].reason, "no_customer_evidence")
 
     def test_person_spanning_two_seats_makes_both_unknown(self):
         # 사람 박스 x 400~620 은 1번 칸(200~500)과 2번 칸(500~800)에 모두 걸친다.

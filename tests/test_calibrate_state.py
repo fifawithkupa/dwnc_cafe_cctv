@@ -153,46 +153,6 @@ class CountedZoneCalibrationTests(unittest.TestCase):
         self.assertEqual(units[1].capacity, 2)
 
 
-class SeatInsideZoneTests(unittest.TestCase):
-    """A seat slot drawn outside its zone saves fine and fails hours later.
-
-    load_layout rejects it (seatnow_layout.py:243-249) but save_layout does
-    not, so the person who could fix it in five seconds is already gone by
-    the time anyone sees the error.
-    """
-
-    def _zone_with_seat(self, seat_box):
-        state = CalibrationState()
-        state.add_zone((100.0, 100.0, 500.0, 300.0))
-        state.add_seat(seat_box)
-        return state
-
-    def test_seat_inside_the_zone_is_valid(self):
-        state = self._zone_with_seat((120.0, 120.0, 200.0, 280.0))
-        self.assertEqual(state.invalid_seat_zones(), [])
-
-    def test_seat_hanging_outside_is_reported(self):
-        state = self._zone_with_seat((450.0, 120.0, 600.0, 280.0))
-        self.assertEqual(state.invalid_seat_zones(), [(0, 0)])
-
-    def test_seat_touching_the_edge_is_allowed(self):
-        # load_layout allows a 1px tolerance; matching it here keeps the two
-        # checks from disagreeing about the same file.
-        state = self._zone_with_seat((100.0, 100.0, 500.0, 300.0))
-        self.assertEqual(state.invalid_seat_zones(), [])
-
-    def test_plain_table_chairs_are_not_checked(self):
-        state = CalibrationState()
-        state.add_table((100.0, 100.0, 300.0, 200.0))
-        state.add_chair((400.0, 400.0, 450.0, 450.0))
-        self.assertEqual(state.invalid_seat_zones(), [])
-
-    def test_every_offending_seat_is_listed(self):
-        state = self._zone_with_seat((450.0, 120.0, 600.0, 280.0))
-        state.add_seat((700.0, 700.0, 800.0, 800.0))
-        self.assertEqual(state.invalid_seat_zones(), [(0, 0), (0, 1)])
-
-
 class UnassignedChairStateTests(unittest.TestCase):
     def test_chair_still_attaches_when_a_table_is_selected(self):
         state = CalibrationState()
@@ -441,11 +401,10 @@ class GenerateSeatsTests(unittest.TestCase):
         self.assertEqual(state.tables[0]["seats"][0], box)
 
     def test_zone_grows_to_contain_the_new_seats(self):
-        # The zone was drawn along the counter top while the chairs sit lower;
-        # load_layout requires seats inside the zone, so the zone has to give.
+        # Containment is no longer required, but a zone box that visibly
+        # covers its seats is what gets drawn on the 2D map.
         state = self._zone_with_chairs([(1150.0, 300.0, 1200.0, 600.0)])
         state.generate_seats_from_chairs()
-        self.assertEqual(state.invalid_seat_zones(), [])
         self.assertGreaterEqual(state.tables[0]["box"][3], 600.0)
 
     def test_refuses_when_seats_already_exist(self):

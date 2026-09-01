@@ -326,19 +326,16 @@ def load_layout(path: Path) -> SeatLayout:
             )
             for seat_position, seat in enumerate(raw.get("seats", []), start=1)
         )
-        if kind == COUNTED_ZONE_KIND:
-            # A zone with no seat slots is allowed on purpose: drawing the bar
-            # and slicing it into seats are two steps, and an install that gets
-            # interrupted between them must still be saveable.  Such a zone
-            # judges nothing, which is why running the pipeline with one is
-            # refused instead -- see incomplete_zones().
-            for seat in seats:
-                if not _box_contains(box, seat.box):
-                    raise LayoutError(
-                        f"table {table_id} seat {seat.id}: box {seat.box} is "
-                        f"outside the zone box {box}"
-                    )
-        elif seats:
+        # A zone with no seat slots is allowed on purpose: drawing the bar and
+        # slicing it into seats are two steps, and an install interrupted
+        # between them must still be saveable.  Such a zone judges nothing,
+        # which is why *running* with one is refused -- see incomplete_zones().
+        #
+        # Nor does a seat slot have to sit inside its zone box.  The zone box
+        # is a label and a grouping, never a judgement box: judgement and
+        # tracking both read seat.box alone.  Requiring containment only made
+        # the installer redraw a box that changes nothing.
+        if kind != COUNTED_ZONE_KIND and seats:
             raise LayoutError(
                 f"table {table_id}: 'seats' is only valid for "
                 f"kind={COUNTED_ZONE_KIND}"

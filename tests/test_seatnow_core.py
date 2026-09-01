@@ -1049,5 +1049,79 @@ class ChairObjectTests(unittest.TestCase):
         self.assertEqual(assigned.count(bag), 1)
 
 
+class BarSeatNeedsAPersonTests(unittest.TestCase):
+    """A bar stool with only belongings on it stays available.
+
+    One customer at a counter spreads a laptop, a cup and a bag across two
+    or three seat widths, and each slot would see "objects" and go occupied
+    -- one person eating three seats.  A table cannot do that because it is
+    one unit.  Asked to move their things off a spare stool, most people do,
+    so the seat is in practice available.
+
+    Tables keep the old rule: belongings there mean the table is taken.
+    """
+
+    def _person(self):
+        return PoseObservation(
+            box=(100.0, 100.0, 200.0, 400.0),
+            anchor=(150.0, 380.0),
+            confidence=0.9,
+            state=PoseState.SEATED,
+            reason="",
+            angles={},
+        )
+
+    def _object(self):
+        return Detection(name="backpack", box=(120.0, 120.0, 180.0, 180.0), confidence=0.8)
+
+    def test_table_with_belongings_only_is_occupied(self):
+        self.assertEqual(
+            occupancy_state_from_evidence([self._object()], [], [], []),
+            OccupancyState.OCCUPIED,
+        )
+
+    def test_bar_seat_with_belongings_only_is_empty(self):
+        self.assertEqual(
+            occupancy_state_from_evidence(
+                [self._object()], [], [], [], require_person=True
+            ),
+            OccupancyState.EMPTY,
+        )
+
+    def test_bar_seat_with_a_person_is_occupied(self):
+        self.assertEqual(
+            occupancy_state_from_evidence(
+                [], [self._person()], [], [], require_person=True
+            ),
+            OccupancyState.OCCUPIED,
+        )
+
+    def test_bar_seat_with_person_and_belongings_is_occupied(self):
+        self.assertEqual(
+            occupancy_state_from_evidence(
+                [self._object()], [self._person()], [], [], require_person=True
+            ),
+            OccupancyState.OCCUPIED,
+        )
+
+    def test_bar_seat_with_an_occupied_chair_but_no_person_is_empty(self):
+        chair = Detection(name="chair", box=(100.0, 100.0, 200.0, 200.0), confidence=0.7)
+        self.assertEqual(
+            occupancy_state_from_evidence([], [], [], [chair], require_person=True),
+            OccupancyState.EMPTY,
+        )
+
+    def test_bar_seat_with_an_unreadable_person_is_unknown(self):
+        # Someone is there but the pose could not be read: that is not the
+        # same as an empty stool and must not be rounded to available.
+        unreadable = self._person()
+        self.assertEqual(
+            occupancy_state_from_evidence(
+                [], [], [unreadable], [], require_person=True
+            ),
+            OccupancyState.UNKNOWN,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

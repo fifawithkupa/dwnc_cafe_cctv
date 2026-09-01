@@ -131,5 +131,118 @@ class RecallTests(unittest.TestCase):
             recall(build_rows([record(0.0)], {}), "seats")
 
 
+from inspect_run import disagreements, reason_distribution, render_summary, render_table
+
+
+def record_with_reasons(timestamp, *reason_codes):
+    """A record whose seat_report carries one plain table per reason code."""
+    payload = record(timestamp)
+    payload["seat_report"] = {
+        "seats": [
+            {
+                "seat_id": f"T{index}",
+                "kind": "table",
+                "capacity": 1,
+                "state": "unknown",
+                "reason_code": code,
+            }
+            for index, code in enumerate(reason_codes)
+        ]
+    }
+    return payload
+
+
+class RenderTableTests(unittest.TestCase):
+    def test_every_row_appears(self):
+        rows = build_rows([record(0.0), record(15.0)], {})
+        table = render_table(rows)
+        self.assertIn("t0000.0s", table)
+        self.assertIn("t0015.0s", table)
+
+    def test_missing_truth_renders_as_a_blank_to_fill(self):
+        # The table must stay usable with no Codex run at all: a person can
+        # write the counts into this column by hand.
+        table = render_table(build_rows([record(0.0)], {}))
+        self.assertIn("___", table)
+
+    def test_excluded_row_says_why(self):
+        rows = build_rows([record(0.0)], {"t0000.0s": truth(uncertain=True)})
+        self.assertIn("uncertain", render_table(rows))
+
+    def test_disagreement_is_flagged(self):
+        rows = build_rows([record(0.0, person=1)], {"t0000.0s": truth(3)})
+        self.assertIn("!!", render_table(rows))
+
+    def test_agreement_is_not_flagged(self):
+        rows = build_rows([record(0.0, person=3)], {"t0000.0s": truth(3)})
+        self.assertNotIn("!!", render_table(rows))
+
+
+class ReasonDistributionTests(unittest.TestCase):
+    def test_codes_are_grouped_by_what_fixes_them(self):
+        records = [
+            record_with_reasons(0.0, "occluded_lower_body", "pose_low_keypoints"),
+            record_with_reasons(15.0, "occluded_lower_body"),
+        ]
+        distribution = reason_distribution(records)
+        self.assertEqual(distribution["geometry"], 2)
+        self.assertEqual(distribution["model"], 1)
+
+    def test_unseen_groups_are_zero_not_absent(self):
+        distribution = reason_distribution([record_with_reasons(0.0, "person_seated")])
+        self.assertEqual(distribution["model"], 0)
+
+    def test_unknown_code_does_not_crash(self):
+        distribution = reason_distribution([record_with_reasons(0.0, "made_up_code")])
+        self.assertEqual(distribution["other"], 1)
+
+    def test_bar_zone_reason_counts_are_added(self):
+        # A counted_zone reports {code: count}, not one code per seat
+        # (seatnow_report.py:170-182).  Reading only the plain-table shape
+        # would silently drop every bar seat's reason.
+        payload = record(0.0)
+        payload["seat_report"] = {
+            "seats": [
+                {
+                    "seat_id": "BAR",
+                    "kind": "counted_zone",
+                    "capacity": 3,
+                    "occupied": 0,
+                    "free": 1,
+                    "unknown": 2,
+                    "reason_codes": {"occluded_lower_body": 2},
+                }
+            ]
+        }
+        self.assertEqual(reason_distribution([payload])["geometry"], 2)
+
+    def test_record_without_a_seat_report_is_skipped(self):
+        self.assertEqual(reason_distribution([record(0.0)])["geometry"], 0)
+
+
+class DisagreementTests(unittest.TestCase):
+    def test_only_rows_with_a_gap_are_returned(self):
+        rows = build_rows(
+            [record(0.0, person=3), record(15.0, person=1)],
+            {"t0000.0s": truth(3), "t0015.0s": truth(3)},
+        )
+        self.assertEqual([row.stem for row in disagreements(rows)], ["t0015.0s"])
+
+    def test_rows_without_truth_are_not_disagreements(self):
+        self.assertEqual(disagreements(build_rows([record(0.0)], {})), [])
+
+
+class RenderSummaryTests(unittest.TestCase):
+    def test_both_layer_recalls_appear(self):
+        rows = build_rows([record(0.0, person=3)], {"t0000.0s": truth(3)})
+        summary = render_summary(rows, [record(0.0)])
+        self.assertIn("검출", summary)
+        self.assertIn("포즈", summary)
+
+    def test_excluded_count_is_reported(self):
+        rows = build_rows([record(0.0)], {"t0000.0s": truth(uncertain=True)})
+        self.assertIn("제외", render_summary(rows, [record(0.0)]))
+
+
 if __name__ == "__main__":
     unittest.main()

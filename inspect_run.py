@@ -176,3 +176,176 @@ def load_judgements(judge_dir: Optional[Path]) -> Dict[str, Judgement]:
         payload.setdefault("stem", path.stem)
         judgements[payload["stem"]] = Judgement(**payload)
     return judgements
+
+
+def reason_distribution(records: List[Dict[str, object]]) -> Dict[str, int]:
+    """Count reason codes by the group that fixes them.
+
+    The grouping is the point: "geometry 22% / model 8%" says whether the
+    next move is a rescue path or fine-tuning, which one flat list does not.
+
+    Two shapes have to be read, because ``build_seat_report`` emits two: a
+    plain table carries one ``reason_code``, while a bar zone carries a
+    ``reason_codes`` tally over its seats (``seatnow_report.py:150-182``).
+    Reading only the first shape drops every bar seat without a trace.
+    """
+    lookup = {
+        code.value: group
+        for group, codes in REASON_GROUPS.items()
+        for code in codes
+    }
+    distribution: Dict[str, int] = {group: 0 for group in REASON_GROUPS}
+    distribution["other"] = 0
+
+    def add(code: str, count: int = 1) -> None:
+        distribution[lookup.get(code, "other")] += count
+
+    for record in records:
+        report = record.get("seat_report") or {}
+        for seat in report.get("seats") or []:  # type: ignore[union-attr]
+            if seat.get("kind") == "counted_zone":
+                for code, count in (seat.get("reason_codes") or {}).items():
+                    add(str(code), int(count))
+                continue
+            code = seat.get("reason_code")
+            if code is not None:
+                add(str(code))
+    return distribution
+
+
+def disagreements(rows: List[Row]) -> List[Row]:
+    """Rows where we and the blind count differ -- the diagnosis shortlist."""
+    return [
+        row
+        for row in rows
+        if row.excluded is None and row.truth is not None and row.detector_gap != 0
+    ]
+
+
+def _truth_cell(row: Row) -> str:
+    if row.excluded is not None:
+        return row.excluded
+    if row.truth is None:
+        return "___"
+    return str(row.truth)
+
+
+def _gap_cell(row: Row) -> str:
+    if row.excluded is not None or row.detector_gap is None:
+        return ""
+    if row.detector_gap == 0:
+        return "0"
+    return f"{row.detector_gap:+d} !!"
+
+
+def render_table(rows: List[Row]) -> str:
+    """The reading table: three layers across, one tick per line."""
+    lines = [
+        "| 사진 | 검출(사람/의자/책상) | 포즈(앉음/섬/모름) | 좌석(점유/빈/모름/무시) | 실제 | 차이 |",
+        "|---|---|---|---|---:|---:|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row.stem} "
+            f"| {row.det_person}/{row.det_chair}/{row.det_table} "
+            f"| {row.pose_seated}/{row.pose_standing}/{row.pose_unknown} "
+            f"| {row.seat_occupied}/{row.seat_empty}/{row.seat_unknown}/{row.seat_ignore} "
+            f"| {_truth_cell(row)} "
+            f"| {_gap_cell(row)} |"
+        )
+    return "\n".join(lines)
+
+
+def _recall_line(label: str, result: Recall) -> str:
+    if result.value is None:
+        # The excluded count belongs here too: "no score" because nobody
+        # counted and "no score" because every count was thrown out are
+        # different findings, and only the second one is about the harness.
+        return (
+            f"- **{label} 재현율**: 정답 없음 "
+            f"(채점한 사진 {result.scored_frames}장, 제외 {result.excluded_frames}장)"
+        )
+    return (
+        f"- **{label} 재현율**: {result.value:.2f} "
+        f"({result.found}/{result.truth}명, 사진 {result.scored_frames}장, "
+        f"제외 {result.excluded_frames}장)"
+    )
+
+
+def render_summary(rows: List[Row], records: List[Dict[str, object]]) -> str:
+    """The two numbers and the backlog table, under one heading."""
+    detector = recall(rows, "detector")
+    pose = recall(rows, "pose")
+    distribution = reason_distribution(records)
+    total_reasons = sum(distribution.values()) or 1
+
+    lines = [
+        "## 요약",
+        "",
+        f"- 판정한 tick: {len(rows)}회",
+        _recall_line("검출", detector),
+        _recall_line("포즈", pose),
+        "",
+        "### 사유 코드 분포 (무엇이 고치는가로 묶음)",
+        "",
+        "| 그룹 | 건수 | 비율 | 고치는 방법 |",
+        "|---|---:|---:|---|",
+    ]
+    how = {
+        "install": "카메라를 다시 단다 (코드로 풀지 않는다)",
+        "geometry": "구제 경로·좌석 칸 다시 긋기",
+        "model": "파인튜닝 또는 imgsz 상향 (plan.md T11)",
+        "time": "기다리면 된다 — 할 일 없음",
+        "settled": "판정이 끝난 것 — 문제 아님",
+        "other": "어휘에 없는 코드 — 확인 필요",
+    }
+    for group, count in distribution.items():
+        lines.append(
+            f"| {group} | {count} | {count / total_reasons:.0%} | {how.get(group, '')} |"
+        )
+
+    shortlist = disagreements(rows)
+    lines += [
+        "",
+        f"### 진단 대상 {len(shortlist)}장 (3단계에서 이것만 본다)",
+        "",
+    ]
+    if not shortlist:
+        lines.append("없음 — 우리 숫자와 실제가 전부 일치한다.")
+    else:
+        for row in shortlist:
+            lines.append(
+                f"- `marked/{row.stem}.jpg` — 우리: 사람 {row.det_person}명, "
+                f"점유 {row.seat_occupied}석, 모름 {row.seat_unknown}석 "
+                f"/ 실제: {row.truth}명 ({row.detector_gap:+d})"
+            )
+    return "\n".join(lines)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("log", type=Path, help="seatnow.py 가 쓴 JSONL")
+    parser.add_argument("--judge", type=Path, help="judge_frames.py 결과 폴더")
+    parser.add_argument("--output", type=Path, help="마크다운 저장 경로 (기본: 화면 출력)")
+    parser.add_argument("--title", default=None, help="보고서 제목")
+    args = parser.parse_args(argv)
+
+    records = load_jsonl(args.log)
+    judgements = load_judgements(args.judge)
+    rows = build_rows(records, judgements)
+
+    title = args.title or f"# 검출 판독표 — {args.log.name}"
+    report = "\n\n".join(
+        [title, render_summary(rows, records), "## 판독표", render_table(rows)]
+    )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(report + "\n", encoding="utf-8")
+        print(f"판독표: {args.output}")
+    else:
+        print(report)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -35,7 +35,7 @@ from seatnow_core import (
 )
 from frame_dump import save_frame_pair
 from seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwaccel
-from seatnow_layout import load_layout
+from seatnow_layout import LayoutError, load_layout
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
@@ -114,6 +114,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
     parser.add_argument("--no-layout-track", action="store_true", help="Keep layout zones fixed instead of drifting toward matching detections")
     return parser
+
+
+def _require_complete_layout(layout) -> None:
+    """Refuse to judge with a bar zone nobody sliced into seat slots.
+
+    Capacity is the number of seat slots, so such a zone contributes no
+    judgement unit: the bar would not be reported as occupied, empty, or even
+    unknown -- it would simply be absent, and the app would show a cafe with
+    fewer seats than it has.  Saving that state is fine (the install may be
+    half done); running on it is the failure worth stopping for.
+    """
+    if layout is None:
+        return None
+    incomplete = layout.incomplete_zones()
+    if incomplete:
+        raise LayoutError(
+            f"자리 칸이 없는 바 구역이 있어 실행할 수 없습니다: "
+            f"{', '.join(incomplete)} — calibrate.py 에서 그 구역을 선택하고 "
+            f"seat[x] 로 자리마다 칸을 그으세요. 칸 개수가 곧 자리 수입니다. "
+            f"(칸이 없으면 그 구역의 좌석이 아무 집계에도 안 잡힙니다)"
+        )
+    return None
 
 
 def _default_output(input_path: Path, is_video: bool) -> Path:
@@ -648,6 +670,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if suffix not in VIDEO_SUFFIXES | IMAGE_SUFFIXES:
             raise ValueError(f"Unsupported input extension: {suffix or '(none)'}")
         layout = load_layout(args.layout) if args.layout else None
+        _require_complete_layout(layout)
         analyzer = _make_analyzer(args, layout=layout)
         if suffix in VIDEO_SUFFIXES:
             return process_video(args, analyzer)

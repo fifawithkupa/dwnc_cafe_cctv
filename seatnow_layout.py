@@ -206,6 +206,19 @@ class SeatLayout:
                 )
         return tuple(units)
 
+    def incomplete_zones(self) -> List[str]:
+        """Names of counted zones nobody has sliced into seat slots yet.
+
+        Capacity is ``len(seats)``, so such a zone contributes no judgement
+        unit at all: every seat along that bar would silently go unjudged.
+        Saving one is fine (work in progress); judging with one is not.
+        """
+        return [
+            table.name
+            for table in self.tables
+            if table.kind == COUNTED_ZONE_KIND and not table.seats
+        ]
+
     def unit_chair_assignments(self) -> Dict[int, List[int]]:
         """Chair indices per judgement-unit index.
 
@@ -281,11 +294,11 @@ def load_layout(path: Path) -> SeatLayout:
             for seat_position, seat in enumerate(raw.get("seats", []), start=1)
         )
         if kind == COUNTED_ZONE_KIND:
-            if not seats:
-                raise LayoutError(
-                    f"table {table_id}: kind={COUNTED_ZONE_KIND} requires a "
-                    f"non-empty 'seats' list (capacity is len(seats))"
-                )
+            # A zone with no seat slots is allowed on purpose: drawing the bar
+            # and slicing it into seats are two steps, and an install that gets
+            # interrupted between them must still be saveable.  Such a zone
+            # judges nothing, which is why running the pipeline with one is
+            # refused instead -- see incomplete_zones().
             for seat in seats:
                 if not _box_contains(box, seat.box):
                     raise LayoutError(

@@ -9,7 +9,9 @@ import copy
 from typing import Dict, List, Optional, Tuple
 
 from seatnow_layout import (
+    FLOOR_REFERENCE_POINTS,
     SCHEMA_VERSION,
+    FloorReference,
     LayoutChair,
     LayoutSeat,
     LayoutTable,
@@ -36,14 +38,25 @@ class CalibrationState:
     def __init__(self) -> None:
         self.tables: List[Dict] = []  # {"box": Box, "chairs": List[Box]}
         self.unassigned_chairs: List[Box] = []
+        self.floor_points: List[Tuple[float, float]] = []
         self.selected: Optional[Tuple[str, int, int]] = None
         self._history: List[
-            Tuple[List[Dict], List[Box], Optional[Tuple[str, int, int]]]
+            Tuple[
+                List[Dict],
+                List[Box],
+                List[Tuple[float, float]],
+                Optional[Tuple[str, int, int]],
+            ]
         ] = []
 
     def _snapshot(self) -> None:
         self._history.append(
-            (copy.deepcopy(self.tables), list(self.unassigned_chairs), self.selected)
+            (
+                copy.deepcopy(self.tables),
+                list(self.unassigned_chairs),
+                list(self.floor_points),
+                self.selected,
+            )
         )
 
     def add_table(self, box: Box) -> None:
@@ -131,7 +144,24 @@ class CalibrationState:
     def undo(self) -> None:
         if not self._history:
             return
-        self.tables, self.unassigned_chairs, self.selected = self._history.pop()
+        (
+            self.tables,
+            self.unassigned_chairs,
+            self.floor_points,
+            self.selected,
+        ) = self._history.pop()
+
+    def add_floor_point(self, x: float, y: float) -> int:
+        """Collect one of the four floor corners; the fifth click starts over.
+
+        Re-clicking is the only correction anyone needs here, and it costs no
+        extra key to learn during an install that already has seven of them.
+        """
+        self._snapshot()
+        if len(self.floor_points) >= FLOOR_REFERENCE_POINTS:
+            self.floor_points = []
+        self.floor_points.append((float(x), float(y)))
+        return len(self.floor_points)
 
     def invalid_seat_zones(self) -> List[Tuple[int, int]]:
         """Seat slots drawn outside their zone, as (table index, seat index).
@@ -181,6 +211,11 @@ class CalibrationState:
                 LayoutChair(id=index, box=box)
                 for index, box in enumerate(self.unassigned_chairs, start=1)
             ),
+            floor_reference=(
+                FloorReference(image_points=tuple(self.floor_points))
+                if len(self.floor_points) == FLOOR_REFERENCE_POINTS
+                else None
+            ),
         )
 
     @classmethod
@@ -198,6 +233,11 @@ class CalibrationState:
         state.unassigned_chairs = [
             tuple(chair.box) for chair in layout.unassigned_chairs
         ]
+        if layout.floor_reference is not None:
+            state.floor_points = [
+                (float(px), float(py))
+                for px, py in layout.floor_reference.image_points
+            ]
         state.selected = None
         return state
 
@@ -260,7 +300,7 @@ def _preseed(frame, det_model_path):
 
 
 HELP_TEXT = (
-    "[t]able  [c]hair  [z]one(bar)  seat[x]  [d]elete  [u]ndo  [s]ave  [q]uit"
+    "[t]able  [c]hair  [z]one(bar)  seat[x]  [f]loor  [d]elete  [u]ndo  [s]ave  [q]uit"
 )
 
 TABLE_COLOR = (80, 200, 80)
@@ -268,6 +308,7 @@ CHAIR_COLOR = (60, 200, 230)
 ZONE_COLOR = (200, 140, 60)
 SEAT_COLOR = (230, 190, 90)
 ORPHAN_CHAIR_COLOR = (200, 60, 200)
+FLOOR_COLOR = (255, 255, 255)
 SELECT_COLOR = (60, 60, 235)
 
 
@@ -315,6 +356,14 @@ def _draw(frame, state, mode, drag):
                       SELECT_COLOR if selected else ORPHAN_CHAIR_COLOR, 2)
         cv2.putText(canvas, "?", (ox1 + 4, oy2 - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, ORPHAN_CHAIR_COLOR, 2, cv2.LINE_AA)
+    for index, (px, py) in enumerate(state.floor_points, start=1):
+        cv2.circle(canvas, (int(px), int(py)), 7, FLOOR_COLOR, -1)
+        cv2.putText(canvas, str(index), (int(px) + 10, int(py) - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, FLOOR_COLOR, 2, cv2.LINE_AA)
+    if len(state.floor_points) == FLOOR_REFERENCE_POINTS:
+        pts = [(int(px), int(py)) for px, py in state.floor_points]
+        for start, end in zip(pts, pts[1:] + pts[:1]):
+            cv2.line(canvas, start, end, FLOOR_COLOR, 2, cv2.LINE_AA)
     if drag is not None:
         (x1, y1), (x2, y2) = drag
         cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), SELECT_COLOR, 1)
@@ -346,6 +395,13 @@ def run_gui(frame, state, output_path, source):
             box = (min(x1, x), min(y1, y), max(x1, x), max(y1, y))
             drag_start = None
             drag_current = None
+            if mode == "floor":
+                count = state.add_floor_point(x, y)
+                if count == FLOOR_REFERENCE_POINTS:
+                    print("바닥 네 점을 다 찍었습니다. 다시 찍으려면 한 번 더 클릭하세요")
+                else:
+                    print(f"바닥 점 {count}/{FLOOR_REFERENCE_POINTS}")
+                return
             if box[2] - box[0] < 8 or box[3] - box[1] < 8:
                 state.select_at(x, y)  # 클릭 = 선택
             elif mode == "table":
@@ -376,6 +432,8 @@ def run_gui(frame, state, output_path, source):
             mode = "zone"
         elif key == ord("x"):
             mode = "seat"
+        elif key == ord("f"):
+            mode = "floor"
         elif key == ord("d"):
             state.delete_selected()
         elif key == ord("u"):
@@ -391,12 +449,6 @@ def run_gui(frame, state, output_path, source):
                 for table in layout.tables
                 if table.kind == "counted_zone" and not table.seats
             ]
-            if empty_zones:
-                print(
-                    f"자리 칸이 없는 바 구역이 있어 저장하지 않았습니다: "
-                    f"{', '.join(empty_zones)} — seat[x]로 칸을 긋거나 [d]로 지우세요"
-                )
-                continue
             offenders = state.invalid_seat_zones()
             if offenders:
                 spots = ", ".join(
@@ -421,6 +473,16 @@ def run_gui(frame, state, output_path, source):
                     f"({sum(len(zone.seats) for zone in zones)}석)"
                 )
             print(f"저장됨: {output_path} ({summary})")
+            if empty_zones:
+                # Saving this is fine -- drawing the bar and slicing it into
+                # seats are two steps and an install gets interrupted.  What
+                # is not fine is judging with it, and seatnow.py refuses that.
+                print(
+                    f"⚠ 자리 칸이 없는 바 구역: {', '.join(empty_zones)} — "
+                    f"그 구역을 선택하고 seat[x]로 자리마다 칸을 그으세요. "
+                    f"칸이 없으면 그 구역의 좌석이 아무 집계에도 안 잡히고, "
+                    f"이 상태로는 seatnow.py 가 실행을 거부합니다"
+                )
         elif key == ord("q") or key == 27:
             break
     cv2.destroyAllWindows()

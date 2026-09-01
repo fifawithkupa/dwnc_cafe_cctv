@@ -239,5 +239,57 @@ class UnassignedChairStateTests(unittest.TestCase):
         self.assertEqual(restored.unassigned_chairs[0], (900.0, 900.0, 940.0, 940.0))
 
 
+class FloorPointTests(unittest.TestCase):
+    def test_points_accumulate_in_click_order(self):
+        state = CalibrationState()
+        for index, (x, y) in enumerate(
+            [(10.0, 10.0), (90.0, 12.0), (95.0, 80.0), (8.0, 78.0)], start=1
+        ):
+            self.assertEqual(state.add_floor_point(x, y), index)
+        self.assertEqual(state.floor_points[0], (10.0, 10.0))
+        self.assertEqual(state.floor_points[3], (8.0, 78.0))
+
+    def test_fifth_point_starts_over(self):
+        # Re-clicking is how you fix a bad point; a separate clear key would
+        # be one more thing to learn during a 30-minute install.
+        state = CalibrationState()
+        for x, y in [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (4.0, 4.0)]:
+            state.add_floor_point(x, y)
+        self.assertEqual(state.add_floor_point(9.0, 9.0), 1)
+        self.assertEqual(state.floor_points, [(9.0, 9.0)])
+
+    def test_undo_restores_floor_points(self):
+        state = CalibrationState()
+        state.add_floor_point(1.0, 1.0)
+        state.add_floor_point(2.0, 2.0)
+        state.undo()
+        self.assertEqual(state.floor_points, [(1.0, 1.0)])
+
+    def test_four_points_reach_the_layout(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 200.0))
+        for x, y in [(10.0, 10.0), (90.0, 12.0), (95.0, 80.0), (8.0, 78.0)]:
+            state.add_floor_point(x, y)
+        layout = state.to_layout({"width": 1920, "height": 1080})
+        self.assertEqual(len(layout.floor_reference.image_points), 4)
+
+    def test_fewer_than_four_points_produce_no_reference(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 200.0))
+        state.add_floor_point(10.0, 10.0)
+        layout = state.to_layout({"width": 1920, "height": 1080})
+        self.assertIsNone(layout.floor_reference)
+
+    def test_round_trip_restores_floor_points(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 200.0))
+        for x, y in [(10.0, 10.0), (90.0, 12.0), (95.0, 80.0), (8.0, 78.0)]:
+            state.add_floor_point(x, y)
+        restored = CalibrationState.from_layout(
+            state.to_layout({"width": 1920, "height": 1080})
+        )
+        self.assertEqual(restored.floor_points[2], (95.0, 80.0))
+
+
 if __name__ == "__main__":
     unittest.main()

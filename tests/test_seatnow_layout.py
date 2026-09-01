@@ -149,12 +149,35 @@ class CountedZoneTests(unittest.TestCase):
         self.assertEqual(layout.tables[0].kind, "table")
         self.assertEqual(layout.tables[0].seats, ())
 
-    def test_rejects_counted_zone_without_seats(self):
+    def test_accepts_counted_zone_without_seats_as_work_in_progress(self):
+        # A zone drawn but not yet sliced into seats is a normal mid-install
+        # state: the installer draws the bar, gets interrupted, saves.  What
+        # must not happen is *judging* with it -- see incomplete_zones().
         data = json.loads(json.dumps(COUNTED_ZONE))
         data["tables"][0]["seats"] = []
 
-        with self.assertRaises(LayoutError):
-            load_layout(write_json(data))
+        layout = load_layout(write_json(data))
+        self.assertEqual(layout.tables[0].seats, ())
+
+    def test_seatless_zone_judges_nothing(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["seats"] = []
+
+        layout = load_layout(write_json(data))
+        # The fixture holds one zone and nothing else, so a zone with no
+        # seat slots leaves the pipeline with nothing at all to judge.
+        self.assertEqual(layout.judgement_units(), ())
+
+    def test_incomplete_zones_names_the_seatless_zone(self):
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["seats"] = []
+
+        layout = load_layout(write_json(data))
+        self.assertEqual(layout.incomplete_zones(), [layout.tables[0].name])
+
+    def test_incomplete_zones_is_empty_when_every_zone_has_seats(self):
+        layout = load_layout(write_json(COUNTED_ZONE))
+        self.assertEqual(layout.incomplete_zones(), [])
 
     def test_rejects_unknown_kind(self):
         data = json.loads(json.dumps(COUNTED_ZONE))
@@ -415,6 +438,38 @@ class FloorReferenceTests(unittest.TestCase):
     def test_scaled_to_scales_the_points(self):
         scaled = self._layout(self.POINTS).scaled_to(960, 540)
         self.assertEqual(scaled.floor_reference.image_points[0], (305.0, 380.0))
+
+
+class RefuseIncompleteLayoutTests(unittest.TestCase):
+    """Judging with a seatless bar zone would lose those seats silently.
+
+    Saving one is fine -- it is a normal mid-install state.  Running the
+    pipeline with one is not: nothing errors, the bar simply never appears
+    in any count, and the app quietly reports fewer seats than the cafe has.
+    """
+
+    def test_seatless_zone_is_refused(self):
+        from seatnow import _require_complete_layout
+
+        data = json.loads(json.dumps(COUNTED_ZONE))
+        data["tables"][0]["seats"] = []
+        layout = load_layout(write_json(data))
+
+        with self.assertRaises(LayoutError) as caught:
+            _require_complete_layout(layout)
+        self.assertIn("BAR", str(caught.exception))
+        self.assertIn("seat[x]", str(caught.exception))
+
+    def test_complete_layout_passes(self):
+        from seatnow import _require_complete_layout
+
+        layout = load_layout(write_json(COUNTED_ZONE))
+        self.assertIsNone(_require_complete_layout(layout))
+
+    def test_no_layout_passes(self):
+        from seatnow import _require_complete_layout
+
+        self.assertIsNone(_require_complete_layout(None))
 
 
 if __name__ == "__main__":

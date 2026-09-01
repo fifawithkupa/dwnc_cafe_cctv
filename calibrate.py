@@ -152,6 +152,40 @@ class CalibrationState:
             self.selected,
         ) = self._history.pop()
 
+    def generate_seats_from_chairs(self) -> int:
+        """Turn the selected bar zone's chairs into seat slots.  Returns count.
+
+        The installer already put the stools where people sit, and a seat
+        slot carries the same information.  Redrawing all of it by hand
+        throws away work that is already done and already correct.
+
+        The zone box grows to contain the new slots: a bar zone tends to get
+        drawn along the counter top while the chairs sit lower, and
+        ``load_layout`` refuses a seat that pokes outside its zone.
+        """
+        table_index = self._selected_table_index()
+        if table_index is None:
+            return 0
+        table = self.tables[table_index]
+        if table.get("kind") != "counted_zone":
+            return 0
+        if table.get("seats"):
+            return 0
+        chairs = table.get("chairs", [])
+        if not chairs:
+            return 0
+
+        self._snapshot()
+        table["seats"] = [tuple(chair) for chair in chairs]
+        box = table["box"]
+        table["box"] = (
+            min([box[0]] + [seat[0] for seat in table["seats"]]),
+            min([box[1]] + [seat[1] for seat in table["seats"]]),
+            max([box[2]] + [seat[2] for seat in table["seats"]]),
+            max([box[3]] + [seat[3] for seat in table["seats"]]),
+        )
+        return len(table["seats"])
+
     def begin_reassign(self) -> bool:
         """Arm a chair for reassignment.  True if a chair was selected.
 
@@ -355,7 +389,7 @@ def _preseed(frame, det_model_path):
 
 
 HELP_TEXT = (
-    "[t]able [c]hair [z]one(bar) seat[x] [f]loor [m]ove-chair [d]elete [u]ndo [s]ave [q]uit"
+    "[t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit"
 )
 
 TABLE_COLOR = (80, 200, 80)
@@ -504,6 +538,18 @@ def run_gui(frame, state, output_path, source):
             mode = "seat"
         elif key == ord("f"):
             mode = "floor"
+        elif key == ord("g"):
+            made = state.generate_seats_from_chairs()
+            if made:
+                print(
+                    f"바 구역의 의자 {made}개에서 자리 칸 {made}개를 만들었습니다. "
+                    f"구역 상자도 그 칸들을 덮도록 넓혔습니다"
+                )
+            else:
+                print(
+                    "자리 칸을 만들지 못했습니다 — 의자가 붙어 있고 자리 칸이 "
+                    "아직 없는 바 구역을 선택한 뒤에 [g]를 누르세요"
+                )
         elif key == ord("m"):
             if state.begin_reassign():
                 print("옮길 테이블을 클릭하세요 (빈 곳을 클릭하면 소속 미정)")

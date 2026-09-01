@@ -90,7 +90,16 @@ class SchemaTests(unittest.TestCase):
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
             sorted(schema["required"]),
-            ["note", "people_seated", "people_standing", "people_total", "uncertain"],
+            [
+                "note",
+                "people_seated",
+                "people_standing",
+                "people_total",
+                "tables_belongings_only",
+                "tables_in_use",
+                "tables_visible",
+                "uncertain",
+            ],
         )
 
     def test_schema_forbids_extra_fields(self):
@@ -109,6 +118,9 @@ GOOD = json.dumps(
         "people_total": 3,
         "people_seated": 2,
         "people_standing": 1,
+        "tables_visible": 6,
+        "tables_in_use": 4,
+        "tables_belongings_only": 2,
         "uncertain": False,
         "note": "",
     }
@@ -278,6 +290,66 @@ class ResolveCodexTests(unittest.TestCase):
             binary = Path(raw) / "codex-fake"
             binary.write_text("", encoding="utf-8")
             self.assertEqual(resolve_codex(str(binary)), str(binary))
+
+
+class BelongingsPromptTests(unittest.TestCase):
+    """Belongings are the main occupancy path, so they must be in the truth.
+
+    ``occupancy_state_from_evidence`` (seatnow_core.py:890-906) calls a table
+    occupied on objects OR a seated person OR a chair holding luggage.  The
+    first run found 47% of verdicts riding on belongings, and nothing in the
+    harness could say whether those were right.
+    """
+
+    def test_prompt_asks_about_belongings(self):
+        prompt = judge_prompt(CLEAN)
+        self.assertIn("tables_in_use", prompt)
+        self.assertIn("tables_belongings_only", prompt)
+        self.assertIn("tables_visible", prompt)
+
+    def test_prompt_names_what_counts_as_belongings(self):
+        prompt = judge_prompt(CLEAN)
+        for example in ("가방", "노트북"):
+            self.assertIn(example, prompt)
+
+
+class BelongingsParseTests(unittest.TestCase):
+    def _payload(self, **overrides):
+        payload = {
+            "people_total": 3,
+            "people_seated": 2,
+            "people_standing": 1,
+            "tables_visible": 6,
+            "tables_in_use": 4,
+            "tables_belongings_only": 2,
+            "uncertain": False,
+            "note": "",
+        }
+        payload.update(overrides)
+        return json.dumps(payload)
+
+    def test_table_counts_are_kept(self):
+        result = parse_judgement("t0015.0s", self._payload())
+        self.assertIsNone(result.error)
+        self.assertEqual(result.tables_visible, 6)
+        self.assertEqual(result.tables_in_use, 4)
+        self.assertEqual(result.tables_belongings_only, 2)
+
+    def test_in_use_above_visible_is_an_error(self):
+        result = parse_judgement("t0015.0s", self._payload(tables_in_use=9))
+        self.assertIsNotNone(result.error)
+
+    def test_belongings_only_above_in_use_is_an_error(self):
+        result = parse_judgement(
+            "t0015.0s", self._payload(tables_in_use=1, tables_belongings_only=3)
+        )
+        self.assertIsNotNone(result.error)
+
+    def test_missing_table_field_is_an_error(self):
+        payload = json.loads(self._payload())
+        del payload["tables_in_use"]
+        result = parse_judgement("t0015.0s", json.dumps(payload))
+        self.assertIsNotNone(result.error)
 
 
 if __name__ == "__main__":

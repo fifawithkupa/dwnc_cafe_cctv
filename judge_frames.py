@@ -37,14 +37,25 @@ PROMPT_TEMPLATE = """\
 
 이 사진은 카페 CCTV의 한 장면이다. 아래를 판단해 JSON으로만 답하라.
 
+**사람**
 - people_total: 보이는 사람 수
 - people_seated: 그중 앉아 있는 사람 수
 - people_standing: 그중 서 있거나 걷고 있는 사람 수
-- uncertain: 가려지거나 뒤통수만 보여 사람인지 또는 자세가 확실하지 않은 대상이
-  하나라도 있으면 true
+
+**테이블** — 여기서 "사용 중"은 사람이 앉아 있거나, 손님 짐이 놓여 있는 것이다.
+손님 짐은 가방·백팩·노트북·책·컵·휴대폰 같은 것이다. 카페 비품(메뉴판, 냅킨통,
+화분, 진열품)은 짐이 아니다.
+- tables_visible: 화면에 보이는 손님용 테이블의 총 수
+- tables_in_use: 그중 사용 중인 테이블 수
+- tables_belongings_only: 사용 중인 것 중 사람 없이 짐만 놓인 테이블 수
+
+**그 외**
+- uncertain: 사람인지, 또는 놓인 물건이 손님 짐인지 확실하지 않은 것이 하나라도
+  있으면 true
 - note: 애매했던 점을 한 줄로. 없으면 빈 문자열
 
 people_seated 와 people_standing 의 합은 people_total 과 같아야 한다.
+tables_belongings_only <= tables_in_use <= tables_visible 이어야 한다.
 
 **이 사진 파일 외에 다른 어떤 파일도 열지 마라.** 같은 저장소의 다른 사진,
 상위 폴더, 로그 파일을 열면 이 판독은 무효가 된다. 너는 이 사진 한 장만 보고
@@ -86,7 +97,16 @@ def build_codex_command(
 
 DEFAULT_TIMEOUT_SECONDS = 180.0
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
-_REQUIRED = ("people_total", "people_seated", "people_standing", "uncertain", "note")
+_REQUIRED = (
+    "people_total",
+    "people_seated",
+    "people_standing",
+    "tables_visible",
+    "tables_in_use",
+    "tables_belongings_only",
+    "uncertain",
+    "note",
+)
 
 
 @dataclass
@@ -97,6 +117,9 @@ class Judgement:
     people_total: int = 0
     people_seated: int = 0
     people_standing: int = 0
+    tables_visible: int = 0
+    tables_in_use: int = 0
+    tables_belongings_only: int = 0
     uncertain: bool = False
     note: str = ""
     error: Optional[str] = None
@@ -130,6 +153,9 @@ def parse_judgement(stem: str, text: str) -> Judgement:
         total = int(payload["people_total"])
         seated = int(payload["people_seated"])
         standing = int(payload["people_standing"])
+        visible = int(payload["tables_visible"])
+        in_use = int(payload["tables_in_use"])
+        bags_only = int(payload["tables_belongings_only"])
     except (TypeError, ValueError) as exc:
         return Judgement(stem=stem, error=f"non-integer count: {exc}")
 
@@ -138,12 +164,24 @@ def parse_judgement(stem: str, text: str) -> Judgement:
             stem=stem,
             error=f"parts do not sum to total: {seated}+{standing} != {total}",
         )
+    if in_use > visible:
+        return Judgement(
+            stem=stem, error=f"tables_in_use {in_use} exceeds tables_visible {visible}"
+        )
+    if bags_only > in_use:
+        return Judgement(
+            stem=stem,
+            error=f"tables_belongings_only {bags_only} exceeds tables_in_use {in_use}",
+        )
 
     return Judgement(
         stem=stem,
         people_total=total,
         people_seated=seated,
         people_standing=standing,
+        tables_visible=visible,
+        tables_in_use=in_use,
+        tables_belongings_only=bags_only,
         uncertain=bool(payload["uncertain"]),
         note=str(payload["note"]),
     )

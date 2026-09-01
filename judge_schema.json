@@ -16,9 +16,24 @@
       "minimum": 0,
       "description": "그중 서 있거나 걷고 있는 사람의 수"
     },
+    "tables_visible": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "화면에 보이는 손님용 테이블의 총 수"
+    },
+    "tables_in_use": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "그중 사용 중인 테이블 수 (사람이 앉아 있거나 손님 짐이 놓여 있음)"
+    },
+    "tables_belongings_only": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "사용 중인 테이블 중 사람 없이 짐만 놓인 것의 수"
+    },
     "uncertain": {
       "type": "boolean",
-      "description": "가려지거나 뒤통수만 보여 사람인지 또는 자세가 확실하지 않은 대상이 하나라도 있으면 참"
+      "description": "가려지거나 뒤통수만 보여 사람인지, 또는 놓인 물건이 손님 짐인지 확실하지 않은 것이 하나라도 있으면 참"
     },
     "note": {
       "type": "string",
@@ -29,6 +44,9 @@
     "people_total",
     "people_seated",
     "people_standing",
+    "tables_visible",
+    "tables_in_use",
+    "tables_belongings_only",
     "uncertain",
     "note"
   ],

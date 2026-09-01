@@ -33,12 +33,15 @@ def record(timestamp, person=3, chair=7, table=2, seated=2, standing=1, unknown=
     }
 
 
-def truth(total=3, uncertain=False, error=None):
+def truth(total=3, uncertain=False, error=None, visible=6, in_use=4, bags_only=2):
     return Judgement(
         stem="ignored",
         people_total=total,
         people_seated=total,
         people_standing=0,
+        tables_visible=visible,
+        tables_in_use=in_use,
+        tables_belongings_only=bags_only,
         uncertain=uncertain,
         error=error,
     )
@@ -170,11 +173,17 @@ class RenderTableTests(unittest.TestCase):
         self.assertIn("uncertain", render_table(rows))
 
     def test_disagreement_is_flagged(self):
-        rows = build_rows([record(0.0, person=1)], {"t0000.0s": truth(3)})
+        rows = build_rows(
+            [record(0.0, person=1, occupied=4)], {"t0000.0s": truth(3, in_use=4)}
+        )
         self.assertIn("!!", render_table(rows))
 
     def test_agreement_is_not_flagged(self):
-        rows = build_rows([record(0.0, person=3)], {"t0000.0s": truth(3)})
+        # Both truth columns must agree: the flag now has two sources, and a
+        # row is only clean when neither the people nor the seat count differ.
+        rows = build_rows(
+            [record(0.0, person=3, occupied=4)], {"t0000.0s": truth(3, in_use=4)}
+        )
         self.assertNotIn("!!", render_table(rows))
 
 
@@ -295,6 +304,62 @@ class OverDetectionTests(unittest.TestCase):
     def test_summary_reports_over_detection(self):
         rows = build_rows([record(0.0, person=7)], {"t0000.0s": truth(2)})
         self.assertIn("과탐", render_summary(rows, [record(0.0)]))
+
+
+from inspect_run import seat_inflation
+
+
+class SeatTruthTests(unittest.TestCase):
+    """Belongings are the main occupancy path, so they need a truth column.
+
+    seatnow_core.py:890-906 calls a table occupied on objects OR a seated
+    person OR a chair holding luggage.  Counting only people leaves the path
+    that carries 47% of the verdicts completely unmeasured.
+    """
+
+    def test_table_truth_is_carried_onto_the_row(self):
+        rows = build_rows([record(0.0)], {"t0000.0s": truth(visible=6, in_use=4, bags_only=2)})
+        self.assertEqual(rows[0].truth_tables_visible, 6)
+        self.assertEqual(rows[0].truth_tables_in_use, 4)
+        self.assertEqual(rows[0].truth_tables_belongings_only, 2)
+
+    def test_missing_judgement_leaves_table_truth_empty(self):
+        rows = build_rows([record(0.0)], {})
+        self.assertIsNone(rows[0].truth_tables_in_use)
+        self.assertIsNone(rows[0].seat_gap)
+
+    def test_seat_gap_is_our_occupied_minus_truth_in_use(self):
+        rows = build_rows([record(0.0, occupied=5)], {"t0000.0s": truth(in_use=2)})
+        self.assertEqual(rows[0].seat_gap, 3)
+
+
+class SeatInflationTests(unittest.TestCase):
+    def test_extra_occupied_seats_are_counted(self):
+        rows = build_rows([record(0.0, occupied=5)], {"t0000.0s": truth(in_use=2)})
+        result = seat_inflation(rows)
+        self.assertEqual(result.frames_over, 1)
+        self.assertEqual(result.extra_total, 3)
+        self.assertEqual(result.worst_gap, 3)
+
+    def test_under_reporting_is_counted_separately(self):
+        rows = build_rows([record(0.0, occupied=1)], {"t0000.0s": truth(in_use=4)})
+        result = seat_inflation(rows)
+        self.assertEqual(result.frames_under, 1)
+        self.assertEqual(result.frames_over, 0)
+
+    def test_excluded_frames_are_not_scored(self):
+        rows = build_rows([record(0.0, occupied=9)], {"t0000.0s": truth(uncertain=True)})
+        self.assertEqual(seat_inflation(rows).scored_frames, 0)
+
+    def test_summary_reports_seat_inflation(self):
+        rows = build_rows([record(0.0, occupied=5)], {"t0000.0s": truth(in_use=2)})
+        self.assertIn("자리 없음", render_summary(rows, [record(0.0)]))
+
+    def test_table_columns_appear_in_the_reading_table(self):
+        rows = build_rows([record(0.0)], {"t0000.0s": truth(visible=6, in_use=4, bags_only=2)})
+        table = render_table(rows)
+        self.assertIn("6", table)
+        self.assertIn("짐만", table)
 
 
 if __name__ == "__main__":

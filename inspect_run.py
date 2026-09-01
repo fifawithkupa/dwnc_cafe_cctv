@@ -51,6 +51,9 @@ class Row:
     seat_unknown: int
     seat_ignore: int
     truth: Optional[int] = None
+    truth_tables_visible: Optional[int] = None
+    truth_tables_in_use: Optional[int] = None
+    truth_tables_belongings_only: Optional[int] = None
     excluded: Optional[str] = None
 
     @property
@@ -64,6 +67,17 @@ class Row:
     @property
     def pose_gap(self) -> Optional[int]:
         return None if self.truth is None else self.pose_total - self.truth
+
+    @property
+    def seat_gap(self) -> Optional[int]:
+        """Seats we call taken, minus seats a person judged actually in use.
+
+        Positive means the app tells a customer "no room" when there was
+        room -- the direction that turns people away from the door.
+        """
+        if self.truth_tables_in_use is None:
+            return None
+        return self.seat_occupied - self.truth_tables_in_use
 
     def found(self, layer: str) -> int:
         if layer == "detector":
@@ -91,6 +105,9 @@ def build_rows(
         judgement = judgements.get(stem)
 
         truth: Optional[int] = None
+        tables_visible: Optional[int] = None
+        tables_in_use: Optional[int] = None
+        tables_bags_only: Optional[int] = None
         excluded: Optional[str] = None
         if judgement is not None:
             if judgement.error is not None:
@@ -99,6 +116,9 @@ def build_rows(
                 excluded = "uncertain"
             else:
                 truth = judgement.people_total
+                tables_visible = judgement.tables_visible
+                tables_in_use = judgement.tables_in_use
+                tables_bags_only = judgement.tables_belongings_only
 
         rows.append(
             Row(
@@ -115,6 +135,9 @@ def build_rows(
                 seat_unknown=int(summary.get("unknown", 0)),  # type: ignore[union-attr]
                 seat_ignore=int(summary.get("ignore", 0)),  # type: ignore[union-attr]
                 truth=truth,
+                truth_tables_visible=tables_visible,
+                truth_tables_in_use=tables_in_use,
+                truth_tables_belongings_only=tables_bags_only,
                 excluded=excluded,
             )
         )
@@ -238,11 +261,31 @@ def _gap_cell(row: Row) -> str:
     return f"{row.detector_gap:+d} !!"
 
 
+def _table_truth_cell(row: Row) -> str:
+    if row.excluded is not None:
+        return row.excluded
+    if row.truth_tables_in_use is None:
+        return "___ / ___ / ___ (짐만)"
+    return (
+        f"{row.truth_tables_visible}/{row.truth_tables_in_use}/"
+        f"{row.truth_tables_belongings_only} (짐만)"
+    )
+
+
+def _seat_gap_cell(row: Row) -> str:
+    if row.excluded is not None or row.seat_gap is None:
+        return ""
+    if row.seat_gap == 0:
+        return "0"
+    return f"{row.seat_gap:+d} !!"
+
+
 def render_table(rows: List[Row]) -> str:
     """The reading table: three layers across, one tick per line."""
     lines = [
-        "| 사진 | 검출(사람/의자/책상) | 포즈(앉음/섬/모름) | 좌석(점유/빈/모름/무시) | 실제 | 차이 |",
-        "|---|---|---|---|---:|---:|",
+        "| 사진 | 검출(사람/의자/책상) | 포즈(앉음/섬/모름) | 좌석(점유/빈/모름/무시) "
+        "| 실제 사람 | 차이 | 실제 테이블(보임/사용중/짐만) | 점유 차이 |",
+        "|---|---|---|---|---:|---:|---|---:|",
     ]
     for row in rows:
         lines.append(
@@ -251,7 +294,9 @@ def render_table(rows: List[Row]) -> str:
             f"| {row.pose_seated}/{row.pose_standing}/{row.pose_unknown} "
             f"| {row.seat_occupied}/{row.seat_empty}/{row.seat_unknown}/{row.seat_ignore} "
             f"| {_truth_cell(row)} "
-            f"| {_gap_cell(row)} |"
+            f"| {_gap_cell(row)} "
+            f"| {_table_truth_cell(row)} "
+            f"| {_seat_gap_cell(row)} |"
         )
     return "\n".join(lines)
 
@@ -287,6 +332,7 @@ def render_summary(rows: List[Row], records: List[Dict[str, object]]) -> str:
         _recall_line("포즈", pose),
         _over_detection_line("검출", over_detection(rows, "detector")),
         _over_detection_line("포즈", over_detection(rows, "pose")),
+        _seat_inflation_line(seat_inflation(rows)),
         "",
         "> 재현율만 보면 안 된다. 재현율은 \"있는 사람을 몇 % 찾았나\"라서",
         "> 없는 사람을 만들어내는 것을 아예 못 본다 — 2명짜리 장면에서 7명을",
@@ -412,6 +458,52 @@ def _over_detection_line(label: str, result: OverDetection) -> str:
         f"최악 한 장 +{result.worst_gap}명 "
         f"| 놓침 {result.frames_under}장 | 정확 {result.frames_exact}장"
     )
+
+def seat_inflation(rows: List[Row]) -> OverDetection:
+    """How far our "occupied" count runs ahead of the tables really in use.
+
+    This is the number that maps onto what a customer sees.  Over-reporting
+    puts "no room" in the app while seats sit empty; under-reporting sends
+    someone to a cafe that is full.  Both are here, counted separately,
+    because they are not equally bad and must not average out.
+    """
+    scored = over = under = exact = extra = 0
+    worst = 0
+    for row in rows:
+        if row.excluded is not None or row.seat_gap is None:
+            continue
+        scored += 1
+        gap = row.seat_gap
+        if gap > 0:
+            over += 1
+            extra += gap
+            worst = max(worst, gap)
+        elif gap < 0:
+            under += 1
+        else:
+            exact += 1
+    return OverDetection(
+        layer="seat",
+        scored_frames=scored,
+        frames_over=over,
+        frames_under=under,
+        frames_exact=exact,
+        extra_total=extra,
+        worst_gap=worst,
+    )
+
+
+def _seat_inflation_line(result: OverDetection) -> str:
+    if result.scored_frames == 0:
+        return "- **자리 없음 부풀림**: 정답 없음"
+    share = result.frames_over / result.scored_frames
+    return (
+        f"- **자리 없음 부풀림**: {result.frames_over}/{result.scored_frames}장 "
+        f"({share:.0%}), 없는 점유 총 {result.extra_total}석, "
+        f"최악 한 장 +{result.worst_gap}석 "
+        f"| 적게 셈 {result.frames_under}장 | 정확 {result.frames_exact}장"
+    )
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -18,6 +18,7 @@
   /* Architectural drawing: white rooms, dark outlines, thick walls. */
   .wall { fill: #ffffff; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
   .wall-open { fill: none; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
+  .wall-draft { fill: none; stroke: #2f6fd0; stroke-width: 6; stroke-dasharray: 14 10; }
   .area { fill: #ffffff; stroke: #6f7681; stroke-width: 4; }
   .counter { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
   .arealabel { font-size: 22px; fill: #1c2128; font-weight: 600; }
@@ -48,7 +49,7 @@
   <button id="zoom-fit">화면에 맞추기</button>
   <button id="toggle-preview">미리보기</button>
   <button id="save" class="primary">저장</button>
-  <span id="hint">테이블을 끌어서 실제 배치에 맞춥니다. 의자는 테이블을 따라옵니다.</span>
+  <span id="hint">테이블과 바를 끌어서 실제 배치에 맞춥니다. 의자는 따라옵니다.</span>
 </header>
 <svg id="canvas"></svg>
 <footer>
@@ -69,8 +70,8 @@ const canvas = document.getElementById("canvas");
 const hint = document.getElementById("hint");
 const MODES = [["mode-move", "move"], ["mode-wall", "wall"], ["mode-area", "area"]];
 const HINTS = {
-  move: "테이블을 끌어서 실제 배치에 맞춥니다. 의자는 테이블을 따라옵니다.",
-  wall: "방 둘레를 시계방향으로 눌러 벽을 그립니다. 마지막 점을 다시 누르면 닫힙니다.",
+  move: "테이블과 바를 끌어서 실제 배치에 맞춥니다. 의자는 따라옵니다. 바를 돌리려면 양 끝 스툴을 끄세요.",
+  wall: "화면 캡처하듯 방 전체를 대각선으로 끌어 네모를 그립니다.",
   area: "주방·화장실·카운터처럼 손님이 앉지 않는 구역을 눌러 놓습니다.",
 };
 
@@ -123,6 +124,13 @@ function draw() {
   }
   for (const point of state.walls) {
     canvas.appendChild(node("circle", { cx: point[0], cy: point[1], r: 7, fill: "#6f7681" }));
+  }
+  if (wallBox) {
+    canvas.appendChild(node("rect", {
+      x: Math.min(wallBox.x1, wallBox.x2), y: Math.min(wallBox.y1, wallBox.y2),
+      width: Math.abs(wallBox.x2 - wallBox.x1), height: Math.abs(wallBox.y2 - wallBox.y1),
+      class: "wall-draft",
+    }));
   }
 
   for (const area of state.landmarks) {
@@ -202,12 +210,50 @@ function hits(item, point) {
   return Math.abs(item.x - point.x) <= item.w / 2 && Math.abs(item.y - point.y) <= item.h / 2;
 }
 
+function zoneOf(seat) {
+  return seat.kind === "counted_zone" ? seat.seat_id.replace(/-[^-]*$/, "") : null;
+}
+
+function nearCounter(counter, point) {
+  const vx = counter.x2 - counter.x1, vy = counter.y2 - counter.y1;
+  const len2 = vx * vx + vy * vy;
+  const ratio = len2 === 0 ? 0
+    : Math.max(0, Math.min(1, ((point.x - counter.x1) * vx + (point.y - counter.y1) * vy) / len2));
+  return Math.hypot(point.x - (counter.x1 + vx * ratio),
+                    point.y - (counter.y1 + vy * ratio)) <= counter.depth;
+}
+
 function itemAt(point) {
   // Chairs are drawn from their table and are not grabbable: dragging one
   // would only be undone the next time the table moves.
-  for (const seat of state.seats) if (hits(seat, point)) return { kind: "seat", item: seat };
+  //
+  // Bar stools are the same, with one exception.  The server rebuilds the
+  // whole row from the two stools furthest apart, so a middle stool snaps
+  // back the instant it is let go, which reads as "the bar does not move".
+  // Grabbing the counter moves the row as one piece; the two end stools
+  // stay grabbable because swinging them is the only way to turn the bar.
+  for (const counter of state.counters || []) {
+    if (nearCounter(counter, point)) return { kind: "counter", item: counter };
+  }
+  for (const seat of state.seats) {
+    if (!hits(seat, point)) continue;
+    if (seat.kind === "counted_zone" && !isEndStool(seat)) continue;
+    return { kind: "seat", item: seat };
+  }
   for (const area of state.landmarks) if (hits(area, point)) return { kind: "area", item: area };
   return null;
+}
+
+function stoolsOf(zone) {
+  return state.seats.filter((seat) => zoneOf(seat) === zone);
+}
+
+function isEndStool(seat) {
+  const row = stoolsOf(zoneOf(seat));
+  if (row.length < 2) return true;
+  const along = (a) => [a.y, a.x];
+  const sorted = row.slice().sort((a, b) => along(a)[0] - along(b)[0] || along(a)[1] - along(b)[1]);
+  return seat === sorted[0] || seat === sorted[sorted.length - 1];
 }
 
 // Fit the drawn content, not the whole extent: the extent is padded and the
@@ -273,21 +319,22 @@ canvas.addEventListener("wheel", (event) => {
   zoomBy(event.deltaY > 0 ? 1.15 : 1 / 1.15, toCanvas(event));
 }, { passive: false });
 
-let dragging = null, offset = null, panning = null;
+let dragging = null, offset = null, panning = null, wallBox = null;
+
+function boxWalls(box) {
+  return [[box.x1, box.y1], [box.x2, box.y1], [box.x2, box.y2], [box.x1, box.y2]];
+}
 
 canvas.addEventListener("pointerdown", (event) => {
   if (!state) return;
   const point = toCanvas(event);
 
   if (mode === "wall") {
-    const last = state.walls[state.walls.length - 1];
-    if (last && Math.hypot(last[0] - point.x, last[1] - point.y) < 24) {
-      hint.textContent = "벽을 닫았습니다. 다시 그리려면 [벽 그리기]에서 처음부터 누르세요.";
-      setMode("move");
-      return;
-    }
-    state.walls.push([point.x, point.y]);
-    hint.textContent = "벽 점 " + state.walls.length + "개 — 마지막 점을 다시 누르면 끝납니다.";
+    // A room is a box far more often than it is a traced outline, and
+    // clicking eight corners on a phone is the worst part of the install.
+    wallBox = { x1: point.x, y1: point.y, x2: point.x, y2: point.y };
+    canvas.setPointerCapture(event.pointerId);
+    hint.textContent = "끌어서 방 크기를 맞춘 뒤 손을 떼세요.";
     draw();
     return;
   }
@@ -309,12 +356,21 @@ canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
     return;
   }
-  dragging = hit.item;
-  offset = { x: point.x - hit.item.x, y: point.y - hit.item.y };
+  dragging = hit;
+  offset = hit.kind === "counter"
+    ? { x: point.x - hit.item.x1, y: point.y - hit.item.y1 }
+    : { x: point.x - hit.item.x, y: point.y - hit.item.y };
   canvas.setPointerCapture(event.pointerId);
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (wallBox) {
+    const point = toCanvas(event);
+    wallBox.x2 = point.x;
+    wallBox.y2 = point.y;
+    draw();
+    return;
+  }
   if (panning) {
     const box = canvas.getBoundingClientRect();
     const scale = view.w / box.width;
@@ -325,9 +381,28 @@ canvas.addEventListener("pointermove", (event) => {
   }
   if (!dragging) return;
   const point = toCanvas(event);
-  dragging.x = point.x - offset.x;
-  dragging.y = point.y - offset.y;
-  dragging.needs_review = false;
+
+  if (dragging.kind === "counter") {
+    // Move the stools, not the drawn strip: the server rebuilds the strip
+    // from them, so shifting only the strip would be undone on release.
+    const counter = dragging.item;
+    const dx = (point.x - offset.x) - counter.x1;
+    const dy = (point.y - offset.y) - counter.y1;
+    for (const stool of stoolsOf(counter.zone_id)) {
+      stool.x += dx;
+      stool.y += dy;
+      stool.needs_review = false;
+    }
+    counter.x1 += dx; counter.y1 += dy;
+    counter.x2 += dx; counter.y2 += dy;
+    draw();
+    return;
+  }
+
+  const item = dragging.item;
+  item.x = point.x - offset.x;
+  item.y = point.y - offset.y;
+  item.needs_review = false;
   draw();
 });
 
@@ -349,6 +424,20 @@ async function reArrange() {
 }
 
 canvas.addEventListener("pointerup", () => {
+  if (wallBox) {
+    const wide = Math.abs(wallBox.x2 - wallBox.x1) > 40;
+    const tall = Math.abs(wallBox.y2 - wallBox.y1) > 40;
+    if (wide && tall) {
+      state.walls = boxWalls(wallBox);
+      hint.textContent = "벽을 그렸습니다. 모서리 점을 끌어 모양을 다듬을 수 있습니다.";
+      setMode("move");
+    } else {
+      hint.textContent = "너무 작습니다. 방 전체를 대각선으로 끌어주세요.";
+    }
+    wallBox = null;
+    draw();
+    return;
+  }
   panning = null;
   const moved = dragging;
   dragging = null;

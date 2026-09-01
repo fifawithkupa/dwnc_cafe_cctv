@@ -405,15 +405,21 @@ class CounterTests(unittest.TestCase):
             length = math.hypot(counter.x2 - counter.x1, counter.y2 - counter.y1)
             self.assertGreater(numerator / length, seat.w / 2)
 
-    def test_stools_go_toward_the_room_not_the_wall(self):
-        # The tables are to the left of the counter, so that is the room.
+    def test_stools_sit_between_the_counter_and_the_room(self):
+        # The tables are to the left of the slots, so that is the room, and
+        # the counter body belongs on the far side of the stools.  Asserting
+        # the relationship rather than a coordinate: the stools now hold the
+        # line the installer drew and the counter is what steps back, so
+        # that a re-arrange leaves the whole bar exactly where it was.
         seats = self._zone(
             [(800.0, 100.0), (800.0, 300.0), (800.0, 500.0)],
             others=[(200.0, 300.0)],
         )
-        arranged, _ = arrange_bars(seats)
+        arranged, counters = arrange_bars(seats)
+        counter = counters[0]
         stools = [seat for seat in arranged if seat.kind == "counted_zone"]
-        self.assertTrue(all(stool.x < 800.0 for stool in stools))
+        self.assertTrue(all(stool.x < counter.x1 for stool in stools),
+                        "스툴이 카운터 너머 벽 쪽에 놓였다")
 
     def test_a_lone_stool_makes_no_counter(self):
         seats = self._zone([(800.0, 100.0)])
@@ -558,3 +564,56 @@ class ClearanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BarStaysPutTests(unittest.TestCase):
+    """Arranging an already-arranged bar must change nothing.
+
+    The editor re-arranges after every drag, so this runs again on its own
+    output.  Deriving the counter line from stools that were already pushed
+    off it and then pushing them off again adds one offset per pass: moving
+    any table made the bar walk across the map on its own.
+    """
+
+    def _room(self):
+        seats = [
+            FloorSeat(seat_id=f"BAR7-{index}", kind="counted_zone",
+                      x=800.0, y=y, w=52.0, h=52.0, image_anchor=(0.0, 0.0))
+            for index, y in enumerate((100.0, 300.0, 500.0), start=1)
+        ]
+        seats.append(FloorSeat(seat_id="T1", kind="table", x=300.0, y=300.0,
+                               w=150.0, h=105.0, image_anchor=(0.0, 0.0)))
+        return tuple(seats)
+
+    def test_running_twice_gives_the_same_bar(self):
+        once, counters_once = arrange_bars(self._room())
+        twice, counters_twice = arrange_bars(once)
+        for before, after in zip(once, twice):
+            self.assertAlmostEqual(before.x, after.x, places=6,
+                                   msg=f"{before.seat_id} 이 옆으로 밀렸다")
+            self.assertAlmostEqual(before.y, after.y, places=6,
+                                   msg=f"{before.seat_id} 이 옆으로 밀렸다")
+        self.assertAlmostEqual(counters_once[0].x1, counters_twice[0].x1, places=6)
+        self.assertAlmostEqual(counters_once[0].y1, counters_twice[0].y1, places=6)
+
+    def test_five_passes_do_not_drift(self):
+        seats, _ = arrange_bars(self._room())
+        start = seats[0]
+        for _ in range(5):
+            seats, _ = arrange_bars(seats)
+        drift = math.hypot(seats[0].x - start.x, seats[0].y - start.y)
+        self.assertLess(drift, 1e-6, f"바가 {drift:.0f} 단위 떠내려갔다")
+
+    def test_moving_the_whole_bar_moves_it_by_exactly_that_much(self):
+        seats, _ = arrange_bars(self._room())
+        shifted = tuple(
+            replace(seat, x=seat.x - 120.0, y=seat.y + 45.0)
+            if seat.kind == "counted_zone" else seat
+            for seat in seats
+        )
+        arranged, _ = arrange_bars(shifted)
+        for before, after in zip(shifted, arranged):
+            if before.kind != "counted_zone":
+                continue
+            self.assertAlmostEqual(before.x, after.x, places=6)
+            self.assertAlmostEqual(before.y, after.y, places=6)

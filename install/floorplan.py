@@ -195,9 +195,14 @@ def arrange_bars(seats):
     they are pushed off it to the room side, because a stool drawn on the
     counter reads as a pile rather than a bar.
 
-    The counter is produced here rather than derived back from the moved
-    stools: recomputing it afterwards has to guess which way they were pushed,
-    and guessing wrong puts the counter straight through them.
+    This runs again on its own output -- the editor re-arranges after every
+    drag -- so it has to leave an arranged bar exactly where it is.  It used
+    to read the line off stools it had already pushed aside and then push
+    them aside again, adding one offset per pass, so moving any table sent
+    the bar walking across the map.  Instead the stools stay on the line
+    they define and the counter is the piece set back from them, which is
+    also where the real counter is: the installer drew those slots at the
+    seats, and the counter body runs behind them.
     """
     placed = list(seats)
     counters = []
@@ -230,13 +235,17 @@ def arrange_bars(seats):
             if toward < 0:
                 normal = (-normal[0], -normal[1])
 
+        # One offset for the whole row: a per-stool one would tilt the
+        # counter whenever the sizes differ.
+        size = sum(placed[index].w for index in indices) / len(indices)
+        offset = COUNTER_DEPTH / 2 + size * STOOL_GAP + size / 2
         counters.append(
             FloorCounter(
                 zone_id=zone_id,
-                x1=start_point[0],
-                y1=start_point[1],
-                x2=end_point[0],
-                y2=end_point[1],
+                x1=start_point[0] - normal[0] * offset,
+                y1=start_point[1] - normal[1] * offset,
+                x2=end_point[0] - normal[0] * offset,
+                y2=end_point[1] - normal[1] * offset,
                 depth=COUNTER_DEPTH,
             )
         )
@@ -249,12 +258,10 @@ def arrange_bars(seats):
         steps = len(ordered) - 1
         for position, index in enumerate(ordered):
             ratio = position / steps
-            size = placed[index].w
-            offset = COUNTER_DEPTH / 2 + size * STOOL_GAP + size / 2
             placed[index] = replace(
                 placed[index],
-                x=start_point[0] + (end_point[0] - start_point[0]) * ratio + normal[0] * offset,
-                y=start_point[1] + (end_point[1] - start_point[1]) * ratio + normal[1] * offset,
+                x=start_point[0] + (end_point[0] - start_point[0]) * ratio,
+                y=start_point[1] + (end_point[1] - start_point[1]) * ratio,
                 needs_review=False,
             )
     return tuple(placed), tuple(counters)

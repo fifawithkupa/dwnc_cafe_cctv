@@ -34,6 +34,9 @@ from floorplan import (
     FloorChair,
     FloorPlan,
     Landmark,
+    arrange_bars,
+    arrange_chairs,
+    separate_overlaps,
     build_draft,
     load_floorplan,
     save_floorplan,
@@ -121,6 +124,16 @@ def editor_state(
             }
             for landmark in plan.landmarks
         ],
+        "counters": [
+            {
+                "zone_id": counter.zone_id,
+                "x1": counter.x1, "y1": counter.y1,
+                "x2": counter.x2, "y2": counter.y2,
+                "depth": counter.depth,
+            }
+            for counter in plan.counters
+        ],
+        "walls": [list(point) for point in plan.walls],
         "unmapped_seats": sorted(set(states) - drawn),
     }
 
@@ -205,12 +218,23 @@ def apply_edits(
         for landmark in payload.get("landmarks", [])
     )
 
+    # Chairs are always derived from the tables, never taken from the page.
+    # Their drawn position says "this is a four-seater" and nothing more, and
+    # letting the browser scatter them again would undo the one thing that
+    # makes the map readable.
+    barred, counters = arrange_bars(seats)
+    seats = separate_overlaps(barred, counters)
     updated_plan = FloorPlan(
         schema_version=plan.schema_version,
         extent=plan.extent,
         seats=seats,
-        chairs=tuple(chairs),
+        chairs=arrange_chairs(seats, tuple(chairs)),
+        counters=counters,
         landmarks=landmarks,
+        walls=tuple(
+            (float(point[0]), float(point[1]))
+            for point in payload.get("walls", [])
+        ),
     )
     return _rebuild_layout(layout, ownership), updated_plan
 
@@ -335,11 +359,28 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain; charset=utf-8")
 
     def do_POST(self) -> None:
-        if self.path != "/save":
+        if self.path not in ("/save", "/arrange"):
             self._send(404, b"not found", "text/plain; charset=utf-8")
             return
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
+
+        if self.path == "/arrange":
+            # One implementation of the placement rule, on the server, tested.
+            # The page asks after a drag rather than copying the geometry.
+            try:
+                layout, plan = self._current()
+                _, arranged = apply_edits(layout, plan, payload)
+                body = json.dumps(
+                    editor_state(layout, arranged, {}), ensure_ascii=False
+                ).encode("utf-8")
+            except Exception as exc:  # noqa: BLE001 - the page shows the message
+                body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
+                self._send(400, body, "application/json; charset=utf-8")
+                return
+            self._send(200, body, "application/json; charset=utf-8")
+            return
+
         try:
             layout, plan = self._current()
             updated_layout, updated_plan = apply_edits(layout, plan, payload)

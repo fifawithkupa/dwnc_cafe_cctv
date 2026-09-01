@@ -5,60 +5,71 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SeatNow 평면도 편집기</title>
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #14171c; color: #e8ecf1; }
-  header { padding: 10px 14px; background: #1d2129; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  button { background: #2b313d; color: #e8ecf1; border: 1px solid #3a4250; border-radius: 6px; padding: 7px 12px; font-size: 14px; cursor: pointer; }
-  button.on { background: #3f6fd8; border-color: #5b87ea; }
-  #hint { margin-left: auto; font-size: 13px; color: #9aa6b6; }
-  svg { display: block; width: 100vw; height: calc(100vh - 132px); background: #0f1216; touch-action: none; }
-  .seat { fill: #2f3948; stroke: #58657a; stroke-width: 2; }
-  .seat.occupied { fill: #7d2b2b; stroke: #c05252; }
-  .seat.empty    { fill: #2b6b3a; stroke: #4fbf70; }
-  .seat.unknown  { fill: #3a3f47; stroke: #6b737f; }
-  .seat.review   { stroke: #e0a13c; stroke-dasharray: 6 4; }
-  .chair { fill: #d8c04a; stroke: #b8a032; stroke-width: 1.5; }
-  .chair.orphan { fill: #a35bb0; stroke: #c47dd0; }
-  .link { stroke: #d8c04a; stroke-width: 2; opacity: 0.55; }
-  .seat.counted_zone { stroke-dasharray: 2 0; stroke: #7f8ea8; }
-  .seatlabel { font-size: 18px; font-weight: 600; fill: #f2f6fb; }
-  .landmark { fill: #26303c; stroke: #47566b; stroke-width: 2; }
-  .picked { stroke: #ff5757 !important; stroke-width: 4 !important; }
-  text { font-size: 13px; fill: #cbd4e1; pointer-events: none; user-select: none; }
-  footer { padding: 6px 14px; font-size: 12px; color: #8b96a6; background: #1d2129; line-height: 1.6; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f2f3f5; color: #1c2128; }
+  header { padding: 10px 14px; background: #ffffff; border-bottom: 1px solid #d6dae0;
+           display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { background: #ffffff; color: #1c2128; border: 1px solid #b9c0c9; border-radius: 6px;
+           padding: 7px 12px; font-size: 14px; cursor: pointer; }
+  button.on { background: #2f6fd0; border-color: #2f6fd0; color: #ffffff; }
+  button.primary { background: #1f7a3d; border-color: #1f7a3d; color: #ffffff; }
+  #hint { margin-left: auto; font-size: 13px; color: #5b6673; }
+  svg { display: block; width: 100vw; height: calc(100vh - 128px); background: #e9eaec; touch-action: none; }
+
+  /* Architectural drawing: white rooms, dark outlines, thick walls. */
+  .wall { fill: #ffffff; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
+  .wall-open { fill: none; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
+  .area { fill: #ffffff; stroke: #6f7681; stroke-width: 4; }
+  .counter { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
+  .arealabel { font-size: 22px; fill: #1c2128; font-weight: 600; }
+
+  .seat { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
+  .seat.counted_zone { rx: 26; }
+  .seat.occupied { fill: #f3c8c8; stroke: #b03a3a; }
+  .seat.empty    { fill: #cdeccf; stroke: #2f7d3a; }
+  .seat.unknown  { fill: #e3e5e8; stroke: #8a929c; }
+  .seat.review   { stroke: #d1892a; stroke-dasharray: 8 5; }
+  .chair { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
+  .chair.orphan { fill: #efdcf5; stroke: #8b46a3; stroke-dasharray: 5 4; }
+  .link { stroke: #9aa3ad; stroke-width: 2; opacity: 0.5; }
+  .picked { stroke: #d92b2b !important; stroke-width: 5 !important; }
+  .seatlabel { font-size: 20px; font-weight: 600; fill: #1c2128; }
+  text { fill: #1c2128; pointer-events: none; user-select: none; }
+  footer { padding: 6px 14px; font-size: 12px; color: #5b6673; background: #ffffff;
+           border-top: 1px solid #d6dae0; line-height: 1.6; }
 </style>
 </head>
 <body>
 <header>
   <button id="mode-move" class="on">끌어서 옮기기</button>
-  <button id="mode-assign">의자 소속 정하기</button>
-  <button id="mode-landmark">지형지물 추가</button>
+  <button id="mode-wall">벽 그리기</button>
+  <button id="mode-area">구역 추가</button>
   <button id="toggle-preview">미리보기</button>
-  <button id="save">저장</button>
-  <span id="hint">좌석과 의자를 끌어서 실제 배치에 맞춥니다.</span>
+  <button id="save" class="primary">저장</button>
+  <span id="hint">테이블을 끌어서 실제 배치에 맞춥니다. 의자는 테이블을 따라옵니다.</span>
 </header>
 <svg id="canvas"></svg>
 <footer>
-  초록 = 빈 자리 · 빨강 = 사용 중 · <b>회색 = 가려서 확인이 안 되는 자리</b> ·
-  노랑 = 의자 · 보라 = 소속 미정 의자 · 주황 점선 = 위치 확인 필요 · <b>노란 선 = 그 의자가 어느 좌석 것인지</b><br>
+  <b>초록 = 빈 자리 · 빨강 = 사용 중 · 회색 = 가려서 확인이 안 되는 자리</b> ·
+  보라 점선 = 소속 미정 의자 (calibrate.py 에서 정합니다) · 주황 점선 = 위치 확인 필요<br>
   <b>테이블은 통째로 한 자리로 표시됩니다</b> — 4인석에 한 명만 앉아 있어도 그 테이블 전체가 빨강입니다.
-  창가 자리는 칸마다 따로 세지만, 미리보기에서는 회색입니다 (칸별 상태가 아직 리포트에 없습니다).
+  창가 자리는 칸마다 따로 세지만 미리보기에서는 회색입니다 (칸별 상태가 아직 리포트에 없습니다).
 </footer>
 <script>
 const SVG_NS = "http://www.w3.org/2000/svg";
-let state = null, mode = "move", preview = false, pickedChair = null;
+let state = null, mode = "move", preview = false;
 const canvas = document.getElementById("canvas");
 const hint = document.getElementById("hint");
-const MODES = [["mode-move", "move"], ["mode-assign", "assign"], ["mode-landmark", "landmark"]];
+const MODES = [["mode-move", "move"], ["mode-wall", "wall"], ["mode-area", "area"]];
+const HINTS = {
+  move: "테이블을 끌어서 실제 배치에 맞춥니다. 의자는 테이블을 따라옵니다.",
+  wall: "방 둘레를 시계방향으로 눌러 벽을 그립니다. 마지막 점을 다시 누르면 닫힙니다.",
+  area: "주방·화장실·카운터처럼 손님이 앉지 않는 구역을 눌러 놓습니다.",
+};
 
 function setMode(next) {
   mode = next;
-  pickedChair = null;
   for (const [id, name] of MODES) document.getElementById(id).classList.toggle("on", name === mode);
-  hint.textContent = {
-    move: "좌석과 의자를 끌어서 실제 배치에 맞춥니다.",
-    assign: "의자를 누른 뒤 붙일 좌석을 누르세요. 빈 곳을 누르면 소속 미정.",
-    landmark: "빈 곳을 눌러 입구·카운터 같은 표시를 놓습니다.",
-  }[mode];
+  hint.textContent = HINTS[mode];
   draw();
 }
 for (const [id, name] of MODES) document.getElementById(id).onclick = () => setMode(name);
@@ -69,35 +80,23 @@ document.getElementById("toggle-preview").onclick = (event) => {
   draw();
 };
 
+function node(name, attrs) {
+  const element = document.createElementNS(SVG_NS, name);
+  for (const key in attrs) element.setAttribute(key, attrs[key]);
+  return element;
+}
+
 function rect(item, cls) {
-  const node = document.createElementNS(SVG_NS, "rect");
-  node.setAttribute("x", item.x - item.w / 2);
-  node.setAttribute("y", item.y - item.h / 2);
-  node.setAttribute("width", item.w);
-  node.setAttribute("height", item.h);
-  node.setAttribute("rx", 6);
-  node.setAttribute("class", cls);
-  return node;
+  return node("rect", {
+    x: item.x - item.w / 2, y: item.y - item.h / 2,
+    width: item.w, height: item.h, rx: 8, class: cls,
+  });
 }
 
 function label(item, text, cls) {
-  const node = document.createElementNS(SVG_NS, "text");
-  node.setAttribute("x", item.x);
-  node.setAttribute("y", item.y + 6);
-  node.setAttribute("text-anchor", "middle");
-  if (cls) node.setAttribute("class", cls);
-  node.textContent = text;
-  return node;
-}
-
-function line(from, to, cls) {
-  const node = document.createElementNS(SVG_NS, "line");
-  node.setAttribute("x1", from.x);
-  node.setAttribute("y1", from.y);
-  node.setAttribute("x2", to.x);
-  node.setAttribute("y2", to.y);
-  node.setAttribute("class", cls);
-  return node;
+  const element = node("text", { x: item.x, y: item.y + 7, "text-anchor": "middle", class: cls || "" });
+  element.textContent = text;
+  return element;
 }
 
 function draw() {
@@ -107,31 +106,70 @@ function draw() {
   const seatById = {};
   for (const seat of state.seats) seatById[seat.seat_id] = seat;
 
-  for (const landmark of state.landmarks) {
-    canvas.appendChild(rect(landmark, "landmark"));
-    canvas.appendChild(label(landmark, landmark.label, "seatlabel"));
+  if (state.walls.length >= 3) {
+    canvas.appendChild(node("polygon", { points: state.walls.map((p) => p.join(",")).join(" "), class: "wall" }));
+  } else if (state.walls.length === 2) {
+    canvas.appendChild(node("polyline", { points: state.walls.map((p) => p.join(",")).join(" "), class: "wall-open" }));
   }
-  // Ownership first, underneath everything: a wrong line is the whole reason
-  // this screen exists, and it has to be visible at a glance.
+  for (const point of state.walls) {
+    canvas.appendChild(node("circle", { cx: point[0], cy: point[1], r: 7, fill: "#6f7681" }));
+  }
+
+  for (const area of state.landmarks) {
+    canvas.appendChild(rect(area, "area"));
+    canvas.appendChild(label(area, area.label, "arealabel"));
+  }
   for (const chair of state.chairs) {
     const owner = chair.seat_id && seatById[chair.seat_id];
-    if (owner) canvas.appendChild(line(chair, owner, "link"));
+    if (owner) {
+      canvas.appendChild(node("line", { x1: chair.x, y1: chair.y, x2: owner.x, y2: owner.y, class: "link" }));
+    }
+  }
+  // The bar is one long table drawn from the server's counter line; the
+  // stools sit beside it.  Six boxes in a row do not read as a counter.
+  for (const counter of state.counters) {
+    const angle = Math.atan2(counter.y2 - counter.y1, counter.x2 - counter.x1) * 180 / Math.PI;
+    const length = Math.hypot(counter.x2 - counter.x1, counter.y2 - counter.y1) + counter.depth;
+    canvas.appendChild(node("rect", {
+      x: -length / 2, y: -counter.depth / 2, width: length, height: counter.depth,
+      rx: 6, class: "counter",
+      transform: "translate(" + (counter.x1 + counter.x2) / 2 + "," +
+                 (counter.y1 + counter.y2) / 2 + ") rotate(" + angle + ")",
+    }));
   }
   for (const seat of state.seats) {
     let cls = "seat " + seat.kind;
     if (preview) cls += " " + seat.state;
     if (seat.needs_review) cls += " review";
-    canvas.appendChild(rect(seat, cls));
+    // A bar stool is a round seat pulled up to the counter, and drawing it as
+    // a labelled square made the row read as six more tables.
+    if (seat.kind === "counted_zone") {
+      canvas.appendChild(node("circle", { cx: seat.x, cy: seat.y, r: seat.w / 2, class: cls }));
+    } else {
+      canvas.appendChild(rect(seat, cls));
+    }
   }
   for (const chair of state.chairs) {
-    const picked = pickedChair && pickedChair.image_anchor.join() === chair.image_anchor.join();
-    let cls = "chair";
-    if (!chair.seat_id) cls += " orphan";
-    if (picked) cls += " picked";
-    canvas.appendChild(rect(chair, cls));
+    canvas.appendChild(rect(chair, chair.seat_id ? "chair" : "chair orphan"));
   }
-  // Labels last so a chair can never cover the name of the seat it sits at.
-  for (const seat of state.seats) canvas.appendChild(label(seat, seat.seat_id, "seatlabel"));
+  // Labels last, so a chair can never cover the name of the seat it sits at.
+  // Stools are not labelled one by one: six names crowded along a counter
+  // hide the counter.  The bar gets one name, off to the side.
+  for (const seat of state.seats) {
+    if (seat.kind === "counted_zone") continue;
+    canvas.appendChild(label(seat, seat.seat_id, "seatlabel"));
+  }
+  for (const counter of state.counters) {
+    const stools = state.seats.filter(
+      (seat) => seat.kind === "counted_zone" && seat.seat_id.split("-")[0] === counter.zone_id
+    );
+    const anchor = { x: (counter.x1 + counter.x2) / 2, y: (counter.y1 + counter.y2) / 2 };
+    const away = Math.hypot(counter.x2 - counter.x1, counter.y2 - counter.y1) ? 1 : 0;
+    canvas.appendChild(label(
+      { x: anchor.x + counter.depth * 1.4 * away, y: anchor.y },
+      counter.zone_id + " (" + stools.length + "석)", "seatlabel"
+    ));
+  }
 }
 
 function toCanvas(event) {
@@ -145,9 +183,10 @@ function hits(item, point) {
 }
 
 function itemAt(point) {
-  for (const chair of state.chairs) if (hits(chair, point)) return { kind: "chair", item: chair };
+  // Chairs are drawn from their table and are not grabbable: dragging one
+  // would only be undone the next time the table moves.
   for (const seat of state.seats) if (hits(seat, point)) return { kind: "seat", item: seat };
-  for (const landmark of state.landmarks) if (hits(landmark, point)) return { kind: "landmark", item: landmark };
+  for (const area of state.landmarks) if (hits(area, point)) return { kind: "area", item: area };
   return null;
 }
 
@@ -156,28 +195,29 @@ let dragging = null, offset = null;
 canvas.addEventListener("pointerdown", (event) => {
   if (!state) return;
   const point = toCanvas(event);
-  const hit = itemAt(point);
 
-  if (mode === "landmark") {
-    if (hit) return;
-    const text = prompt("표시 이름 (예: 입구, 카운터, 화장실)");
+  if (mode === "wall") {
+    const last = state.walls[state.walls.length - 1];
+    if (last && Math.hypot(last[0] - point.x, last[1] - point.y) < 24) {
+      hint.textContent = "벽을 닫았습니다. 다시 그리려면 [벽 그리기]에서 처음부터 누르세요.";
+      setMode("move");
+      return;
+    }
+    state.walls.push([point.x, point.y]);
+    hint.textContent = "벽 점 " + state.walls.length + "개 — 마지막 점을 다시 누르면 끝납니다.";
+    draw();
+    return;
+  }
+
+  if (mode === "area") {
+    const text = prompt("구역 이름 (예: 카운터, 주방, 화장실, 입구)");
     if (!text) return;
-    state.landmarks.push({ kind: "landmark", label: text, x: point.x, y: point.y, w: 120, h: 46 });
+    state.landmarks.push({ kind: "area", label: text, x: point.x, y: point.y, w: 200, h: 110 });
     draw();
     return;
   }
 
-  if (mode === "assign") {
-    if (hit && hit.kind === "chair") { pickedChair = hit.item; draw(); return; }
-    if (!pickedChair) { hint.textContent = "먼저 옮길 의자를 누르세요."; return; }
-    pickedChair.seat_id = hit && hit.kind === "seat" ? hit.item.seat_id : null;
-    hint.textContent = pickedChair.seat_id
-      ? "의자를 " + pickedChair.seat_id + " 에 붙였습니다."
-      : "의자를 소속 미정으로 두었습니다.";
-    pickedChair = null;
-    draw();
-    return;
-  }
+  const hit = itemAt(point);
 
   if (!hit) return;
   dragging = hit.item;
@@ -194,7 +234,28 @@ canvas.addEventListener("pointermove", (event) => {
   draw();
 });
 
-canvas.addEventListener("pointerup", () => { dragging = null; });
+async function reArrange() {
+  const response = await fetch("/arrange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      seats: state.seats, chairs: state.chairs,
+      landmarks: state.landmarks, walls: state.walls,
+    }),
+  });
+  const data = await response.json();
+  if (data.error) { hint.textContent = data.error; return; }
+  state.seats = data.seats;
+  state.chairs = data.chairs;
+  state.counters = data.counters;
+  draw();
+}
+
+canvas.addEventListener("pointerup", () => {
+  const moved = dragging;
+  dragging = null;
+  if (moved) reArrange();
+});
 
 document.getElementById("save").onclick = async () => {
   hint.textContent = "저장 중...";
@@ -202,7 +263,10 @@ document.getElementById("save").onclick = async () => {
     const response = await fetch("/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seats: state.seats, chairs: state.chairs, landmarks: state.landmarks }),
+      body: JSON.stringify({
+        seats: state.seats, chairs: state.chairs,
+        landmarks: state.landmarks, walls: state.walls,
+      }),
     });
     const result = await response.json();
     hint.textContent = result.ok ? "저장했습니다 (평면도 + 레이아웃)" : "저장 실패: " + result.error;
@@ -215,13 +279,18 @@ fetch("/state")
   .then((response) => response.json())
   .then((data) => {
     if (data.error) { hint.textContent = data.error; return; }
-    state = data;
+    // Tolerate a server that predates a field rather than drawing nothing:
+    // a blank canvas with an exception in the console tells the installer
+    // nothing at all.
+    state = Object.assign({ seats: [], chairs: [], counters: [], landmarks: [], walls: [], unmapped_seats: [] }, data);
     const review = data.seats.filter((seat) => seat.needs_review).length
       + data.chairs.filter((chair) => chair.needs_review).length;
     if (data.unmapped_seats.length) {
       hint.textContent = "지도에 없는 좌석 " + data.unmapped_seats.length + "개 — 레이아웃과 지도가 어긋났습니다";
     } else if (review) {
       hint.textContent = "위치 확인이 필요한 것 " + review + "개 (주황 점선) — 끌어서 제자리에 놓으세요";
+    } else if (!state.walls.length) {
+      hint.textContent = "[벽 그리기]로 방 둘레를 먼저 그리면 손님이 읽을 수 있는 도면이 됩니다.";
     }
     draw();
   });

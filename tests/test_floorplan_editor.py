@@ -73,14 +73,17 @@ class ApplyEditsTests(unittest.TestCase):
         plan = build_draft(layout())
         payload = {
             "seats": [
+                # Spread out: two seats dropped on the same spot would be
+                # pushed apart by separate_overlaps, which is correct but
+                # would hide whether the move itself was kept.
                 {
                     "seat_id": seat.seat_id,
-                    "x": 11.0,
+                    "x": 11.0 + 400.0 * index,
                     "y": 22.0,
                     "w": seat.w,
                     "h": seat.h,
                 }
-                for seat in plan.seats
+                for index, seat in enumerate(plan.seats)
             ],
             "chairs": [
                 {
@@ -228,6 +231,54 @@ class LatestStatesTests(unittest.TestCase):
 
     def test_missing_file_is_empty(self):
         self.assertEqual(latest_states(Path("does-not-exist.jsonl")), {})
+
+
+class WallsTests(unittest.TestCase):
+    """The room outline the installer clicks once.
+
+    A camera sees seats and never walls, so nothing can derive them.  Without
+    them a customer sees boxes floating in the dark instead of a cafe, which
+    is the whole complaint the outline exists to answer.
+    """
+
+    def test_walls_start_empty(self):
+        self.assertEqual(build_draft(layout()).walls, ())
+
+    def test_walls_survive_an_edit(self):
+        plan = build_draft(layout())
+        payload = {"seats": [], "chairs": [], "landmarks": [],
+                   "walls": [[0.0, 0.0], [10.0, 0.0], [10.0, 20.0]]}
+        _, updated = apply_edits(layout(), plan, payload)
+        self.assertEqual(updated.walls, ((0.0, 0.0), (10.0, 0.0), (10.0, 20.0)))
+
+    def test_walls_reach_the_page(self):
+        plan = build_draft(layout())
+        payload = {"seats": [], "chairs": [], "landmarks": [],
+                   "walls": [[1.0, 2.0], [3.0, 4.0]]}
+        _, updated = apply_edits(layout(), plan, payload)
+        state = editor_state(layout(), updated, {})
+        self.assertEqual(state["walls"], [[1.0, 2.0], [3.0, 4.0]])
+
+
+class SeparationThroughEditsTests(unittest.TestCase):
+    def test_seats_dropped_on_each_other_are_pushed_apart(self):
+        # Two tables on the same spot cannot both be read, and the installer
+        # dragging one onto another is an accident, not an instruction.
+        plan = build_draft(layout())
+        payload = {
+            "seats": [
+                {"seat_id": seat.seat_id, "x": 500.0, "y": 500.0,
+                 "w": seat.w, "h": seat.h}
+                for seat in plan.seats
+            ],
+            "chairs": [],
+            "landmarks": [],
+        }
+        _, updated = apply_edits(layout(), plan, payload)
+        first, second = updated.seats
+        self.assertTrue(
+            abs(first.x - second.x) >= first.w or abs(first.y - second.y) >= first.h
+        )
 
 
 if __name__ == "__main__":

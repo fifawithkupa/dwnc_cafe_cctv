@@ -10,7 +10,7 @@
   button { background: #2b313d; color: #e8ecf1; border: 1px solid #3a4250; border-radius: 6px; padding: 7px 12px; font-size: 14px; cursor: pointer; }
   button.on { background: #3f6fd8; border-color: #5b87ea; }
   #hint { margin-left: auto; font-size: 13px; color: #9aa6b6; }
-  svg { display: block; width: 100vw; height: calc(100vh - 104px); background: #0f1216; touch-action: none; }
+  svg { display: block; width: 100vw; height: calc(100vh - 132px); background: #0f1216; touch-action: none; }
   .seat { fill: #2f3948; stroke: #58657a; stroke-width: 2; }
   .seat.occupied { fill: #7d2b2b; stroke: #c05252; }
   .seat.empty    { fill: #2b6b3a; stroke: #4fbf70; }
@@ -18,6 +18,9 @@
   .seat.review   { stroke: #e0a13c; stroke-dasharray: 6 4; }
   .chair { fill: #d8c04a; stroke: #b8a032; stroke-width: 1.5; }
   .chair.orphan { fill: #a35bb0; stroke: #c47dd0; }
+  .link { stroke: #d8c04a; stroke-width: 2; opacity: 0.55; }
+  .seat.counted_zone { stroke-dasharray: 2 0; stroke: #7f8ea8; }
+  .seatlabel { font-size: 18px; font-weight: 600; fill: #f2f6fb; }
   .landmark { fill: #26303c; stroke: #47566b; stroke-width: 2; }
   .picked { stroke: #ff5757 !important; stroke-width: 4 !important; }
   text { font-size: 13px; fill: #cbd4e1; pointer-events: none; user-select: none; }
@@ -36,7 +39,7 @@
 <svg id="canvas"></svg>
 <footer>
   초록 = 빈 자리 · 빨강 = 사용 중 · <b>회색 = 가려서 확인이 안 되는 자리</b> ·
-  노랑 = 의자 · 보라 = 소속 미정 의자 · 주황 점선 = 위치 확인 필요<br>
+  노랑 = 의자 · 보라 = 소속 미정 의자 · 주황 점선 = 위치 확인 필요 · <b>노란 선 = 그 의자가 어느 좌석 것인지</b><br>
   <b>테이블은 통째로 한 자리로 표시됩니다</b> — 4인석에 한 명만 앉아 있어도 그 테이블 전체가 빨강입니다.
   창가 자리는 칸마다 따로 세지만, 미리보기에서는 회색입니다 (칸별 상태가 아직 리포트에 없습니다).
 </footer>
@@ -77,12 +80,23 @@ function rect(item, cls) {
   return node;
 }
 
-function label(item, text) {
+function label(item, text, cls) {
   const node = document.createElementNS(SVG_NS, "text");
   node.setAttribute("x", item.x);
-  node.setAttribute("y", item.y + 4);
+  node.setAttribute("y", item.y + 6);
   node.setAttribute("text-anchor", "middle");
+  if (cls) node.setAttribute("class", cls);
   node.textContent = text;
+  return node;
+}
+
+function line(from, to, cls) {
+  const node = document.createElementNS(SVG_NS, "line");
+  node.setAttribute("x1", from.x);
+  node.setAttribute("y1", from.y);
+  node.setAttribute("x2", to.x);
+  node.setAttribute("y2", to.y);
+  node.setAttribute("class", cls);
   return node;
 }
 
@@ -90,16 +104,24 @@ function draw() {
   if (!state) return;
   canvas.setAttribute("viewBox", "0 0 " + state.extent.width + " " + state.extent.height);
   canvas.innerHTML = "";
+  const seatById = {};
+  for (const seat of state.seats) seatById[seat.seat_id] = seat;
+
   for (const landmark of state.landmarks) {
     canvas.appendChild(rect(landmark, "landmark"));
-    canvas.appendChild(label(landmark, landmark.label));
+    canvas.appendChild(label(landmark, landmark.label, "seatlabel"));
+  }
+  // Ownership first, underneath everything: a wrong line is the whole reason
+  // this screen exists, and it has to be visible at a glance.
+  for (const chair of state.chairs) {
+    const owner = chair.seat_id && seatById[chair.seat_id];
+    if (owner) canvas.appendChild(line(chair, owner, "link"));
   }
   for (const seat of state.seats) {
-    let cls = "seat";
+    let cls = "seat " + seat.kind;
     if (preview) cls += " " + seat.state;
     if (seat.needs_review) cls += " review";
     canvas.appendChild(rect(seat, cls));
-    canvas.appendChild(label(seat, seat.seat_id));
   }
   for (const chair of state.chairs) {
     const picked = pickedChair && pickedChair.image_anchor.join() === chair.image_anchor.join();
@@ -108,6 +130,8 @@ function draw() {
     if (picked) cls += " picked";
     canvas.appendChild(rect(chair, cls));
   }
+  // Labels last so a chair can never cover the name of the seat it sits at.
+  for (const seat of state.seats) canvas.appendChild(label(seat, seat.seat_id, "seatlabel"));
 }
 
 function toCanvas(event) {

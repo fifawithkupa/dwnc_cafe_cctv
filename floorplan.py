@@ -36,9 +36,9 @@ MARGIN_FRACTION = 0.08
 # person adjusts.  A bar seat is drawn smaller than a table because it is one
 # seat rather than a whole table.
 DEFAULT_SIZES: Dict[str, Tuple[float, float]] = {
-    "table": (90.0, 60.0),
-    COUNTED_ZONE_KIND: (44.0, 44.0),
-    "chair": (30.0, 30.0),
+    "table": (150.0, 105.0),
+    COUNTED_ZONE_KIND: (52.0, 52.0),
+    "chair": (46.0, 46.0),
 }
 
 Point = Tuple[float, float]
@@ -87,22 +87,23 @@ class FloorPlan:
 
 
 def _owner_of_each_chair(layout: SeatLayout) -> List[Tuple[Optional[str], Point]]:
-    """(owner seat name or None, image anchor) for every chair in the layout."""
-    owners: List[Tuple[Optional[str], Point]] = []
-    for table in layout.tables:
-        # A counted_zone chair belongs to the seat slot it covers, and that is
-        # decided in unit_chair_assignments; on the map it is enough to hang it
-        # under the first slot of the zone so it draws in the right place.
-        owner = (
-            f"{table.name}-{table.seats[0].id}"
-            if table.kind == COUNTED_ZONE_KIND and table.seats
-            else table.name
-        )
-        for chair in table.chairs:
-            owners.append((owner, floor_anchor(chair.box)))
-    for chair in layout.unassigned_chairs:
-        owners.append((None, floor_anchor(chair.box)))
-    return owners
+    """(owner seat name or None, image anchor) for every chair in the layout.
+
+    Ownership is read from ``unit_chair_assignments`` rather than recomputed,
+    because that is what judgement uses.  A bar chair belongs to the one slot
+    it covers; hanging every bar chair under the first slot -- which this did
+    at first -- draws ownership lines to the wrong stool, and the installer
+    then "fixes" something that was already right.
+    """
+    units = layout.judgement_units()
+    owner_by_chair: Dict[int, str] = {}
+    for unit_index, chair_indices in layout.unit_chair_assignments().items():
+        for chair_index in chair_indices:
+            owner_by_chair[chair_index] = units[unit_index].name
+    return [
+        (owner_by_chair.get(index), floor_anchor(box))
+        for index, box in enumerate(layout.chair_boxes())
+    ]
 
 
 def build_draft(layout: SeatLayout) -> FloorPlan:

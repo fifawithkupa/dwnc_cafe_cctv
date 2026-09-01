@@ -16,8 +16,16 @@ the CLI already holds is enough.
 
 from __future__ import annotations
 
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List
+from typing import Callable, List, Optional
+
+from frame_dump import CLEAN_DIR
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -73,3 +81,163 @@ def build_codex_command(
         str(output_path),
         judge_prompt(clean_path),
     ]
+
+
+DEFAULT_TIMEOUT_SECONDS = 180.0
+_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+_REQUIRED = ("people_total", "people_seated", "people_standing", "uncertain", "note")
+
+
+@dataclass
+class Judgement:
+    """One still's ground truth, or the reason there is none."""
+
+    stem: str
+    people_total: int = 0
+    people_seated: int = 0
+    people_standing: int = 0
+    uncertain: bool = False
+    note: str = ""
+    error: Optional[str] = None
+
+    @property
+    def usable(self) -> bool:
+        """Whether this may be counted in a score at all."""
+        return self.error is None and not self.uncertain
+
+
+def parse_judgement(stem: str, text: str) -> Judgement:
+    """Turn one Codex answer into a Judgement, or into a recorded failure.
+
+    The sum check is here because JSON Schema cannot express it: an answer
+    whose parts disagree with its own total is not usable ground truth, and
+    silently keeping the total would launder that disagreement into a score.
+    """
+    match = _JSON_OBJECT.search(text or "")
+    if match is None:
+        return Judgement(stem=stem, error=f"no JSON object in answer: {text[:120]!r}")
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        return Judgement(stem=stem, error=f"invalid JSON: {exc}")
+
+    missing = [field for field in _REQUIRED if field not in payload]
+    if missing:
+        return Judgement(stem=stem, error=f"missing fields: {', '.join(missing)}")
+
+    try:
+        total = int(payload["people_total"])
+        seated = int(payload["people_seated"])
+        standing = int(payload["people_standing"])
+    except (TypeError, ValueError) as exc:
+        return Judgement(stem=stem, error=f"non-integer count: {exc}")
+
+    if seated + standing != total:
+        return Judgement(
+            stem=stem,
+            error=f"parts do not sum to total: {seated}+{standing} != {total}",
+        )
+
+    return Judgement(
+        stem=stem,
+        people_total=total,
+        people_seated=seated,
+        people_standing=standing,
+        uncertain=bool(payload["uncertain"]),
+        note=str(payload["note"]),
+    )
+
+
+def clean_frames(frame_dir: Path) -> List[Path]:
+    """Every clean still, in time order.  Never touches marked/."""
+    clean_dir = Path(frame_dir) / CLEAN_DIR
+    if not clean_dir.is_dir():
+        raise FileNotFoundError(f"No clean frames directory: {clean_dir}")
+    return sorted(clean_dir.glob("*.jpg"))
+
+
+def run_codex(command: List[str], output_path: Path, timeout: float) -> str:
+    """Run one Codex call and return its answer text."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"codex exited {completed.returncode}: {(completed.stderr or '')[:300]}"
+        )
+    if output_path.exists():
+        return output_path.read_text(encoding="utf-8")
+    return completed.stdout or ""
+
+
+def judge_directory(
+    frame_dir: Path,
+    output_dir: Path,
+    codex: str = "codex",
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    runner: Optional[Callable[[List[str], Path, float], str]] = None,
+) -> List[Judgement]:
+    """Count people in every clean still, one throwaway session each.
+
+    A failed call costs one still, never the run: with roughly 22 stills per
+    angle, throwing the batch away over a single timeout would make the
+    harness more fragile than the thing it is measuring.
+    """
+    call = runner or run_codex
+    output_dir = Path(output_dir)
+    results: List[Judgement] = []
+    for frame in clean_frames(frame_dir):
+        stem = frame.stem
+        answer_path = output_dir / f"{stem}.json"
+        command = build_codex_command(frame, SCHEMA_PATH, answer_path, codex=codex)
+        try:
+            text = call(command, answer_path, timeout)
+        except Exception as exc:  # noqa: BLE001 - any failure costs one still
+            judgement = Judgement(stem=stem, error=f"{type(exc).__name__}: {exc}")
+        else:
+            judgement = parse_judgement(stem, text)
+        answer_path.parent.mkdir(parents=True, exist_ok=True)
+        answer_path.write_text(
+            json.dumps(asdict(judgement), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        results.append(judgement)
+        state = judgement.error or (
+            f"people={judgement.people_total} uncertain={judgement.uncertain}"
+        )
+        print(f"[{stem}] {state}", flush=True)
+    return results
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("frame_dir", type=Path, help="seatnow.py --frame-dir 로 만든 폴더")
+    parser.add_argument("--output", type=Path, help="판독 결과 폴더 (기본: <frame_dir>/judge)")
+    parser.add_argument("--codex", default="codex", help="codex 실행 파일 경로")
+    parser.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="한 사진당 제한 시간(초)"
+    )
+    args = parser.parse_args(argv)
+
+    output_dir = args.output or (args.frame_dir / "judge")
+    results = judge_directory(
+        args.frame_dir, output_dir, codex=args.codex, timeout=args.timeout
+    )
+    failed = sum(result.error is not None for result in results)
+    unsure = sum(result.uncertain for result in results if result.error is None)
+    print(
+        f"\n{len(results)}장 판독: 실패 {failed}장, 불확실 {unsure}장, "
+        f"채점 가능 {sum(result.usable for result in results)}장"
+    )
+    print(f"결과: {output_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

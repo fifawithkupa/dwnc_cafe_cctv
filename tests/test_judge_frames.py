@@ -98,5 +98,156 @@ class SchemaTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
 
 
+import tempfile
+
+from frame_dump import CLEAN_DIR
+from judge_frames import Judgement, clean_frames, judge_directory, parse_judgement
+
+
+GOOD = json.dumps(
+    {
+        "people_total": 3,
+        "people_seated": 2,
+        "people_standing": 1,
+        "uncertain": False,
+        "note": "",
+    }
+)
+
+
+class ParseJudgementTests(unittest.TestCase):
+    def test_valid_answer_parses(self):
+        result = parse_judgement("t0015.0s", GOOD)
+        self.assertIsNone(result.error)
+        self.assertEqual(result.people_total, 3)
+        self.assertEqual(result.people_seated, 2)
+        self.assertFalse(result.uncertain)
+
+    def test_answer_wrapped_in_prose_still_parses(self):
+        # Codex sometimes frames the JSON with a sentence even under a schema.
+        prose = "여기 결과입니다:" + chr(10)
+        result = parse_judgement("t0015.0s", prose + GOOD + chr(10))
+        self.assertIsNone(result.error)
+        self.assertEqual(result.people_total, 3)
+
+    def test_broken_json_becomes_an_error(self):
+        result = parse_judgement("t0015.0s", "{not json")
+        self.assertIsNotNone(result.error)
+
+    def test_missing_field_becomes_an_error(self):
+        result = parse_judgement("t0015.0s", json.dumps({"people_total": 2}))
+        self.assertIsNotNone(result.error)
+
+    def test_parts_not_summing_to_total_becomes_an_error(self):
+        # A schema cannot express "seated + standing == total", so it is
+        # checked here.  An answer that fails it is not a usable ground truth.
+        bad = json.dumps(
+            {
+                "people_total": 3,
+                "people_seated": 1,
+                "people_standing": 1,
+                "uncertain": False,
+                "note": "",
+            }
+        )
+        result = parse_judgement("t0015.0s", bad)
+        self.assertIsNotNone(result.error)
+
+    def test_error_keeps_the_stem(self):
+        self.assertEqual(parse_judgement("t0030.0s", "junk").stem, "t0030.0s")
+
+
+class CleanFramesTests(unittest.TestCase):
+    def test_only_clean_directory_is_listed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / CLEAN_DIR).mkdir()
+            (root / "marked").mkdir()
+            (root / CLEAN_DIR / "t0015.0s.jpg").write_bytes(b"x")
+            (root / "marked" / "t0015.0s.jpg").write_bytes(b"x")
+            found = clean_frames(root)
+            self.assertEqual([p.name for p in found], ["t0015.0s.jpg"])
+            self.assertNotIn("marked", str(found[0].parent))
+
+    def test_results_are_in_time_order(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / CLEAN_DIR).mkdir()
+            for name in ("t0105.0s.jpg", "t0015.0s.jpg", "t0000.0s.jpg"):
+                (root / CLEAN_DIR / name).write_bytes(b"x")
+            self.assertEqual(
+                [p.name for p in clean_frames(root)],
+                ["t0000.0s.jpg", "t0015.0s.jpg", "t0105.0s.jpg"],
+            )
+
+    def test_missing_clean_directory_raises(self):
+        with tempfile.TemporaryDirectory() as raw:
+            with self.assertRaises(FileNotFoundError):
+                clean_frames(Path(raw))
+
+
+def runner_returning(*answers):
+    """A fake Codex: returns the given answers in order, or raises them."""
+    remaining = list(answers)
+    calls = []
+
+    def run(command, output_path, timeout):
+        calls.append(command)
+        answer = remaining.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    run.calls = calls  # type: ignore[attr-defined]
+    return run
+
+
+class JudgeDirectoryTests(unittest.TestCase):
+    def _frames(self, root: Path, count: int):
+        (root / CLEAN_DIR).mkdir(parents=True)
+        for index in range(count):
+            (root / CLEAN_DIR / f"t{index * 15:04d}.0s.jpg").write_bytes(b"x")
+
+    def test_every_frame_gets_one_call(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "frames"
+            self._frames(root, 3)
+            runner = runner_returning(GOOD, GOOD, GOOD)
+            results = judge_directory(root, Path(raw) / "judge", runner=runner)
+            self.assertEqual(len(results), 3)
+            self.assertEqual(len(runner.calls), 3)
+
+    def test_one_failure_does_not_stop_the_rest(self):
+        # 22 stills must not be thrown away because one call timed out.
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "frames"
+            self._frames(root, 3)
+            runner = runner_returning(GOOD, RuntimeError("timeout"), GOOD)
+            results = judge_directory(root, Path(raw) / "judge", runner=runner)
+            self.assertEqual(len(results), 3)
+            self.assertIsNone(results[0].error)
+            self.assertIsNotNone(results[1].error)
+            self.assertIsNone(results[2].error)
+
+    def test_results_are_written_next_to_each_other(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "frames"
+            out = Path(raw) / "judge"
+            self._frames(root, 1)
+            judge_directory(root, out, runner=runner_returning(GOOD))
+            self.assertTrue((out / "t0000.0s.json").exists())
+
+    def test_error_is_recorded_in_the_written_file(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "frames"
+            out = Path(raw) / "judge"
+            self._frames(root, 1)
+            judge_directory(
+                root, out, runner=runner_returning(RuntimeError("boom"))
+            )
+            written = json.loads((out / "t0000.0s.json").read_text(encoding="utf-8"))
+            self.assertIn("boom", written["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

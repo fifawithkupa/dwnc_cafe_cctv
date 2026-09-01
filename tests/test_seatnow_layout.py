@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from seatnow_layout import (
+    FloorReference,
     LayoutChair,
     LayoutError,
     LayoutTable,
@@ -356,6 +357,64 @@ class SchemaV3RoundTripTests(unittest.TestCase):
             )
             loaded = load_layout(path)
             self.assertEqual(loaded.unassigned_chairs, ())
+
+
+class FloorReferenceTests(unittest.TestCase):
+    """Four image points that are a rectangle on the real floor.
+
+    Stage 2 turns these into a homography.  Stage 1 only has to carry them
+    without losing or mangling them, including when the frame is rescaled.
+    """
+
+    POINTS = ((610.0, 760.0), (1180.0, 720.0), (1410.0, 980.0), (520.0, 1040.0))
+
+    def _layout(self, points=None):
+        return SeatLayout(
+            schema_version=3,
+            source={"width": 1920, "height": 1080},
+            tables=(LayoutTable(id=1, name="T1", box=(10.0, 10.0, 50.0, 50.0)),),
+            floor_reference=(
+                None if points is None else FloorReference(image_points=points)
+            ),
+        )
+
+    def test_absent_by_default(self):
+        self.assertIsNone(self._layout().floor_reference)
+
+    def test_round_trips_through_a_file(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "layout.json"
+            save_layout(self._layout(self.POINTS), path)
+            loaded = load_layout(path)
+            self.assertEqual(loaded.floor_reference.image_points, self.POINTS)
+
+    def test_absent_reference_round_trips_as_none(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "layout.json"
+            save_layout(self._layout(), path)
+            self.assertIsNone(load_layout(path).floor_reference)
+
+    def test_wrong_point_count_is_rejected(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "layout.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 3,
+                        "source": {"width": 1920, "height": 1080},
+                        "tables": [{"id": 1, "name": "T1", "kind": "table",
+                                    "box": [10, 10, 50, 50]}],
+                        "floor_reference": {"image_points": [[0, 0], [1, 1], [2, 2]]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(LayoutError):
+                load_layout(path)
+
+    def test_scaled_to_scales_the_points(self):
+        scaled = self._layout(self.POINTS).scaled_to(960, 540)
+        self.assertEqual(scaled.floor_reference.image_points[0], (305.0, 380.0))
 
 
 if __name__ == "__main__":

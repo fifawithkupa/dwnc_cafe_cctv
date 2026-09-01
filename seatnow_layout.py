@@ -61,6 +61,22 @@ class LayoutSeat:
     box: Box
 
 
+FLOOR_REFERENCE_POINTS = 4
+
+
+@dataclass(frozen=True)
+class FloorReference:
+    """Four image points that form a rectangle on the real floor, clockwise.
+
+    Stage 2 turns these into a homography that flattens the camera view.  No
+    real-world measurements are asked for: the customer needs "the window
+    seat on the right", not "3.2 m from the door", and the aspect ratio gets
+    corrected by hand on the floor plan.
+    """
+
+    image_points: Tuple[Tuple[float, float], ...]
+
+
 @dataclass(frozen=True)
 class JudgementUnit:
     """One box the pipeline judges independently.
@@ -96,6 +112,7 @@ class SeatLayout:
     source: Dict[str, object]
     tables: Tuple[LayoutTable, ...]
     unassigned_chairs: Tuple[LayoutChair, ...] = ()
+    floor_reference: Optional[FloorReference] = None
 
     def scaled_to(self, width: int, height: int) -> "SeatLayout":
         src_width = float(self.source.get("width", width))
@@ -121,9 +138,21 @@ class SeatLayout:
         unassigned = tuple(
             replace(chair, box=scale(chair.box)) for chair in self.unassigned_chairs
         )
+        floor_reference = self.floor_reference
+        if floor_reference is not None:
+            floor_reference = replace(
+                floor_reference,
+                image_points=tuple(
+                    (px * sx, py * sy) for px, py in floor_reference.image_points
+                ),
+            )
         source = dict(self.source, width=width, height=height)
         return replace(
-            self, source=source, tables=tables, unassigned_chairs=unassigned
+            self,
+            source=source,
+            tables=tables,
+            unassigned_chairs=unassigned,
+            floor_reference=floor_reference,
         )
 
     def chair_boxes(self) -> List[Box]:
@@ -285,11 +314,30 @@ def load_layout(path: Path) -> SeatLayout:
         )
         for position, chair in enumerate(data.get("unassigned_chairs", []), start=1)
     )
+    floor_reference = None
+    raw_floor = data.get("floor_reference")
+    if raw_floor is not None:
+        raw_points = raw_floor.get("image_points", [])
+        if len(raw_points) != FLOOR_REFERENCE_POINTS:
+            raise LayoutError(
+                f"floor_reference needs exactly {FLOOR_REFERENCE_POINTS} points, "
+                f"got {len(raw_points)}"
+            )
+        points = []
+        for position, point in enumerate(raw_points, start=1):
+            if len(point) != 2:
+                raise LayoutError(
+                    f"floor_reference point #{position} must be [x, y]"
+                )
+            points.append((float(point[0]), float(point[1])))
+        floor_reference = FloorReference(image_points=tuple(points))
+
     return SeatLayout(
         schema_version=SCHEMA_VERSION,
         source=dict(data.get("source", {})),
         tables=tuple(tables),
         unassigned_chairs=unassigned_chairs,
+        floor_reference=floor_reference,
     )
 
 
@@ -319,6 +367,13 @@ def save_layout(layout: SeatLayout, path: Path) -> None:
             for chair in layout.unassigned_chairs
         ],
     }
+    if layout.floor_reference is not None:
+        payload["floor_reference"] = {
+            "image_points": [
+                [round(px, 2), round(py, 2)]
+                for px, py in layout.floor_reference.image_points
+            ]
+        }
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

@@ -19,7 +19,10 @@
 | `bench.py` | 추론 latency 측정 → tick 예산 산출 |
 | `bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
 | `rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
-| `tests/` | 유닛 테스트 229개 (모델 없이 순수 로직 검증) |
+| `frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
+| `judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
+| `inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
+| `tests/` | 유닛 테스트 361개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
 | `plan.md` | 코드 작업 플랜 (T1~T12) |
 | `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용) |
@@ -43,7 +46,7 @@ python3 -m venv venv
 
 # 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 229 tests ... OK
+# 기대: Ran 361 tests ... OK
 ```
 
 **모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
@@ -103,7 +106,24 @@ python3 -m venv venv
 
 # 6. 디코딩 비용 측정 → 살 카메라의 해상도·코덱 결정
 ./venv/bin/python bench_decode.py --source sample_raw/cafe_sample_angle1.mov
+
+# 7. 검출 검사 하네스 — "모델이 이 카페를 제대로 보는가"
+#    라벨(T16) 없이 지금 돌릴 수 있다. 레이아웃도 주지 않는다 —
+#    사람이 그려준 정답을 빼고 모델만 놓고 봐야 답이 나오기 때문이다.
+./venv/bin/python seatnow.py sample_raw/cafe_sample_angle1.mov \
+  --no-video --log-detections \
+  --frame-dir frames/angle1 --log sample_results/angle1.jsonl
+
+#    깨끗한 사진마다 Codex가 사람 수를 센다. 우리 답은 안 보여준다
+./venv/bin/python judge_frames.py frames/angle1
+
+#    세 층을 한 줄에 놓고 층별 재현율을 낸다
+./venv/bin/python inspect_run.py sample_results/angle1.jsonl \
+  --judge frames/angle1/judge --output docs/inspect/angle1.md
 ```
+
+> `judge_frames.py`를 안 돌려도 판독표는 나온다. `실제` 칸이 `___`로 비어
+> 있을 뿐이고, 사람이 사진을 보며 손으로 채워도 같은 표가 된다.
 
 ### 엣지 박스 세팅
 

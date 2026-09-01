@@ -14,6 +14,11 @@ from seatnow_layout import (
     LayoutSeat,
     LayoutTable,
     SeatLayout,
+    # Imported despite the underscore on purpose: a copy of this rule here
+    # would drift from load_layout's, and the day the tolerance changes on
+    # one side only, saving succeeds and loading refuses the same file --
+    # exactly the failure invalid_seat_zones() exists to prevent.
+    _box_contains,
 )
 
 Box = Tuple[float, float, float, float]
@@ -109,6 +114,22 @@ class CalibrationState:
         if not self._history:
             return
         self.tables, self.selected = self._history.pop()
+
+    def invalid_seat_zones(self) -> List[Tuple[int, int]]:
+        """Seat slots drawn outside their zone, as (table index, seat index).
+
+        ``load_layout`` refuses such a file (seatnow_layout.py:243-249) but
+        ``save_layout`` does not, so without this check the failure surfaces
+        hours later on a machine the installer has already left.
+        """
+        offenders: List[Tuple[int, int]] = []
+        for table_index, table in enumerate(self.tables):
+            if table.get("kind") != "counted_zone":
+                continue
+            for seat_index, seat in enumerate(table.get("seats", [])):
+                if not _box_contains(table["box"], seat):
+                    offenders.append((table_index, seat_index))
+        return offenders
 
     def to_layout(self, source: Dict) -> SeatLayout:
         tables = tuple(
@@ -344,6 +365,18 @@ def run_gui(frame, state, output_path, source):
                 print(
                     f"자리 칸이 없는 바 구역이 있어 저장하지 않았습니다: "
                     f"{', '.join(empty_zones)} — seat[x]로 칸을 긋거나 [d]로 지우세요"
+                )
+                continue
+            offenders = state.invalid_seat_zones()
+            if offenders:
+                spots = ", ".join(
+                    f"BAR{table_index + 1}의 {seat_index + 1}번 칸"
+                    for table_index, seat_index in offenders
+                )
+                print(
+                    f"자리 칸이 바 구역 밖으로 나가 저장하지 않았습니다: {spots} — "
+                    f"[d]로 지우고 구역 안에 다시 그으세요. "
+                    f"(구역 밖 자리 칸이 있으면 나중에 판정을 돌릴 때 파일이 거부됩니다)"
                 )
                 continue
             save_layout(layout, output_path)

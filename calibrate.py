@@ -35,11 +35,16 @@ def _area(box: Box) -> float:
 class CalibrationState:
     def __init__(self) -> None:
         self.tables: List[Dict] = []  # {"box": Box, "chairs": List[Box]}
+        self.unassigned_chairs: List[Box] = []
         self.selected: Optional[Tuple[str, int, int]] = None
-        self._history: List[Tuple[List[Dict], Optional[Tuple[str, int, int]]]] = []
+        self._history: List[
+            Tuple[List[Dict], List[Box], Optional[Tuple[str, int, int]]]
+        ] = []
 
     def _snapshot(self) -> None:
-        self._history.append((copy.deepcopy(self.tables), self.selected))
+        self._history.append(
+            (copy.deepcopy(self.tables), list(self.unassigned_chairs), self.selected)
+        )
 
     def add_table(self, box: Box) -> None:
         self._snapshot()
@@ -72,15 +77,23 @@ class CalibrationState:
         return True
 
     def add_chair(self, box: Box) -> bool:
+        """Attach to the selected table, or park it as unassigned.
+
+        Install step 3-c draws chair boxes before anyone has decided which
+        table they serve; ownership is set later on the floor plan, where
+        perspective is gone and the answer is obvious.  Refusing the draw
+        here just left the installer with no way forward.
+        """
         table_index = self._selected_table_index()
-        if table_index is None:
-            return False
         self._snapshot()
+        if table_index is None:
+            self.unassigned_chairs.append(tuple(box))
+            return True
         self.tables[table_index]["chairs"].append(tuple(box))
         return True
 
     def _selected_table_index(self) -> Optional[int]:
-        if self.selected is None:
+        if self.selected is None or self.selected[0] == "orphan":
             return None
         return self.selected[1]
 
@@ -95,6 +108,9 @@ class CalibrationState:
             for si, seat in enumerate(table.get("seats", [])):
                 if _contains(seat, x, y):
                     candidates.append((_area(seat), ("seat", ti, si)))
+        for orphan_index, chair in enumerate(self.unassigned_chairs):
+            if _contains(chair, x, y):
+                candidates.append((_area(chair), ("orphan", -1, orphan_index)))
         self.selected = min(candidates)[1] if candidates else None
 
     def delete_selected(self) -> None:
@@ -102,7 +118,9 @@ class CalibrationState:
             return
         self._snapshot()
         kind, ti, ci = self.selected
-        if kind == "table":
+        if kind == "orphan":
+            del self.unassigned_chairs[ci]
+        elif kind == "table":
             del self.tables[ti]
         elif kind == "seat":
             del self.tables[ti]["seats"][ci]
@@ -113,7 +131,7 @@ class CalibrationState:
     def undo(self) -> None:
         if not self._history:
             return
-        self.tables, self.selected = self._history.pop()
+        self.tables, self.unassigned_chairs, self.selected = self._history.pop()
 
     def invalid_seat_zones(self) -> List[Tuple[int, int]]:
         """Seat slots drawn outside their zone, as (table index, seat index).
@@ -156,7 +174,13 @@ class CalibrationState:
             for index, table in enumerate(self.tables, start=1)
         )
         return SeatLayout(
-            schema_version=SCHEMA_VERSION, source=dict(source), tables=tables
+            schema_version=SCHEMA_VERSION,
+            source=dict(source),
+            tables=tables,
+            unassigned_chairs=tuple(
+                LayoutChair(id=index, box=box)
+                for index, box in enumerate(self.unassigned_chairs, start=1)
+            ),
         )
 
     @classmethod
@@ -171,6 +195,9 @@ class CalibrationState:
                     "seats": [tuple(seat.box) for seat in table.seats],
                 }
             )
+        state.unassigned_chairs = [
+            tuple(chair.box) for chair in layout.unassigned_chairs
+        ]
         state.selected = None
         return state
 
@@ -240,6 +267,7 @@ TABLE_COLOR = (80, 200, 80)
 CHAIR_COLOR = (60, 200, 230)
 ZONE_COLOR = (200, 140, 60)
 SEAT_COLOR = (230, 190, 90)
+ORPHAN_CHAIR_COLOR = (200, 60, 200)
 SELECT_COLOR = (60, 60, 235)
 
 
@@ -280,6 +308,13 @@ def _draw(frame, state, mode, drag):
                           SELECT_COLOR if chair_selected else CHAIR_COLOR, 2)
             cv2.line(canvas, (tcx, tcy), ((cx1 + cx2) // 2, (cy1 + cy2) // 2),
                      CHAIR_COLOR, 1, cv2.LINE_AA)
+    for orphan_index, chair in enumerate(state.unassigned_chairs):
+        ox1, oy1, ox2, oy2 = [int(v) for v in chair]
+        selected = state.selected == ("orphan", -1, orphan_index)
+        cv2.rectangle(canvas, (ox1, oy1), (ox2, oy2),
+                      SELECT_COLOR if selected else ORPHAN_CHAIR_COLOR, 2)
+        cv2.putText(canvas, "?", (ox1 + 4, oy2 - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, ORPHAN_CHAIR_COLOR, 2, cv2.LINE_AA)
     if drag is not None:
         (x1, y1), (x2, y2) = drag
         cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), SELECT_COLOR, 1)
@@ -326,12 +361,7 @@ def run_gui(frame, state, output_path, source):
                         "또는 [z]로 다시 그리면 그린 즉시 선택됩니다"
                     )
             else:
-                if not state.add_chair(box):
-                    print(
-                        "의자를 붙일 테이블을 먼저 선택하세요. 클릭은 겹친 것 중 "
-                        "'가장 작은' 상자를 고르므로, 큰 테이블은 다른 상자가 없는 "
-                        "빈 곳을 클릭해야 잡힙니다"
-                    )
+                state.add_chair(box)
 
     cv2.setMouseCallback(window, on_mouse)
     while True:

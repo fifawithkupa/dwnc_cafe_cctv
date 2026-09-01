@@ -19,9 +19,14 @@ class CalibrationStateTests(unittest.TestCase):
         self.assertEqual(len(state.tables[0]["chairs"]), 0)
         self.assertEqual(len(state.tables[1]["chairs"]), 1)
 
-    def test_add_chair_without_table_returns_false(self):
+    def test_add_chair_without_table_becomes_unassigned(self):
+        # Install step 3-c draws chairs before anyone decides ownership.
+        # Refusing the draw used to print the same error over and over while
+        # the person had no way to proceed.
         state = CalibrationState()
-        self.assertFalse(state.add_chair((10.0, 10.0, 20.0, 20.0)))
+        self.assertTrue(state.add_chair((10.0, 10.0, 20.0, 20.0)))
+        self.assertEqual(len(state.unassigned_chairs), 1)
+        self.assertEqual(state.tables, [])
 
     def test_select_at_picks_smallest_containing_box(self):
         state = CalibrationState()
@@ -186,6 +191,52 @@ class SeatInsideZoneTests(unittest.TestCase):
         state = self._zone_with_seat((450.0, 120.0, 600.0, 280.0))
         state.add_seat((700.0, 700.0, 800.0, 800.0))
         self.assertEqual(state.invalid_seat_zones(), [(0, 0), (0, 1)])
+
+
+class UnassignedChairStateTests(unittest.TestCase):
+    def test_chair_still_attaches_when_a_table_is_selected(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 200.0))
+        self.assertTrue(state.add_chair((310.0, 110.0, 360.0, 190.0)))
+        self.assertEqual(len(state.tables[0]["chairs"]), 1)
+        self.assertEqual(state.unassigned_chairs, [])
+
+    def test_unassigned_chair_can_be_selected_and_deleted(self):
+        state = CalibrationState()
+        state.add_chair((10.0, 10.0, 40.0, 40.0))
+        state.select_at(20.0, 20.0)
+        self.assertEqual(state.selected, ("orphan", -1, 0))
+        state.delete_selected()
+        self.assertEqual(state.unassigned_chairs, [])
+
+    def test_undo_restores_unassigned_chairs(self):
+        state = CalibrationState()
+        state.add_chair((10.0, 10.0, 40.0, 40.0))
+        state.add_chair((50.0, 50.0, 80.0, 80.0))
+        state.undo()
+        self.assertEqual(len(state.unassigned_chairs), 1)
+
+    def test_selection_prefers_the_smaller_box(self):
+        # Same rule as everything else: a small orphan inside a big table wins.
+        state = CalibrationState()
+        state.add_table((0.0, 0.0, 500.0, 500.0))
+        state.add_chair((100.0, 100.0, 140.0, 140.0))  # attaches to the table
+        state.selected = None
+        state.unassigned_chairs.append((110.0, 110.0, 120.0, 120.0))
+        state.select_at(115.0, 115.0)
+        self.assertEqual(state.selected, ("orphan", -1, 0))
+
+    def test_round_trip_through_layout_keeps_orphans(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 200.0))
+        state.selected = None
+        state.add_chair((900.0, 900.0, 940.0, 940.0))
+        layout = state.to_layout({"width": 1920, "height": 1080})
+        self.assertEqual(len(layout.unassigned_chairs), 1)
+
+        restored = CalibrationState.from_layout(layout)
+        self.assertEqual(len(restored.unassigned_chairs), 1)
+        self.assertEqual(restored.unassigned_chairs[0], (900.0, 900.0, 940.0, 940.0))
 
 
 if __name__ == "__main__":

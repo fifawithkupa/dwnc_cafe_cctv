@@ -13,12 +13,6 @@ sample_raw/
 results/edge/clips/
 results/edge/*.json
 
-# results/ 로 옮기기 전의 옛 폴더 (지워도 된다)
-frames/
-sample_results/
-bench/
-cctv_results/
-
 # 익스포트된 모델 디렉터리 (edge/export.py 산출물)
 *_openvino_model/
 *.onnx

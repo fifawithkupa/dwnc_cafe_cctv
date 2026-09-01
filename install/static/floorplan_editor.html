@@ -43,12 +43,17 @@
   <button id="mode-move" class="on">끌어서 옮기기</button>
   <button id="mode-wall">벽 그리기</button>
   <button id="mode-area">구역 추가</button>
+  <button id="zoom-in">확대 +</button>
+  <button id="zoom-out">축소 −</button>
+  <button id="zoom-fit">화면에 맞추기</button>
   <button id="toggle-preview">미리보기</button>
   <button id="save" class="primary">저장</button>
   <span id="hint">테이블을 끌어서 실제 배치에 맞춥니다. 의자는 테이블을 따라옵니다.</span>
 </header>
 <svg id="canvas"></svg>
 <footer>
+  <b>빈 곳을 끌면 화면이 움직이고, 휠을 굴리면 확대·축소됩니다.</b>
+  버튼으로도 됩니다 — 폰에서는 [확대 +] [축소 −] [화면에 맞추기]를 쓰세요.<br>
   <b>초록 = 빈 자리 · 빨강 = 사용 중 · 회색 = 가려서 확인이 안 되는 자리</b> ·
   보라 점선 = 소속 미정 의자 (calibrate.py 에서 정합니다) · 주황 점선 = 위치 확인 필요<br>
   <b>테이블은 통째로 한 자리로 표시됩니다</b> — 4인석에 한 명만 앉아 있어도 그 테이블 전체가 빨강입니다.
@@ -57,6 +62,9 @@
 <script>
 const SVG_NS = "http://www.w3.org/2000/svg";
 let state = null, mode = "move", preview = false;
+// The visible window onto the map, in map units.  Every zoom and pan is a
+// change to this rectangle; nothing else in the drawing code has to know.
+let view = null;
 const canvas = document.getElementById("canvas");
 const hint = document.getElementById("hint");
 const MODES = [["mode-move", "move"], ["mode-wall", "wall"], ["mode-area", "area"]];
@@ -101,7 +109,9 @@ function label(item, text, cls) {
 
 function draw() {
   if (!state) return;
-  canvas.setAttribute("viewBox", "0 0 " + state.extent.width + " " + state.extent.height);
+  if (!view) fitView();
+  canvas.setAttribute("viewBox",
+    view.x + " " + view.y + " " + view.w + " " + view.h);
   canvas.innerHTML = "";
   const seatById = {};
   for (const seat of state.seats) seatById[seat.seat_id] = seat;
@@ -172,10 +182,20 @@ function draw() {
   }
 }
 
+// Screen pixels -> map units.  Doing this arithmetically means redoing what
+// preserveAspectRatio already did: the map is portrait and the canvas is
+// landscape, so the browser fits by height and centres, leaving a wide
+// margin on each side.  Scaling by width alone and ignoring that margin put
+// every click far outside the map, so nothing was ever grabbable.  The
+// element's own matrix knows the viewBox, the fit and the pan, so ask it.
 function toCanvas(event) {
-  const box = canvas.getBoundingClientRect();
-  const scale = state.extent.width / box.width;
-  return { x: (event.clientX - box.left) * scale, y: (event.clientY - box.top) * scale };
+  const ctm = canvas.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  const seed = canvas.createSVGPoint();
+  seed.x = event.clientX;
+  seed.y = event.clientY;
+  const point = seed.matrixTransform(ctm.inverse());
+  return { x: point.x, y: point.y };
 }
 
 function hits(item, point) {
@@ -190,7 +210,70 @@ function itemAt(point) {
   return null;
 }
 
-let dragging = null, offset = null;
+// Fit the drawn content, not the whole extent: the extent is padded and the
+// furniture often sits in one corner, so fitting the extent wastes most of
+// the screen on empty paper.
+function contentBounds() {
+  const items = state.seats.concat(state.landmarks);
+  const points = state.walls.slice();
+  if (!items.length && !points.length) return null;
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const item of items) {
+    x1 = Math.min(x1, item.x - item.w / 2); x2 = Math.max(x2, item.x + item.w / 2);
+    y1 = Math.min(y1, item.y - item.h / 2); y2 = Math.max(y2, item.y + item.h / 2);
+  }
+  for (const point of points) {
+    x1 = Math.min(x1, point[0]); x2 = Math.max(x2, point[0]);
+    y1 = Math.min(y1, point[1]); y2 = Math.max(y2, point[1]);
+  }
+  return { x1: x1, y1: y1, x2: x2, y2: y2 };
+}
+
+function fitView() {
+  const bounds = contentBounds();
+  const box = canvas.getBoundingClientRect();
+  if (!bounds || !box.width || !box.height) {
+    view = { x: 0, y: 0, w: state.extent.width, h: state.extent.height };
+    return;
+  }
+  const pad = 60;
+  const w = (bounds.x2 - bounds.x1) + pad * 2;
+  const h = (bounds.y2 - bounds.y1) + pad * 2;
+  // Widen or heighten the window so the fitted content is actually centred
+  // instead of being pushed to one side by preserveAspectRatio.
+  const ratio = box.width / box.height;
+  const view_w = Math.max(w, h * ratio);
+  const view_h = Math.max(h, w / ratio);
+  view = {
+    x: (bounds.x1 + bounds.x2) / 2 - view_w / 2,
+    y: (bounds.y1 + bounds.y2) / 2 - view_h / 2,
+    w: view_w, h: view_h,
+  };
+}
+
+function zoomBy(factor, anchor) {
+  const centre = anchor || { x: view.x + view.w / 2, y: view.y + view.h / 2 };
+  const next_w = Math.min(state.extent.width * 8, Math.max(40, view.w * factor));
+  const scale = next_w / view.w;
+  view = {
+    x: centre.x - (centre.x - view.x) * scale,
+    y: centre.y - (centre.y - view.y) * scale,
+    w: view.w * scale, h: view.h * scale,
+  };
+  draw();
+}
+
+document.getElementById("zoom-in").onclick = () => zoomBy(1 / 1.25);
+document.getElementById("zoom-out").onclick = () => zoomBy(1.25);
+document.getElementById("zoom-fit").onclick = () => { fitView(); draw(); };
+
+canvas.addEventListener("wheel", (event) => {
+  if (!state) return;
+  event.preventDefault();
+  zoomBy(event.deltaY > 0 ? 1.15 : 1 / 1.15, toCanvas(event));
+}, { passive: false });
+
+let dragging = null, offset = null, panning = null;
 
 canvas.addEventListener("pointerdown", (event) => {
   if (!state) return;
@@ -219,13 +302,27 @@ canvas.addEventListener("pointerdown", (event) => {
 
   const hit = itemAt(point);
 
-  if (!hit) return;
+  if (!hit) {
+    // Empty space drags the paper.  Anchoring on screen pixels keeps the pan
+    // steady: the map point under the cursor changes as the view moves.
+    panning = { x: event.clientX, y: event.clientY, view: Object.assign({}, view) };
+    canvas.setPointerCapture(event.pointerId);
+    return;
+  }
   dragging = hit.item;
   offset = { x: point.x - hit.item.x, y: point.y - hit.item.y };
   canvas.setPointerCapture(event.pointerId);
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (panning) {
+    const box = canvas.getBoundingClientRect();
+    const scale = view.w / box.width;
+    view.x = panning.view.x - (event.clientX - panning.x) * scale;
+    view.y = panning.view.y - (event.clientY - panning.y) * scale;
+    draw();
+    return;
+  }
   if (!dragging) return;
   const point = toCanvas(event);
   dragging.x = point.x - offset.x;
@@ -252,6 +349,7 @@ async function reArrange() {
 }
 
 canvas.addEventListener("pointerup", () => {
+  panning = null;
   const moved = dragging;
   dragging = null;
   if (moved) reArrange();

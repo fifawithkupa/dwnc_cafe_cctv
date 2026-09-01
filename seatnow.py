@@ -33,6 +33,7 @@ from seatnow_core import (
     probe_video,
     render_frame,
 )
+from frame_dump import save_frame_pair
 from seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwaccel
 from seatnow_layout import load_layout
 
@@ -103,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=HWACCEL_AUTO,
         choices=HWACCEL_CHOICES,
         help="영상 디코딩에 쓸 하드웨어 가속기 (auto = OS에 맞는 것을 실제로 시험해보고 고름)",
+    )
+    parser.add_argument(
+        "--frame-dir",
+        type=Path,
+        help="판정한 tick마다 사진 두 장을 이 폴더에 저장한다 "
+             "(clean/ = 박스 없음, marked/ = 판정 그려짐). --no-video와 같이 쓴다",
     )
     parser.add_argument("--layout", type=Path, help="Manual seat layout JSON (calibrate.py output); zones become ground truth")
     parser.add_argument("--no-layout-track", action="store_true", help="Keep layout zones fixed instead of drifting toward matching detections")
@@ -334,6 +341,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "maximum_table_crops": args.max_crops,
             "infer_occluded_tables": not args.no_inferred_seats,
             "log_detections": args.log_detections,
+            "frame_dir": str(args.frame_dir) if args.frame_dir else None,
             "occupy_confirmations": args.occupy_confirm,
             "empty_confirmations": args.empty_confirm,
             "track_ttl": args.track_ttl,
@@ -573,15 +581,23 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     record["run"] = run_context
                     log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
                     log_file.flush()
+                    # Rendered once even when both outputs are on: drawing the
+                    # same overlay twice would inflate the tick budget for no
+                    # gain.
+                    rendered = None
+                    if writer is not None or args.frame_dir is not None:
+                        rendered = render_frame(
+                            center_frame,
+                            analysis,
+                            update,
+                            debug=args.debug,
+                            cadence="fast" if scheduled_fast else None,
+                        )
                     if writer is not None:
-                        writer.write(
-                            render_frame(
-                                center_frame,
-                                analysis,
-                                update,
-                                debug=args.debug,
-                                cadence="fast" if scheduled_fast else None,
-                            )
+                        writer.write(rendered)
+                    if args.frame_dir is not None:
+                        save_frame_pair(
+                            args.frame_dir, center_time, center_frame, rendered
                         )
                     processed += 1
                     previous_center = center_frame

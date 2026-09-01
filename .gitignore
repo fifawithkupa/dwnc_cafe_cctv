@@ -13,3 +13,4 @@ cctv_results/
 *_openvino_model/
 *.onnx
 bench/
+frames/

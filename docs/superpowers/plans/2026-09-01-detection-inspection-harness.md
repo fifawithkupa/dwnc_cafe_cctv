@@ -1718,7 +1718,7 @@ model이면 파인튜닝이다."
 ### Task 7: 실제 실행과 기록
 
 **Files:**
-- Create: `sample_results/inspect/angle{1..4}.md`
+- Create: `docs/inspect/angle{1..4}.md`
 - Modify: `plan.md` (§0-a 상태표, §0-c에 결과 절 추가), `README.md` (도구 목록)
 
 **Interfaces:**
@@ -1757,10 +1757,10 @@ Expected: 각도당 5~7장씩, 합계 약 22장. clean과 marked 장수가 같�
 **JSONL과 `marked/`를 열기 전에 한다.** 각도마다 아무 사진이나 하나씩, 총 4~5장을 `clean/`에서 골라 사람 수를 세고 적어둔다.
 
 ```bash
-mkdir -p sample_results/inspect
+mkdir -p docs/inspect
 ```
 
-`sample_results/inspect/human_spotcheck.md`에 적는다:
+`docs/inspect/human_spotcheck.md`에 적는다:
 
 ```markdown
 # 사람 대조 (Codex 판독 검증용)
@@ -1798,7 +1798,7 @@ Step 3에서 고른 4~5장에 대해 `frames/angle*/judge/<stem>.json`의 `peopl
 for a in 1 2 3 4; do
   ./venv/Scripts/python.exe inspect_run.py sample_results/angle${a}.jsonl \
     --judge frames/angle${a}/judge \
-    --output sample_results/inspect/angle${a}.md \
+    --output docs/inspect/angle${a}.md \
     --title "# 검출 판독표 — angle${a}"
 done
 ```
@@ -1833,7 +1833,7 @@ orca terminal create --worktree active --title "JUDGE" --command "codex" --focus
 ### 2026-09-01 — 검출 검사 하네스 첫 실행 (T14 완결)
 
 `seatnow.py --frame-dir` + `judge_frames.py` + `inspect_run.py`로 angle1~4를
-레이아웃 없이 끝까지 돌린 결과. 판독표: `sample_results/inspect/angle{1..4}.md`
+레이아웃 없이 끝까지 돌린 결과. 판독표: `docs/inspect/angle{1..4}.md`
 
 | 각도 | tick | 검출 재현율 | 포즈 재현율 | UNKNOWN geometry | UNKNOWN model |
 |---|---:|---:|---:|---:|---:|
@@ -1856,7 +1856,7 @@ orca terminal create --worktree active --title "JUDGE" --command "codex" --focus
 - [ ] **Step 10: 커밋**
 
 ```bash
-git add sample_results/inspect plan.md README.md
+git add docs/inspect plan.md README.md
 git commit -m "docs: 검출 검사 하네스 첫 실행 결과 (T14 완결)
 
 angle1~4를 레이아웃 없이 끝까지 돌렸다. 판정 파이프라인이 실제 영상에서

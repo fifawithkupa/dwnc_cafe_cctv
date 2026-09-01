@@ -75,5 +75,27 @@ class SaveFramePairTests(unittest.TestCase):
                 save_frame_pair(Path(raw), 0.0, self.clean, self.marked)
 
 
+class SeatnowArgumentTests(unittest.TestCase):
+    """--frame-dir must be independent of --no-video."""
+
+    def _parse(self, argv):
+        import seatnow
+
+        return seatnow.build_parser().parse_args(argv)
+
+    def test_frame_dir_defaults_to_none(self):
+        args = self._parse(["input.mov"])
+        self.assertIsNone(args.frame_dir)
+
+    def test_frame_dir_is_a_path(self):
+        args = self._parse(["input.mov", "--frame-dir", "frames/angle1"])
+        self.assertEqual(args.frame_dir, Path("frames/angle1"))
+
+    def test_frame_dir_combines_with_no_video(self):
+        args = self._parse(["input.mov", "--frame-dir", "frames/a", "--no-video"])
+        self.assertEqual(args.frame_dir, Path("frames/a"))
+        self.assertTrue(args.no_video)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "properties": {
+    "people_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "사진에 보이는 사람의 총 수"
+    },
+    "people_seated": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "그중 앉아 있는 사람의 수"
+    },
+    "people_standing": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "그중 서 있거나 걷고 있는 사람의 수"
+    },
+    "uncertain": {
+      "type": "boolean",
+      "description": "가려지거나 뒤통수만 보여 사람인지 또는 자세가 확실하지 않은 대상이 하나라도 있으면 참"
+    },
+    "note": {
+      "type": "string",
+      "description": "애매했던 점을 한 줄로. 없으면 빈 문자열"
+    }
+  },
+  "required": [
+    "people_total",
+    "people_seated",
+    "people_standing",
+    "uncertain",
+    "note"
+  ],
+  "additionalProperties": false
+}

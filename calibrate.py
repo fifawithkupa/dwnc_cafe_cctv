@@ -234,7 +234,10 @@ def _draw(frame, state, mode, drag):
         cv2.rectangle(canvas, (tx1, ty1), (tx2, ty2),
                       SELECT_COLOR if selected else base_color, 3 if selected else 2)
         seats = table.get("seats", [])
-        label = f"BAR{ti + 1} ({len(seats)}석)" if is_zone else f"T{ti + 1}"
+        # cv2.putText draws with a Hershey font, which has no Korean glyphs:
+        # every Hangul character renders as "?".  On-canvas labels stay ASCII;
+        # Korean belongs in the terminal, where it renders fine.
+        label = f"BAR{ti + 1} ({len(seats)} seats)" if is_zone else f"T{ti + 1}"
         cv2.putText(canvas, label, (tx1, max(16, ty1 - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, base_color, 2, cv2.LINE_AA)
         for si, seat in enumerate(seats):
@@ -245,7 +248,7 @@ def _draw(frame, state, mode, drag):
             cv2.putText(canvas, str(si + 1), (sx1 + 6, sy2 - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, SEAT_COLOR, 2, cv2.LINE_AA)
         if is_zone and not seats:
-            cv2.putText(canvas, "! seat[x]로 자리 칸을 그으세요",
+            cv2.putText(canvas, "! select this zone, press [x], drag one box per seat",
                         (tx1, min(canvas.shape[0] - 8, ty2 + 22)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 235), 2, cv2.LINE_AA)
         tcx, tcy = (tx1 + tx2) // 2, (ty1 + ty2) // 2
@@ -295,10 +298,19 @@ def run_gui(frame, state, output_path, source):
                 state.add_zone(box)
             elif mode == "seat":
                 if not state.add_seat(box):
-                    print("자리 칸을 넣을 바 구역([z])을 먼저 클릭으로 선택하세요")
+                    print(
+                        "자리 칸을 넣을 바 구역을 먼저 선택하세요. "
+                        "클릭은 겹친 것 중 '가장 작은' 상자를 고르므로, 의자가 없는 "
+                        "빈 곳을 클릭해야 구역이 잡힙니다. "
+                        "또는 [z]로 다시 그리면 그린 즉시 선택됩니다"
+                    )
             else:
                 if not state.add_chair(box):
-                    print("의자를 붙일 테이블을 먼저 클릭으로 선택하세요")
+                    print(
+                        "의자를 붙일 테이블을 먼저 선택하세요. 클릭은 겹친 것 중 "
+                        "'가장 작은' 상자를 고르므로, 큰 테이블은 다른 상자가 없는 "
+                        "빈 곳을 클릭해야 잡힙니다"
+                    )
 
     cv2.setMouseCallback(window, on_mouse)
     while True:

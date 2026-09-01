@@ -1,0 +1,13 @@
+{
+  "stem": "t0025.0s",
+  "people_total": 2,
+  "people_seated": 0,
+  "people_standing": 2,
+  "tables_visible": 7,
+  "tables_in_use": 2,
+  "tables_belongings_only": 2,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "창가 바 좌석을 테이블 1개로 포함했으며, 검은 가방과 일부 물건이 손님 짐인지 카페 비품인지 다소 애매합니다.",
+  "error": null
+}

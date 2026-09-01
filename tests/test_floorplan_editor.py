@@ -283,3 +283,62 @@ class SeparationThroughEditsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnchorKeyRoundTripTests(unittest.TestCase):
+    """A reassignment must survive the plan being saved and read back.
+
+    Saving rounds every anchor to two decimals while the layout recomputes
+    them in full precision, so raw comparison drops the match for any chair
+    whose midpoint lands on a repeating binary fraction.  The failure is
+    silent and lopsided: the map shows the new owner, judgement keeps the
+    old one.
+    """
+
+    def _layout_with_awkward_anchor(self):
+        # (781.13 + 830.55) / 2 = 805.8399999999999, which save_floorplan
+        # writes as 805.84.
+        return SeatLayout(
+            schema_version=3,
+            source={"width": 1920, "height": 1080},
+            tables=(
+                LayoutTable(
+                    id=1,
+                    name="T1",
+                    box=(800.0, 700.0, 1000.0, 850.0),
+                    chairs=(LayoutChair(id=1, box=(781.13, 800.0, 830.55, 880.0)),),
+                ),
+                LayoutTable(id=2, name="T2", box=(1200.0, 700.0, 1400.0, 850.0)),
+            ),
+            floor_reference=REFERENCE,
+        )
+
+    def test_reassignment_survives_a_save_and_reload(self):
+        original = self._layout_with_awkward_anchor()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plan.json"
+            save_both(original, build_draft(original),
+                      Path(directory) / "layout.json", path)
+            reloaded = load_floorplan(path)
+
+            payload = {
+                "seats": [],
+                "chairs": [
+                    {
+                        "image_anchor": list(chair.image_anchor),
+                        "seat_id": "T2",
+                        "x": chair.x,
+                        "y": chair.y,
+                        "w": chair.w,
+                        "h": chair.h,
+                    }
+                    for chair in reloaded.chairs
+                ],
+                "landmarks": [],
+                "walls": [],
+            }
+            updated, _ = apply_edits(original, reloaded, payload)
+
+        by_name = {table.name: table for table in updated.tables}
+        self.assertEqual(len(by_name["T1"].chairs), 0, "T1 이 의자를 계속 붙들고 있다")
+        self.assertEqual(len(by_name["T2"].chairs), 1, "T2 로 옮겨지지 않았다")

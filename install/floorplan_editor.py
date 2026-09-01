@@ -149,6 +149,16 @@ def _seat_owner_names(layout: SeatLayout) -> Dict[str, str]:
     return owners
 
 
+# The plan is written to disk with anchors rounded to two decimals, while
+# the layout recomputes them in full precision -- 1175.84 against
+# 1175.8400000000001.  Comparing them raw silently drops a reassignment on
+# the second edit: the map shows the new owner and judgement keeps the old
+# one, which is the exact split the atomic save exists to prevent.  Every
+# lookup goes through this key.
+def _anchor_key(point: Tuple[float, float]) -> Tuple[float, float]:
+    return (round(float(point[0]), 2), round(float(point[1]), 2))
+
+
 def apply_edits(
     layout: SeatLayout, plan: FloorPlan, payload: Dict[str, object]
 ) -> Tuple[SeatLayout, FloorPlan]:
@@ -179,16 +189,17 @@ def apply_edits(
     )
 
     chair_edits = {
-        (float(chair["image_anchor"][0]), float(chair["image_anchor"][1])): chair
+        _anchor_key(chair["image_anchor"]): chair
         for chair in payload.get("chairs", [])
     }
     chairs: List[FloorChair] = []
     ownership: Dict[Tuple[float, float], Optional[str]] = {}
     for chair in plan.chairs:
-        edit = chair_edits.get(chair.image_anchor)
+        key = _anchor_key(chair.image_anchor)
+        edit = chair_edits.get(key)
         if edit is None:
             chairs.append(chair)
-            ownership[chair.image_anchor] = chair.seat_id
+            ownership[key] = chair.seat_id
             continue
         seat_id = edit.get("seat_id")
         if seat_id is not None and str(seat_id) not in owners:
@@ -204,7 +215,7 @@ def apply_edits(
                 needs_review=False,
             )
         )
-        ownership[chair.image_anchor] = None if seat_id is None else str(seat_id)
+        ownership[key] = None if seat_id is None else str(seat_id)
 
     landmarks = tuple(
         Landmark(
@@ -252,10 +263,10 @@ def _rebuild_layout(
     all_chairs: List[Tuple[Optional[str], LayoutChair]] = []
     for table in layout.tables:
         for chair in table.chairs:
-            anchor = floor_anchor(chair.box)
+            anchor = _anchor_key(floor_anchor(chair.box))
             all_chairs.append((ownership.get(anchor, table.name), chair))
     for chair in layout.unassigned_chairs:
-        anchor = floor_anchor(chair.box)
+        anchor = _anchor_key(floor_anchor(chair.box))
         all_chairs.append((ownership.get(anchor, None), chair))
 
     by_table: Dict[str, List[LayoutChair]] = {table.name: [] for table in layout.tables}

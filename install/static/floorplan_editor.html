@@ -20,6 +20,11 @@
   .wall-open { fill: none; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
   .wall-draft { fill: none; stroke: #2f6fd0; stroke-width: 6; stroke-dasharray: 14 10; }
   .area { fill: #ffffff; stroke: #6f7681; stroke-width: 4; }
+  /* The door is a gap in the wall, so it is drawn as an opening rather than
+     another block of furniture.  The service counter is solid: a customer
+     must read at a glance that it is not somewhere to sit. */
+  .area.entrance { fill: #eef4ff; stroke: #2f6fd0; stroke-width: 6; stroke-dasharray: 18 12; }
+  .area.counter  { fill: #e6e8eb; stroke: #4b535c; stroke-width: 5; }
   .counter { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
   .arealabel { font-size: 22px; fill: #1c2128; font-weight: 600; }
 
@@ -43,7 +48,8 @@
 <header>
   <button id="mode-move" class="on">끌어서 옮기기</button>
   <button id="mode-wall">벽 그리기</button>
-  <button id="mode-area">구역 추가</button>
+  <button id="mode-entrance">입구</button>
+  <button id="mode-counter">카운터</button>
   <button id="zoom-in">확대 +</button>
   <button id="zoom-out">축소 −</button>
   <button id="zoom-fit">화면에 맞추기</button>
@@ -68,11 +74,17 @@ let state = null, mode = "move", preview = false;
 let view = null;
 const canvas = document.getElementById("canvas");
 const hint = document.getElementById("hint");
-const MODES = [["mode-move", "move"], ["mode-wall", "wall"], ["mode-area", "area"]];
+const MODES = [["mode-move", "move"], ["mode-wall", "wall"],
+               ["mode-entrance", "entrance"], ["mode-counter", "counter"]];
+// Drawn by dragging a box, exactly like the wall.  These are the two things
+// a customer needs to orient themselves -- which door they came in and where
+// they order -- and neither is anything the camera can see.
+const DRAWN_AREAS = { entrance: "입구", counter: "카운터" };
 const HINTS = {
   move: "테이블과 바를 끌어서 실제 배치에 맞춥니다. 의자는 따라옵니다. 바를 돌리려면 양 끝 스툴을 끄세요.",
   wall: "화면 캡처하듯 방 전체를 대각선으로 끌어 네모를 그립니다.",
-  area: "주방·화장실·카운터처럼 손님이 앉지 않는 구역을 눌러 놓습니다.",
+  entrance: "손님이 들어오는 문 자리를 끌어서 그립니다. 벽 위에 걸치게 그리면 됩니다.",
+  counter: "주문하는 카운터를 끌어서 그립니다. 손님이 앉는 자리가 아닙니다.",
 };
 
 function setMode(next) {
@@ -134,7 +146,7 @@ function draw() {
   }
 
   for (const area of state.landmarks) {
-    canvas.appendChild(rect(area, "area"));
+    canvas.appendChild(rect(area, "area " + (area.kind || "")));
     canvas.appendChild(label(area, area.label, "arealabel"));
   }
   for (const chair of state.chairs) {
@@ -329,20 +341,14 @@ canvas.addEventListener("pointerdown", (event) => {
   if (!state) return;
   const point = toCanvas(event);
 
-  if (mode === "wall") {
+  if (mode === "wall" || DRAWN_AREAS[mode]) {
     // A room is a box far more often than it is a traced outline, and
     // clicking eight corners on a phone is the worst part of the install.
     wallBox = { x1: point.x, y1: point.y, x2: point.x, y2: point.y };
     canvas.setPointerCapture(event.pointerId);
-    hint.textContent = "끌어서 방 크기를 맞춘 뒤 손을 떼세요.";
-    draw();
-    return;
-  }
-
-  if (mode === "area") {
-    const text = prompt("구역 이름 (예: 카운터, 주방, 화장실, 입구)");
-    if (!text) return;
-    state.landmarks.push({ kind: "area", label: text, x: point.x, y: point.y, w: 200, h: 110 });
+    hint.textContent = mode === "wall"
+      ? "끌어서 방 크기를 맞춘 뒤 손을 떼세요."
+      : "끌어서 " + DRAWN_AREAS[mode] + " 크기를 맞춘 뒤 손을 떼세요.";
     draw();
     return;
   }
@@ -425,14 +431,24 @@ async function reArrange() {
 
 canvas.addEventListener("pointerup", () => {
   if (wallBox) {
-    const wide = Math.abs(wallBox.x2 - wallBox.x1) > 40;
-    const tall = Math.abs(wallBox.y2 - wallBox.y1) > 40;
-    if (wide && tall) {
-      state.walls = boxWalls(wallBox);
-      hint.textContent = "벽을 그렸습니다. 모서리 점을 끌어 모양을 다듬을 수 있습니다.";
+    const w = Math.abs(wallBox.x2 - wallBox.x1);
+    const h = Math.abs(wallBox.y2 - wallBox.y1);
+    const label = DRAWN_AREAS[mode];
+    if (w > 30 && h > 30) {
+      if (label) {
+        state.landmarks.push({
+          kind: mode, label: label,
+          x: (wallBox.x1 + wallBox.x2) / 2, y: (wallBox.y1 + wallBox.y2) / 2,
+          w: w, h: h,
+        });
+        hint.textContent = label + "를 그렸습니다. 끌어서 옮길 수 있습니다.";
+      } else {
+        state.walls = boxWalls(wallBox);
+        hint.textContent = "벽을 그렸습니다. 모서리 점을 끌어 모양을 다듬을 수 있습니다.";
+      }
       setMode("move");
     } else {
-      hint.textContent = "너무 작습니다. 방 전체를 대각선으로 끌어주세요.";
+      hint.textContent = "너무 작습니다. 대각선으로 더 크게 끌어주세요.";
     }
     wallBox = null;
     draw();

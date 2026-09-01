@@ -1,0 +1,407 @@
+{
+  "schema_version": 1,
+  "extent": {
+    "width": 751.93,
+    "height": 1160.0
+  },
+  "seats": [
+    {
+      "seat_id": "T1",
+      "kind": "table",
+      "x": 411.85,
+      "y": 442.65,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        1145.43,
+        556.72
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T2",
+      "kind": "table",
+      "x": 79.24,
+      "y": 882.66,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        1340.14,
+        1069.79
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T3",
+      "kind": "table",
+      "x": 429.56,
+      "y": 162.02,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        944.63,
+        462.98
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T4",
+      "kind": "table",
+      "x": 494.77,
+      "y": 877.74,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        1566.74,
+        549.22
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T5",
+      "kind": "table",
+      "x": 286.53,
+      "y": 885.92,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        1506.97,
+        849.54
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "kind": "table",
+      "x": 80.0,
+      "y": 481.83,
+      "w": 150.0,
+      "h": 105.0,
+      "image_anchor": [
+        873.88,
+        933.59
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-1",
+      "kind": "counted_zone",
+      "x": 639.2,
+      "y": 373.27,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1122.01,
+        390.05
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-2",
+      "kind": "counted_zone",
+      "x": 646.42,
+      "y": 478.9,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1190.4,
+        388.5
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-3",
+      "kind": "counted_zone",
+      "x": 653.64,
+      "y": 584.52,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1272.64,
+        462.22
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-4",
+      "kind": "counted_zone",
+      "x": 660.85,
+      "y": 690.15,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1386.63,
+        476.26
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-5",
+      "kind": "counted_zone",
+      "x": 668.07,
+      "y": 795.77,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1503.0,
+        469.87
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "BAR7-6",
+      "kind": "counted_zone",
+      "x": 675.29,
+      "y": 901.4,
+      "w": 52.0,
+      "h": 52.0,
+      "image_anchor": [
+        1640.91,
+        525.32
+      ],
+      "needs_review": false
+    }
+  ],
+  "chairs": [
+    {
+      "seat_id": "T1",
+      "x": 383.1,
+      "y": 341.85,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1175.84,
+        564.98
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T1",
+      "x": 440.6,
+      "y": 341.85,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1244.84,
+        546.46
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T1",
+      "x": 411.85,
+      "y": 543.45,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1084.5,
+        481.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T2",
+      "x": 50.49,
+      "y": 781.86,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1183.82,
+        898.55
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T2",
+      "x": 107.99,
+      "y": 781.86,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1052.0,
+        1040.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T2",
+      "x": 79.24,
+      "y": 983.46,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1706.0,
+        1054.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T3",
+      "x": 429.56,
+      "y": 61.22,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        922.81,
+        471.65
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T3",
+      "x": 429.56,
+      "y": 262.82,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1003.0,
+        391.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T4",
+      "x": 466.02,
+      "y": 776.94,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1452.43,
+        500.32
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T4",
+      "x": 523.52,
+      "y": 776.94,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1432.0,
+        529.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T4",
+      "x": 494.77,
+      "y": 978.54,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1735.5,
+        614.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T5",
+      "x": 257.78,
+      "y": 785.12,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1361.84,
+        658.34
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T5",
+      "x": 315.28,
+      "y": 785.12,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1314.5,
+        709.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T5",
+      "x": 286.53,
+      "y": 986.72,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1710.5,
+        799.0
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "x": 51.25,
+      "y": 381.03,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        753.29,
+        847.52
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "x": 108.75,
+      "y": 381.03,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        884.84,
+        931.97
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "x": 51.25,
+      "y": 582.63,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        832.09,
+        600.27
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "x": 108.75,
+      "y": 582.63,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        998.44,
+        799.36
+      ],
+      "needs_review": false
+    },
+    {
+      "seat_id": "T6",
+      "x": 203.3,
+      "y": 481.83,
+      "w": 46.0,
+      "h": 46.0,
+      "image_anchor": [
+        1022.9,
+        752.36
+      ],
+      "needs_review": false
+    }
+  ],
+  "landmarks": [],
+  "counters": [
+    {
+      "zone_id": "BAR7",
+      "x1": 714.03,
+      "y1": 368.16,
+      "x2": 750.11,
+      "y2": 896.28,
+      "depth": 46.0
+    }
+  ],
+  "walls": []
+}

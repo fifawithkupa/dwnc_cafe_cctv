@@ -77,6 +77,13 @@ class FloorChair:
     # layout and one chair here, but a customer must see it holds two.
     # Judgement is unaffected: a table is one unit whatever sits at it.
     capacity: int = 1
+    angle: float = 0.0
+    # Left out of the drawing only.  The layout keeps the chair, so it still
+    # reaches judgement as a certain detection (seatnow_core.py:1449-1452):
+    # it rescues a half-hidden person into "seated" and catches belongings
+    # left on a seat.  A chair that truly is not there is deleted in
+    # calibrate.py, where judgement inputs belong.
+    hidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -177,7 +184,7 @@ def arrange_chairs(
     """
     by_owner: Dict[str, List[int]] = {}
     for index, chair in enumerate(chairs):
-        if chair.seat_id:
+        if chair.seat_id and not chair.hidden:
             by_owner.setdefault(chair.seat_id, []).append(index)
 
     placed = list(chairs)
@@ -573,6 +580,8 @@ def save_floorplan(plan: FloorPlan, path: Path) -> None:
                 ],
                 "needs_review": chair.needs_review,
                 "capacity": chair.capacity,
+                "angle": round(chair.angle, 2),
+                "hidden": chair.hidden,
             }
             for chair in plan.chairs
         ],
@@ -644,6 +653,8 @@ def load_floorplan(path: Path) -> FloorPlan:
                 ),
                 needs_review=bool(chair.get("needs_review", False)),
                 capacity=int(chair.get("capacity", 1)),
+                angle=float(chair.get("angle", 0.0)),
+                hidden=bool(chair.get("hidden", False)),
             )
             for chair in data["chairs"]
         ),

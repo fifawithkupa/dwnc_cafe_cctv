@@ -704,3 +704,69 @@ class RealisticFurnitureTests(unittest.TestCase):
         self.assertEqual(back.seats[0].shape, "rect")
         self.assertEqual(back.chairs[0].capacity, 1)
         self.assertEqual(back.landmarks[0].angle, 0.0)
+
+
+class HiddenAndTurnedChairsTests(unittest.TestCase):
+    """A chair can leave the drawing without leaving the judgement.
+
+    The layout's chairs go into the pipeline as certain detections
+    (seatnow_core.py:1449-1452): they rescue a half-hidden person into
+    "seated", catch belongings left on a seat, and carry the chair->table
+    link.  Deleting one from the map must therefore not delete it from the
+    layout -- a tidier picture is not worth missing a customer.  Hiding is
+    a drawing property, and hidden chairs give up their place in the row so
+    the rest close the gap.
+    """
+
+    def _table(self, **kwargs):
+        base = dict(seat_id="T1", kind="table", x=500.0, y=500.0,
+                    w=200.0, h=100.0, image_anchor=(0.0, 0.0))
+        base.update(kwargs)
+        return FloorSeat(**base)
+
+    def _chair(self, index, **kwargs):
+        base = dict(seat_id="T1", x=0.0, y=0.0, w=46.0, h=46.0,
+                    image_anchor=(float(index), 0.0))
+        base.update(kwargs)
+        return FloorChair(**base)
+
+    def test_a_chair_defaults_to_shown_and_upright(self):
+        chair = self._chair(1)
+        self.assertFalse(chair.hidden)
+        self.assertEqual(chair.angle, 0.0)
+
+    def test_a_hidden_chair_gives_up_its_place_in_the_row(self):
+        chairs = (self._chair(1), self._chair(2, hidden=True), self._chair(3))
+        placed = arrange_chairs((self._table(),), chairs)
+        shown = [chair for chair in placed if not chair.hidden]
+        # Two visible chairs go one above and one below, as two chairs do --
+        # not "above and skipped" with a hole where the hidden one was.
+        self.assertEqual(len(shown), 2)
+        self.assertLess(shown[0].y, 500.0)
+        self.assertGreater(shown[1].y, 500.0)
+
+    def test_a_hidden_chair_is_left_where_it_was(self):
+        hidden = self._chair(2, x=11.0, y=22.0, hidden=True)
+        placed = arrange_chairs((self._table(),), (self._chair(1), hidden))
+        kept = [chair for chair in placed if chair.hidden][0]
+        self.assertEqual((kept.x, kept.y), (11.0, 22.0))
+
+    def test_arranging_never_straightens_a_chair(self):
+        # The page turns a table's chairs with it; the server must not undo
+        # that on the next drag.
+        placed = arrange_chairs((self._table(),), (self._chair(1, angle=42.0),))
+        self.assertAlmostEqual(placed[0].angle, 42.0)
+
+    def test_hidden_and_angle_survive_a_save(self):
+        plan = FloorPlan(
+            schema_version=FLOORPLAN_SCHEMA_VERSION,
+            extent=(1000.0, 1000.0),
+            seats=(self._table(),),
+            chairs=(self._chair(1, angle=42.0, hidden=True),),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plan.json"
+            save_floorplan(plan, path)
+            back = load_floorplan(path)
+        self.assertTrue(back.chairs[0].hidden)
+        self.assertAlmostEqual(back.chairs[0].angle, 42.0)

@@ -113,6 +113,8 @@ def editor_state(
                 "h": chair.h,
                 "needs_review": chair.needs_review,
                 "capacity": chair.capacity,
+                "angle": chair.angle,
+                "hidden": chair.hidden,
             }
             for chair in plan.chairs
         ],
@@ -219,6 +221,8 @@ def apply_edits(
                 w=float(edit["w"]),
                 h=float(edit["h"]),
                 capacity=max(1, int(edit.get("capacity", chair.capacity))),
+                angle=float(edit.get("angle", chair.angle)),
+                hidden=bool(edit.get("hidden", chair.hidden)),
                 needs_review=False,
             )
         )

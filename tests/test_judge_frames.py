@@ -11,7 +11,7 @@ import json
 import unittest
 from pathlib import Path
 
-from judge_frames import SCHEMA_PATH, build_codex_command, judge_prompt
+from checks.judge_frames import SCHEMA_PATH, build_codex_command, judge_prompt
 
 
 CLEAN = Path("frames/angle1/clean/t0015.0s.jpg")
@@ -111,8 +111,8 @@ class SchemaTests(unittest.TestCase):
 
 import tempfile
 
-from frame_dump import CLEAN_DIR
-from judge_frames import Judgement, clean_frames, judge_directory, parse_judgement
+from engine.frame_dump import CLEAN_DIR
+from checks.judge_frames import Judgement, clean_frames, judge_directory, parse_judgement
 
 
 GOOD = json.dumps(
@@ -275,20 +275,20 @@ class ResolveCodexTests(unittest.TestCase):
     """
 
     def test_existing_binary_resolves_to_a_full_path(self):
-        from judge_frames import resolve_codex
+        from checks.judge_frames import resolve_codex
 
         resolved = resolve_codex("python")
         self.assertTrue(Path(resolved).is_absolute())
 
     def test_missing_binary_raises_before_any_call(self):
-        from judge_frames import resolve_codex
+        from checks.judge_frames import resolve_codex
 
         with self.assertRaises(FileNotFoundError) as caught:
             resolve_codex("definitely-not-a-real-binary-xyz")
         self.assertIn("definitely-not-a-real-binary-xyz", str(caught.exception))
 
     def test_explicit_existing_path_is_kept(self):
-        from judge_frames import resolve_codex
+        from checks.judge_frames import resolve_codex
 
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "codex-fake"

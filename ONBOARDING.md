@@ -29,7 +29,7 @@ python -m unittest discover tests
 
 ## 2. 샘플 영상은 구글 드라이브에 있다 — 반드시 "오프라인 사용 가능"으로 고정할 것
 
-영상(`sample_raw/`)과 결과(`sample_results/`)는 용량·개인정보 때문에 저장소에 없고
+영상(`sample_raw/`)과 결과(`results/`)는 용량·개인정보 때문에 저장소에 없고
 팀 구글 드라이브로 공유됩니다.
 
 **윈도우/맥은 [Google Drive for Desktop](https://www.google.com/drive/download/)을 쓰세요.**
@@ -47,9 +47,9 @@ ln -s "$HOME/Library/CloudStorage/GoogleDrive-<계정>/내 드라이브/SeatNow/
 ```
 
 > ⚠️ **고정(pin)을 건너뛰지 마세요.** 스트리밍 상태로 두면 실행할 때마다 영상 전체가
-> 네트워크로 다시 내려옵니다. `seatnow.py`는 실행 메타데이터에 남길 sha256을 매번
-> 입력 영상 전체를 읽어 계산하는데(`seatnow.py:287`), 정작 분석은 15초마다 몇 프레임만
-> 읽습니다. 특히 `bench_sweep.py`는 그리드 1점당 영상을 1회씩 실행하므로
+> 네트워크로 다시 내려옵니다. `engine/seatnow.py`는 실행 메타데이터에 남길 sha256을 매번
+> 입력 영상 전체를 읽어 계산하는데(`engine/seatnow.py:287`), 정작 분석은 15초마다 몇 프레임만
+> 읽습니다. 특히 `edge/bench_sweep.py`는 그리드 1점당 영상을 1회씩 실행하므로
 > 12점 그리드면 전체 파일을 12번 내려받게 됩니다.
 
 리눅스(엣지 박스)에는 공식 앱이 없으니 그쪽만 `rclone`을 씁니다:

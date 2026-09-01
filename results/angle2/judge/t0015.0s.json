@@ -1,0 +1,13 @@
+{
+  "stem": "t0015.0s",
+  "people_total": 2,
+  "people_seated": 1,
+  "people_standing": 1,
+  "tables_visible": 6,
+  "tables_in_use": 4,
+  "tables_belongings_only": 3,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "뒤쪽 나무 테이블의 빨간 물건이 손님 물건인지 카페 비품인지 애매합니다.",
+  "error": null
+}

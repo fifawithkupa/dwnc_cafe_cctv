@@ -1,0 +1,13 @@
+{
+  "stem": "t0040.0s",
+  "people_total": 2,
+  "people_seated": 0,
+  "people_standing": 2,
+  "tables_visible": 6,
+  "tables_in_use": 4,
+  "tables_belongings_only": 4,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "창가 바 테이블을 1개로 계산했습니다. 노트북·가방·회색 물건이 놓인 4개 테이블은 사용 중으로 보이나 일부 물건이 카페 비품일 가능성이 있습니다.",
+  "error": null
+}

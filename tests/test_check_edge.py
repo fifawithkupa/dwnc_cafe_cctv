@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from check_edge import (
+from edge.check_edge import (
     Check,
     check_cores,
     check_disk_gb,

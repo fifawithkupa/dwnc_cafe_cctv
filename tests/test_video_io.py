@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from seatnow_core import (
+from engine.seatnow_core import (
     FFmpegBurstReader,
     FFmpegSampleReader,
     FFmpegVideoWriter,
@@ -257,7 +257,7 @@ class HwaccelCommandTests(unittest.TestCase):
     """Command construction only — these never launch ffmpeg."""
 
     def _info(self):
-        from seatnow_core import VideoInfo
+        from engine.seatnow_core import VideoInfo
 
         return VideoInfo(
             width=1920,

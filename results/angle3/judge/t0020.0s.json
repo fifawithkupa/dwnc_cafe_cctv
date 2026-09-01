@@ -1,0 +1,13 @@
+{
+  "stem": "t0020.0s",
+  "people_total": 2,
+  "people_seated": 2,
+  "people_standing": 0,
+  "tables_visible": 6,
+  "tables_in_use": 5,
+  "tables_belongings_only": 3,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "창가의 긴 바 테이블을 1개로 셌으며, 빈 테이블 위 회색 물건과 앞쪽 가방의 소속은 다소 애매합니다.",
+  "error": null
+}

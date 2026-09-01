@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from calibrate import CalibrationState
-from seatnow_layout import SeatLayout
+from install.calibrate import CalibrationState
+from engine.seatnow_layout import SeatLayout
 
 
 class CalibrationStateTests(unittest.TestCase):

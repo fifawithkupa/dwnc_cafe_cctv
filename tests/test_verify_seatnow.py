@@ -7,7 +7,7 @@ import math
 import unittest
 from pathlib import Path
 
-from verify_seatnow import (
+from checks.verify_seatnow import (
     coverage_metrics,
     expected_interval,
     match_fixture,
@@ -161,7 +161,7 @@ class ReasonBreakdownTests(unittest.TestCase):
     """UNKNOWN은 "무엇으로 푸는가"로 쪼개져야 다음 할 일이 정해진다."""
 
     def test_unknown_reasons_are_grouped_by_what_fixes_them(self):
-        from verify_seatnow import summarize_unknown_reasons
+        from checks.verify_seatnow import summarize_unknown_reasons
 
         records = [
             {
@@ -191,7 +191,7 @@ class ReasonBreakdownTests(unittest.TestCase):
         self.assertEqual(breakdown["actionable_unknown_ticks"], 2)
 
     def test_counted_zone_contributes_capacity_and_reason_counts(self):
-        from verify_seatnow import summarize_unknown_reasons
+        from checks.verify_seatnow import summarize_unknown_reasons
 
         records = [
             {
@@ -218,7 +218,7 @@ class ReasonBreakdownTests(unittest.TestCase):
         self.assertEqual(breakdown["by_group"]["geometry"], 2)
 
     def test_records_without_seat_report_are_skipped(self):
-        from verify_seatnow import summarize_unknown_reasons
+        from checks.verify_seatnow import summarize_unknown_reasons
 
         breakdown = summarize_unknown_reasons([{"tables": []}])
 

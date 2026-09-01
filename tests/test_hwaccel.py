@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from typing import List
 
-from seatnow_hwaccel import (
+from engine.seatnow_hwaccel import (
     HWACCEL_CHOICES,
     HwaccelChoice,
     candidate_order,

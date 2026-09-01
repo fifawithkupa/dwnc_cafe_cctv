@@ -12,7 +12,7 @@ import unittest
 
 import numpy as np
 
-from seatnow_core import (
+from engine.seatnow_core import (
     AnalyzerConfig,
     OccupancyState,
     PoseState,
@@ -91,7 +91,7 @@ class _StubModel:
 
 def seated_keypoints(hip, knee, ankle, shoulder, confidence: float = 0.95):
     """17 COCO keypoints with a left side bent enough to read as seated."""
-    from seatnow_core import L_ANK, L_HIP, L_KNE, L_SHO
+    from engine.seatnow_core import L_ANK, L_HIP, L_KNE, L_SHO
 
     rows = [[0.0, 0.0, 0.0] for _ in range(17)]
     for index, point in (
@@ -202,7 +202,7 @@ class OccludedSeatPipelineTests(unittest.TestCase):
     PERSON = (565.0, 300.0, 695.0, 520.0)
 
     def _keypoints_upper_body_only(self):
-        from seatnow_core import L_HIP, L_SHO, R_HIP, R_SHO
+        from engine.seatnow_core import L_HIP, L_SHO, R_HIP, R_SHO
 
         rows = [[0.0, 0.0, 0.0] for _ in range(17)]
         rows[L_SHO] = [590.0, 330.0, 0.9]
@@ -278,7 +278,7 @@ class LayoutChairPipelineTests(unittest.TestCase):
     """Calibrated chair zones must reach the analyzer in layout mode."""
 
     def _layout(self):
-        from seatnow_layout import LayoutChair, LayoutTable, SeatLayout
+        from engine.seatnow_layout import LayoutChair, LayoutTable, SeatLayout
 
         return SeatLayout(
             schema_version=2,
@@ -364,7 +364,7 @@ class RawDetectionLoggingTests(unittest.TestCase):
         self.assertEqual(analysis.dropped_tables, [])
 
     def test_record_carries_raw_detections_only_when_requested(self):
-        from seatnow_core import TableTracker, frame_log_record
+        from engine.seatnow_core import TableTracker, frame_log_record
 
         analyzer = build_analyzer(
             [
@@ -392,7 +392,7 @@ class RawDetectionLoggingTests(unittest.TestCase):
 
 def bar_layout():
     """A 2-seat bar zone inside FRAME (1280x720)."""
-    from seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
+    from engine.seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
 
     return SeatLayout(
         schema_version=2,
@@ -521,7 +521,7 @@ class UnknownReasonPromotionTests(unittest.TestCase):
     PERSON = (565.0, 300.0, 695.0, 440.0)
 
     def _keypoints_upper_body_only(self):
-        from seatnow_core import L_HIP, L_SHO, R_HIP, R_SHO
+        from engine.seatnow_core import L_HIP, L_SHO, R_HIP, R_SHO
 
         rows = [[0.0, 0.0, 0.0] for _ in range(17)]
         rows[L_SHO] = [590.0, 330.0, 0.9]

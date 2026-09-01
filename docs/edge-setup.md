@@ -148,15 +148,15 @@ Windows는 `venv\Scripts\python.exe`, Linux는 `./venv/bin/python` 으로 바꿔
 아래는 Windows 기준이다.
 
 ```
-venv\Scripts\python.exe check_edge.py
-venv\Scripts\python.exe bench.py --frames sample_raw\cafe_sample_angle1.mov --label edge-box
-venv\Scripts\python.exe bench_decode.py --source sample_raw\cafe_sample_angle1.mov
+venv\Scripts\python.exe -m edge.check_edge
+venv\Scripts\python.exe -m edge.bench --frames sample_raw\cafe_sample_angle1.mov --label edge-box
+venv\Scripts\python.exe -m edge.bench_decode --source sample_raw\cafe_sample_angle1.mov
 ```
 
-**순서가 중요하다.** `bench.py`를 먼저 돌려야 `bench_decode.py`가 추론까지 합친
+**순서가 중요하다.** `edge/bench.py`를 먼저 돌려야 `edge/bench_decode.py`가 추론까지 합친
 표를 낼 수 있다.
 
-### `check_edge.py` — 이 박스가 돌릴 수 있는가
+### `edge/check_edge.py` — 이 박스가 돌릴 수 있는가
 
 항목마다 합격/불합격이 나오고, 불합격이면 무엇을 하면 되는지가 `→` 줄에 붙는다.
 
@@ -170,20 +170,20 @@ venv\Scripts\python.exe bench_decode.py --source sample_raw\cafe_sample_angle1.m
 꺼진 채로 측정하면 실제보다 훨씬 비관적인 숫자가 나와서, 살 수 있는 카메라를
 못 산다고 잘못 판단하게 된다.
 
-### `bench.py` — 판정이 15초 안에 끝나는가
+### `edge/bench.py` — 판정이 15초 안에 끝나는가
 
 프로파일마다 `PASS`/`CONDITIONAL`/`FAIL` 이 나온다. 합격선은 **tick의 50% 이내
 (7.5초)** 다. 여유 50%를 요구하는 이유는 24시간 도는 박스에 스트림 재연결·디코더
 리셋·로그 정리가 언제든 끼어들기 때문이다.
 
 `--backends pt` 만 나오고 `ov-fp32`·`ov-int8` 이 `skip` 이면 아직 익스포트를 안 한
-것이다. `python export.py` 를 먼저 돌리면 OpenVINO 백엔드까지 잰다 — **실제 배포는
+것이다. `python -m edge.export` 를 먼저 돌리면 OpenVINO 백엔드까지 잰다 — **실제 배포는
 OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
 
-### `bench_decode.py` — 어떤 카메라를 살 수 있는가
+### `edge/bench_decode.py` — 어떤 카메라를 살 수 있는가
 
 처음 돌릴 때는 벤치용 클립 6개를 만드느라 몇 분 걸린다. 만든 클립은
-`bench/clips/` 에 남아 다음부터는 재사용된다.
+`results/edge/clips/` 에 남아 다음부터는 재사용된다.
 
 ---
 
@@ -233,7 +233,7 @@ OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
 | 하드웨어 디코딩이 계속 "꺼짐" | 그래픽 드라이버 문제다. Linux는 `vainfo` 가 뭐라고 하는지 본다. Windows는 인텔 드라이버를 다시 설치한다. **가상머신 안에서는 원래 안 된다** |
 | `qsv` 는 실패하고 `d3d11va` 는 되는데 괜찮나 | 괜찮다. 둘 다 하드웨어 디코딩이고, 자동으로 되는 쪽을 고른다. 성능 차이는 작다 |
 | 클립 만드는 게 너무 느리다 | `--duration 10` 을 붙여 클립을 짧게 만든다. 측정값은 길이에 비례하지 않으므로 결과는 같다 |
-| `bench.py` 가 전부 `skip` | 모델 파일이 없다. `python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8n-pose.pt')"` 로 받는다 |
+| `edge/bench.py` 가 전부 `skip` | 모델 파일이 없다. `python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8n-pose.pt')"` 로 받는다 |
 | 8MP 클립 만들 때 메모리가 모자란다 | `--clips 2mp_h264 2mp_h265 4mp_h264 4mp_h265` 로 8MP를 뺀다. 4MP까지만 봐도 대부분의 결정은 난다 |
 | 테스트가 깨진다 | `python -m unittest discover tests` 로 확인. numpy가 2.x로 올라갔을 가능성이 크다 (`pip install "numpy<2"`) |
 

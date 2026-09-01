@@ -11,9 +11,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from floorplan import build_draft, load_floorplan
-from floorplan_editor import apply_edits, editor_state, latest_states, save_both
-from seatnow_layout import (
+from install.floorplan import build_draft, load_floorplan
+from install.floorplan_editor import apply_edits, editor_state, latest_states, save_both
+from engine.seatnow_layout import (
     FloorReference,
     LayoutChair,
     LayoutTable,

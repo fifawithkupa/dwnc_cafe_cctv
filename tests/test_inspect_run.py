@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import unittest
 
-from inspect_run import Row, build_rows, recall
-from judge_frames import Judgement
+from checks.inspect_run import Row, build_rows, recall
+from checks.judge_frames import Judgement
 
 
 def record(timestamp, person=3, chair=7, table=2, seated=2, standing=1, unknown=0,
@@ -136,7 +136,7 @@ class RecallTests(unittest.TestCase):
             recall(build_rows([record(0.0)], {}), "seats")
 
 
-from inspect_run import disagreements, reason_distribution, render_summary, render_table
+from checks.inspect_run import disagreements, reason_distribution, render_summary, render_table
 
 
 def record_with_reasons(timestamp, *reason_codes):
@@ -255,7 +255,7 @@ class RenderSummaryTests(unittest.TestCase):
         self.assertIn("제외", render_summary(rows, [record(0.0)]))
 
 
-from inspect_run import over_detection
+from checks.inspect_run import over_detection
 
 
 class OverDetectionTests(unittest.TestCase):
@@ -308,7 +308,7 @@ class OverDetectionTests(unittest.TestCase):
         self.assertIn("과탐", render_summary(rows, [record(0.0)]))
 
 
-from inspect_run import seat_inflation
+from checks.inspect_run import seat_inflation
 
 
 class SeatTruthTests(unittest.TestCase):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from bench_decode import (
+from edge.bench_decode import (
     CLIP_SPECS,
     ClipSpec,
     DecodeMeasurement,

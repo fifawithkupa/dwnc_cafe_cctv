@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from seatnow_core import Detection, LayoutZoneTracker
+from engine.seatnow_core import Detection, LayoutZoneTracker
 
 
 def det(box, confidence=0.9, name="dining table"):

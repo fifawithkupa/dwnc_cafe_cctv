@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from frame_dump import CLEAN_DIR, MARKED_DIR, frame_paths, frame_stem, save_frame_pair
+from engine.frame_dump import CLEAN_DIR, MARKED_DIR, frame_paths, frame_stem, save_frame_pair
 
 
 class FrameStemTests(unittest.TestCase):
@@ -79,7 +79,7 @@ class SeatnowArgumentTests(unittest.TestCase):
     """--frame-dir must be independent of --no-video."""
 
     def _parse(self, argv):
-        import seatnow
+        from engine import seatnow
 
         return seatnow.build_parser().parse_args(argv)
 

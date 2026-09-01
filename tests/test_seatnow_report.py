@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from seatnow_report import (
+from engine.seatnow_report import (
     ACTIONABLE_GROUPS,
     REASON_GROUPS,
     ReasonCode,

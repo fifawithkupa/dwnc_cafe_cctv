@@ -5,9 +5,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-import bench
-from bench import Measurement, resolve_model, tick_budget
-from seatnow_core import model_backend
+from edge import bench
+from edge.bench import Measurement, resolve_model, tick_budget
+from engine.seatnow_core import model_backend
 
 
 def measurement(task: str, imgsz: int, backend: str, median_ms: float) -> Measurement:
@@ -141,7 +141,7 @@ class RtspPublisherCommandTests(unittest.TestCase):
     URL = "rtsp://127.0.0.1:8554/seatnow"
 
     def _command(self, **kwargs):
-        from rtsp_republish import build_publisher_command
+        from edge.rtsp_republish import build_publisher_command
 
         options = dict(loop=True, transcode=False, fps=None)
         options.update(kwargs)

@@ -1,0 +1,13 @@
+{
+  "stem": "t0000.0s",
+  "people_total": 2,
+  "people_seated": 0,
+  "people_standing": 2,
+  "tables_visible": 5,
+  "tables_in_use": 2,
+  "tables_belongings_only": 2,
+  "uncertain_people": false,
+  "uncertain_tables": false,
+  "note": "오른쪽 거울 속 인물은 화면 오른쪽에 선 사람의 반사로 판단해 중복 집계하지 않았습니다.",
+  "error": null
+}

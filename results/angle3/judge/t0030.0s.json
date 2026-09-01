@@ -1,0 +1,13 @@
+{
+  "stem": "t0030.0s",
+  "people_total": 2,
+  "people_seated": 1,
+  "people_standing": 1,
+  "tables_visible": 6,
+  "tables_in_use": 2,
+  "tables_belongings_only": 1,
+  "uncertain_people": false,
+  "uncertain_tables": false,
+  "note": "창가의 긴 바 테이블을 손님용 테이블 1개로 계산했다.",
+  "error": null
+}

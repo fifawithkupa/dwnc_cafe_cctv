@@ -1,0 +1,13 @@
+{
+  "stem": "t0025.0s",
+  "people_total": 2,
+  "people_seated": 0,
+  "people_standing": 2,
+  "tables_visible": 6,
+  "tables_in_use": 1,
+  "tables_belongings_only": 1,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "흰색 테이블 위 검은 물건이 손님 소지품인지 카페 비품인지 애매하며, 창가의 긴 바 테이블은 1개로 계산함.",
+  "error": null
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from make_labels import TODO, validate
+from checks.make_labels import TODO, validate
 
 
 def interval(start, end, occupied, empty, ignore):
@@ -82,7 +82,7 @@ class CountedZoneSkeletonTests(unittest.TestCase):
     """바 구역은 자리 칸마다 하나씩 라벨을 받아야 한다."""
 
     def _layout(self):
-        from seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
+        from engine.seatnow_layout import LayoutSeat, LayoutTable, SeatLayout
 
         return SeatLayout(
             schema_version=2,
@@ -103,7 +103,7 @@ class CountedZoneSkeletonTests(unittest.TestCase):
         )
 
     def test_zone_seats_appear_as_individual_label_targets(self):
-        from make_labels import seat_names_from_layout
+        from checks.make_labels import seat_names_from_layout
 
         self.assertEqual(
             seat_names_from_layout(self._layout()), ["BAR-1", "BAR-2", "창가1"]

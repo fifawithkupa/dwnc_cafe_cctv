@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from bench_sweep import (
+from edge.bench_sweep import (
     GridPoint,
     PointResult,
     build_run_command,

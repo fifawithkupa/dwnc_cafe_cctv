@@ -15,20 +15,20 @@
 |---|---|---|
 | T1 회귀 복구 | ✅ 완료 | 방향 **(a) 의자 연결 복구** 채택. `tests/test_analyze_pipeline.py` 신설 |
 | T2 진단 로깅 | ✅ 완료 | `--log-detections` |
-| T3 평가셋 | ⏳ **코드 완료 / 라벨 대기** | `make_labels.py` + 다중 fixture 채점. **라벨링은 사람 작업** |
-| T4 익스포트+벤치 | ✅ 완료 | `export.py`, `bench.py`. **2026-08-31 노트북 baseline 실측 완료** |
-| T5 RTSP 재송출 | ✅ 완료 | `rtsp_republish.py` (mediamtx 설치 필요) |
-| T6 엣지 벤치 | ⛔ 하드웨어 대기 | 도구 준비 완료 — 엣지에서 `check_edge.py` → `bench.py` → `bench_decode.py` |
-| T7 파라미터 스윕 | ⏳ 하네스 완료 / 실행 대기 | `bench_sweep.py`. T3 라벨 + T6 예산 필요 |
+| T3 평가셋 | ⏳ **코드 완료 / 라벨 대기** | `checks/make_labels.py` + 다중 fixture 채점. **라벨링은 사람 작업** |
+| T4 익스포트+벤치 | ✅ 완료 | `edge/export.py`, `edge/bench.py`. **2026-08-31 노트북 baseline 실측 완료** |
+| T5 RTSP 재송출 | ✅ 완료 | `edge/rtsp_republish.py` (mediamtx 설치 필요) |
+| T6 엣지 벤치 | ⛔ 하드웨어 대기 | 도구 준비 완료 — 엣지에서 `edge/check_edge.py` → `edge/bench.py` → `edge/bench_decode.py` |
+| T7 파라미터 스윕 | ⏳ 하네스 완료 / 실행 대기 | `edge/bench_sweep.py`. T3 라벨 + T6 예산 필요 |
 | **T9 Quick Sync** | ✅ **완료 (2026-08-31)** | `--hwaccel`. **T17보다 먼저 해야 했다** — 아래 참조 |
 | T8·T10 | ⬜ 미착수 | **카메라 확정 후.** 카메라 없이는 검증이 불가능하다 |
 | T11 파인튜닝 | ⬜ 조건부 | T7 결과에 따라 판단 |
 | T12 문서 | ✅ 완료 | README·전체정리 갱신 |
 | **T13 출력 계약** | ✅ **완료 (2026-08-27)** | `seat_report` + 바 구역 좌석 칸 + UNKNOWN 사유 코드. 아래 참조 |
 | **T14 실영상 첫 실행** | ✅ **완료 (2026-09-01)** | 하네스로 angle1~4 완주 + angle1 레이아웃 비교. §0-c 아래 |
-| **2D 평면도 1단계** | ✅ **완료 (2026-09-01)** | 스키마 v3(소속 미정 의자·바닥 네 점) + `calibrate.py` [f]/[m]/[g]. 설계: `docs/superpowers/specs/2026-09-01-2d-floorplan-design.md` |
+| **2D 평면도 1단계** | ✅ **완료 (2026-09-01)** | 스키마 v3(소속 미정 의자·바닥 네 점) + `install/calibrate.py` [f]/[m]/[g]. 설계: `docs/superpowers/specs/2026-09-01-2d-floorplan-design.md` |
 | **2D 평면도 2단계** | ✅ **완료 (2026-09-01)** | 호모그래피 투영 + `floorplan.json` + 브라우저 편집기. §0-d |
-| **T17 디코딩 벤치** | ✅ **완료 (2026-08-31)** | `bench_decode.py`, `check_edge.py`, `docs/edge-setup.md` |
+| **T17 디코딩 벤치** | ✅ **완료 (2026-08-31)** | `edge/bench_decode.py`, `edge/check_edge.py`, `docs/edge-setup.md` |
 
 ~~**⚠️ 아직 한 번도 실제 영상으로 돌려본 적이 없다.**~~ → **2026-08-31 해소.**
 `torch 2.2.2` + `ultralytics 8.4.82` 설치 완료(Python 3.11.9/Windows), 테스트 291개 통과,
@@ -105,8 +105,8 @@ angle1~4를 **레이아웃 없이**(모델만 놓고 보기 위해) `yolov8n`으
 돌려 30 tick, 사진 60장. Codex가 깨끗한 사진만 보고 사람과 테이블을 셌고,
 그중 5장은 사람이 따로 세어 대조했다.
 
-판독표: `docs/inspect/angle{1..4}.md` · 대조: `docs/inspect/human_spotcheck.md`
-도구: `seatnow.py --frame-dir` + `judge_frames.py` + `inspect_run.py`
+판독표: `results/angle{1..4}.md` · 대조: `results/human_spotcheck/report.md`
+도구: `engine/seatnow.py --frame-dir` + `checks/judge_frames.py` + `checks/inspect_run.py`
 설계: `docs/superpowers/specs/2026-09-01-detection-inspection-harness-design.md`
 
 | 각도 | tick | 검출 재현율 | 포즈 재현율 | 검출 과탐 | 포즈 과탐 | 자리 없음 부풀림 |
@@ -136,7 +136,7 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 3. **점유의 근거가 사람이 아니다.** 판정 128건 중 `belongings` 60건(47%),
    `no_customer_evidence` 37건(29%), `track_predicted` 25건(20%),
    **`person_seated`는 4건(3%)**. 이것은 결함이 아니라 설계다
-   (`seatnow_core.py:890-906`, `CLAUDE.md`의 "구제 경로가 주 경로")
+   (`engine/seatnow_core.py:890-906`, `CLAUDE.md`의 "구제 경로가 주 경로")
 4. **그 짐 판정이 맞는지는 아직 모른다.** 30장 중 짐을 채점할 수 있었던 것은
    **4장뿐**이다(§아래 한계). 그 4장 중 angle3의 3장은 **전부 부풀림**이고
    없는 점유가 총 5석, 최악 한 장 +3석이다. 표본이 3장이라 결론이 아니라 단서다
@@ -176,7 +176,7 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 ### 2026-09-01 — 사람이 그린 레이아웃을 넣었을 때 (T14 완결)
 
 `layouts/cafe_angle1.json`을 그려 angle1을 다시 돌렸다. 판독표는
-`docs/inspect/angle1_layout.md`(레이아웃 있음)와 `docs/inspect/angle1.md`(없음).
+`results/angle1_layout/report.md`(레이아웃 있음)와 `results/angle1/report.md`(없음).
 
 | tick당 평균 | 레이아웃 없음 | 레이아웃 있음 |
 |---|---:|---:|
@@ -246,19 +246,19 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 
 | 파일 | 하는 일 |
 |---|---|
-| `floor_projection.py` | 바닥 네 점 → 호모그래피. 꼬인·좁은 사각형은 거부 |
-| `floorplan.py` | `floorplan.json` 초안. 의자·바 배치 규칙, 겹침 해소 |
-| `floorplan_editor.py` | 로컬 서버. 저장 시 **평면도와 레이아웃을 함께** 갱신 |
+| `install/floor_projection.py` | 바닥 네 점 → 호모그래피. 꼬인·좁은 사각형은 거부 |
+| `install/floorplan.py` | `floorplan.json` 초안. 의자·바 배치 규칙, 겹침 해소 |
+| `install/floorplan_editor.py` | 로컬 서버. 저장 시 **평면도와 레이아웃을 함께** 갱신 |
 | `static/floorplan_editor.html` | 건축 도면풍 편집 화면 |
 
-**설치 절차가 두 칸 늘었다.** `calibrate.py`(3-a~3-d) 다음에 바닥 네 점을 찍고,
+**설치 절차가 두 칸 늘었다.** `install/calibrate.py`(3-a~3-d) 다음에 바닥 네 점을 찍고,
 브라우저에서 평면도를 다듬는다. 엣지 박스가 카페 와이파이로 페이지를 띄우므로
 노트북이든 폰이든 아무거나로 열면 된다.
 
 ### 판정에 영향을 주는 것은 의자 소속 하나뿐이다
 
 지도는 보여주기용이고 판정은 카메라 화면 좌표로 한다. 예외가 **의자 소속**인데,
-손으로 그린 연결은 판정에서 무조건 참으로 쓰인다(`seatnow_core.py:1531-1534`).
+손으로 그린 연결은 판정에서 무조건 참으로 쓰인다(`engine/seatnow_core.py:1531-1534`).
 그래서 편집기 저장은 **두 파일을 원자적으로** 갱신한다 — 반만 저장되면 지도와
 판정이 어긋난 채로 아무도 모른다.
 
@@ -295,7 +295,7 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 
 ### 이 노트북 baseline (엣지와 비교할 기준선)
 
-`bench.py --backends pt` — 8코어 최신 랩탑, PyTorch 백엔드(OpenVINO 미익스포트).
+`edge/bench.py --backends pt` — 8코어 최신 랩탑, PyTorch 백엔드(OpenVINO 미익스포트).
 
 | profile | 추론/tick | tick 소요 | tick 사용률 | 판정 |
 |---|---:|---:|---:|:---:|
@@ -303,7 +303,7 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 | balanced | 20 | 1.9s | 13% | PASS |
 | fast | 10 | 0.9s | 6% | PASS |
 
-`bench_decode.py` — 디코딩 비용(영상 1초당 CPU 초 = 상시 점유 코어).
+ `edge/bench_decode.py` — 디코딩 비용(영상 1초당 CPU 초 = 상시 점유 코어).
 
 | 클립 | 소프트웨어 | 하드웨어(d3d11va) |
 |---|---:|---:|
@@ -328,8 +328,8 @@ UNKNOWN은 **네 각도 전부 0건**이다. IGNORE도 0건이다.
 | 항목 | 상태 |
 |---|---|
 | 판정 로직 | 완성도 높음. ~~§9 회귀~~ → **T1로 복구됨** |
-| 영상 입력 | **로컬 파일 전용.** RTSP 경로 없음 (`seatnow.py:118`, `seatnow_core.py:2760`) — T8에서 처리 |
-| 모델 배포 | ~~익스포트 경로 없음~~ → **`export.py`로 OpenVINO FP32/INT8** |
+| 영상 입력 | **로컬 파일 전용.** RTSP 경로 없음 (`engine/seatnow.py:118`, `engine/seatnow_core.py:2760`) — T8에서 처리 |
+| 모델 배포 | ~~익스포트 경로 없음~~ → ** `edge/export.py`로 OpenVINO FP32/INT8** |
 | 배포 준비 | Dockerfile·systemd·CI **전부 없음** — T10 |
 | 평가 | ~~fixture 1개(20초)~~ → 다중 fixture 채점 + 커버리지 집계 가능. **라벨 입력 대기** |
 | 하드웨어 | 엣지 박스(중고 미니PC, Intel 6세대 i3급, ~10만원) 구매 진행 중. **카메라는 벤치 결과 후 구매** |
@@ -364,10 +364,10 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 
 ### T1. 의자 연결 회귀 복구 ⚠️ 최우선
 
-**문제**: `f1f41d5`가 확장 ROI 도입과 함께 의자 연결 호출 4개를 제거했고, `70a86bc`("ROI 크기 원복")가 ROI만 되돌리고 의자 연결은 복구하지 않음. 결과적으로 `seat_detections`가 항상 빈 리스트(`seatnow_core.py:1282`, `:1301`).
+**문제**: `f1f41d5`가 확장 ROI 도입과 함께 의자 연결 호출 4개를 제거했고, `70a86bc`("ROI 크기 원복")가 ROI만 되돌리고 의자 연결은 복구하지 않음. 결과적으로 `seat_detections`가 항상 빈 리스트(`engine/seatnow_core.py:1282`, `:1301`).
 
 **죽어 있는 기능**
-1. 판정 규칙 3번 — 의자→테이블 점유 전파 (`seatnow_core.py:850`에서 `_ = occupied_chairs`로 인자 폐기)
+1. 판정 규칙 3번 — 의자→테이블 점유 전파 (`engine/seatnow_core.py:850`에서 `_ = occupied_chairs`로 인자 폐기)
 2. `inferred-seat` — 가려진 테이블 구제 (`:1518`의 `has_seat_support()`가 항상 False)
 3. 포즈 의자겹침 구제 (`:1331`의 `seat_support_score()`가 항상 0.0)
 4. 레이아웃 모드의 캘리브레이션된 의자 존 (`LayoutZoneTracker`에 빈 리스트 전달, `:1259`)
@@ -375,7 +375,7 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 
 **특히 치명적인 연쇄** — 카페 CCTV에서 앉은 손님은 무릎·발목이 테이블에 가린다:
 ```
-각도 측정 불가 → compact_occluded_pose 폴백(SEATED)  seatnow_core.py:468
+각도 측정 불가 → compact_occluded_pose 폴백(SEATED)  engine/seatnow_core.py:468
   → analyze()에서 무조건 UNKNOWN 강등                :1338
   → 구제 경로(seat_support ≥ 0.24)가 회귀로 사망      :1339
   → 영원히 UNKNOWN → 테이블도 OCCUPIED가 아닌 UNKNOWN :853
@@ -387,7 +387,7 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 - (b) 확장 ROI 재도입 — 마진을 x0.45/y0.60의 절반쯤으로 줄여 재튜닝
 - (c) 정식 제거 — 죽은 코드·`TableObservation` 필드·JSONL 스키마·문서 정리. 단 위 UNKNOWN 강등을 다른 방식으로 풀어야 함
 
-**손댈 파일**: `seatnow_core.py:1282`, `:1301`, `:850`, `:1331`, `:1518`, `:1259`
+**손댈 파일**: `engine/seatnow_core.py:1282`, `:1301`, `:850`, `:1331`, `:1518`, `:1259`
 **예상**: 1~2일
 **완료 기준**: `sample_raw/`의 "의자 위 가방"·"짐 옮김" 시나리오에서 점유가 다시 잡힘 + 회귀 테스트 추가
 
@@ -395,11 +395,11 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 
 ### T2. 진단 로깅 추가
 
-**문제**: `frame_log_record()`(`seatnow_core.py:3143`)가 추적된 트랙만 남기고 **원본 detect 출력(`FrameAnalysis.detections`)을 기록하지 않음.** 그래서 "모델이 못 봤나(파인튜닝 영역)" vs "코드가 버렸나(`select_table_candidates`)"를 로그로 구분할 수 없음.
+**문제**: `frame_log_record()`(`engine/seatnow_core.py:3143`)가 추적된 트랙만 남기고 **원본 detect 출력(`FrameAnalysis.detections`)을 기록하지 않음.** 그래서 "모델이 못 봤나(파인튜닝 영역)" vs "코드가 버렸나(`select_table_candidates`)"를 로그로 구분할 수 없음.
 
 **할 일**: JSONL에 raw detection 요약 필드 추가 (클래스·conf·박스). 용량 우려 시 `--debug` 또는 별도 플래그 게이트.
 
-**손댈 파일**: `seatnow_core.py:3143`, `seatnow.py`
+**손댈 파일**: `engine/seatnow_core.py:3143`, `engine/seatnow.py`
 **예상**: 0.5일
 **완료 기준**: 미탐 테이블 1건에 대해 로그만으로 A/B 판별 가능
 
@@ -411,14 +411,14 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 > 존재하지 않는다. 보유 영상의 실측 현황과 그에 따른 계획 변경은 **§0-b**와
 > **§4 T16**을 볼 것. 아래 "할 일"의 코드 부분은 완료됐고, 데이터 부분만 남았다.
 
-**문제**: fixture가 20초 1개이고 영상 sha256에 고정(`verify_seatnow.py:43-140`). 보유 영상은 라벨이 없어 채점 불가. 기록된 정확도 5/20(25%)로는 파라미터 A/B 차이를 구분할 수 없음. 기존 fixture는 고정 CCTV가 아니라 **좌→우 팬 촬영 스톡 영상**이라 대표성도 없다.
+**문제**: fixture가 20초 1개이고 영상 sha256에 고정(`checks/verify_seatnow.py:43-140`). 보유 영상은 라벨이 없어 채점 불가. 기록된 정확도 5/20(25%)로는 파라미터 A/B 차이를 구분할 수 없음. 기존 fixture는 고정 CCTV가 아니라 **좌→우 팬 촬영 스톡 영상**이라 대표성도 없다.
 
 **할 일**
-- 다중 영상 fixture를 받도록 `verify_seatnow.py` 구조 변경
+- 다중 영상 fixture를 받도록 `checks/verify_seatnow.py` 구조 변경
 - 보유 영상 구간 라벨링 (시작/종료 초 + 좌석별 점유 상태)
 - 커버리지 집계 추가: `raw_state=IGNORE` 비율, `missing_count` 분포 → 화각이 못 보는 좌석 정량화
 
-**손댈 파일**: `verify_seatnow.py:43-140`, `tests/fixtures/`
+**손댈 파일**: `checks/verify_seatnow.py:43-140`, `tests/fixtures/`
 **예상**: 3~4일
 **완료 기준**: 영상 2개 이상에 대해 프레임 정확도 산출, T1 전후 비교 가능
 
@@ -428,11 +428,11 @@ T13 출력 계약 ──> T14 실영상 첫 실행 ──> T15 설치 각도 선
 
 ### T4. OpenVINO 익스포트 + 벤치 스크립트
 
-**문제**: ultralytics `.pt`를 직접 로드(`seatnow_core.py:1079-1080`). 익스포트 경로 0건. yolov8n 실측 latency 기록 0건 (유일한 기록은 yolov8x "프레임당 ~8초 on CPU", `README.md:54`).
+**문제**: ultralytics `.pt`를 직접 로드(`engine/seatnow_core.py:1079-1080`). 익스포트 경로 0건. yolov8n 실측 latency 기록 0건 (유일한 기록은 yolov8x "프레임당 ~8초 on CPU", `README.md:54`).
 
 **할 일**
-- `export.py` — `.pt` → OpenVINO FP32 → INT8
-- `bench.py` — `{detect, pose} × {640, 960, 1280} × {pt, ov-fp32, ov-int8}` latency 표 → tick 예산 자동 산출
+- `edge/export.py` — `.pt` → OpenVINO FP32 → INT8
+- `edge/bench.py` — `{detect, pose} × {640, 960, 1280} × {pt, ov-fp32, ov-int8}` latency 표 → tick 예산 자동 산출
 - 모델 로딩부를 백엔드 교체 가능하게 분리
 - 맥북 baseline 먼저 측정 (상대 비교용)
 
@@ -443,7 +443,7 @@ median_frames=2 → 5프레임
 → tick당 최대 30회 추론 / 15초 예산 → 추론 1회당 0.5초 이내여야 함
 ```
 
-**손댈 파일**: 신규 `export.py`, `bench.py`, `seatnow_core.py:1079-1080`
+**손댈 파일**: 신규 `edge/export.py`, `edge/bench.py`, `engine/seatnow_core.py:1079-1080`
 **예상**: 2~3일
 **완료 기준**: 맥북에서 표가 출력됨. 엣지 도착 시 같은 명령으로 재실행 가능
 
@@ -465,7 +465,7 @@ median_frames=2 → 5프레임
 ### T6. Phase 1 벤치 실행
 
 1. **QSV 디코딩 단독 검증** — `ffmpeg -hwaccel qsv`로 RTSP 1080p 연속 디코딩 시 CPU 사용률. **30% 넘으면 QSV가 안 켜진 것**
-2. **추론 latency 표** — T4의 `bench.py` 실행
+2. **추론 latency 표** — T4의 `edge/bench.py` 실행
 3. **tick 예산표 완성** → "이 박스의 최대 프로파일" 확정
 
 **합격 기준**
@@ -487,7 +487,7 @@ median_frames=2 → 5프레임
 
 **전제**: T1(기준선) + T3(평가셋) + T6(예산) 완료
 
-**손댈 파일**: 신규 `bench_sweep.py`, `verify_seatnow.py`
+**손댈 파일**: 신규 `edge/bench_sweep.py`, `checks/verify_seatnow.py`
 **예상**: 3~4일
 **완료 기준**: 배포 프로파일 1개가 근거와 함께 확정됨
 
@@ -498,8 +498,8 @@ median_frames=2 → 5프레임
 ### T8. RTSP 스트림 리더 ⚠️ 아키텍처 변경
 
 **문제 (단순 URL 교체가 아님)**
-- 입력이 로컬 파일로 하드 검증됨 (`seatnow.py:118`의 `args.input.exists()`, `:580-581`의 확장자 검사)
-- **`FFmpegBurstReader`가 tick마다 ffmpeg를 새로 띄워 `-ss`로 시크**(`seatnow_core.py:2760-2782`, `-ss`가 `-i`보다 앞 = 입력 시크)
+- 입력이 로컬 파일로 하드 검증됨 (`engine/seatnow.py:118`의 `args.input.exists()`, `:580-581`의 확장자 검사)
+- **`FFmpegBurstReader`가 tick마다 ffmpeg를 새로 띄워 `-ss`로 시크**(`engine/seatnow_core.py:2760-2782`, `-ss`가 `-i`보다 앞 = 입력 시크)
 - **라이브 스트림은 시크 불가.** `-ss 900`을 라이브에 걸면 900초를 기다린다
 
 **할 일**
@@ -507,7 +507,7 @@ median_frames=2 → 5프레임
 - 입력 검증 완화 (RTSP URL 허용)
 - 버스트 간격 재검토: 현재 ±N 네이티브 프레임(30fps에서 167ms 스팬). 파이프 대역폭 절감 + 탈상관 관점에서 `-vf fps=5` 기반 200ms 간격이 나을 수 있음 → T7에서 검증
 
-**손댈 파일**: `seatnow_core.py:2732-2825`, `seatnow.py:118`, `:580`
+**손댈 파일**: `engine/seatnow_core.py:2732-2825`, `engine/seatnow.py:118`, `:580`
 **예상**: 3~5일
 **완료 기준**: T5의 로컬 RTSP를 입력으로 전체 파이프라인이 tick 단위로 동작
 
@@ -515,11 +515,11 @@ median_frames=2 → 5프레임
 
 ### T9. Quick Sync 하드웨어 디코딩
 
-**문제**: ffmpeg 커맨드(`seatnow_core.py:2664-2683`, `:2760-2782`, `:2829-2860`)에 `-hwaccel` 계열 플래그가 **0건.** 현재 100% 소프트웨어 디코딩. **씬클라이언트를 고른 이유(Quick Sync)가 코드에 반영되어 있지 않음.**
+**문제**: ffmpeg 커맨드(`engine/seatnow_core.py:2664-2683`, `:2760-2782`, `:2829-2860`)에 `-hwaccel` 계열 플래그가 **0건.** 현재 100% 소프트웨어 디코딩. **씬클라이언트를 고른 이유(Quick Sync)가 코드에 반영되어 있지 않음.**
 
 **할 일**: `-hwaccel qsv` (Linux는 VA-API 드라이버 `intel-media-va-driver` 포함) 추가. tick마다 프로세스를 새로 띄우면 디코더 초기화 비용이 반복되므로 T8의 상시 디코딩 구조와 함께 적용.
 
-**손댈 파일**: `seatnow_core.py:2664`, `:2760`
+**손댈 파일**: `engine/seatnow_core.py:2664`, `:2760`
 **예상**: 1일
 **완료 기준**: T6-1의 CPU 사용률이 유의미하게 하락
 
@@ -528,7 +528,7 @@ median_frames=2 → 5프레임
 ### T10. 배포 프로파일
 
 **할 일**
-- **`--no-video`를 배포 기본값으로** ⚠️ 현재는 주석 MP4를 항상 디스크에 씀(`seatnow.py:218-222`). 운영에서 그대로 두면 **"영상 미저장" PIPA 예외 조항이 깨진다**
+- **`--no-video`를 배포 기본값으로** ⚠️ 현재는 주석 MP4를 항상 디스크에 씀(`engine/seatnow.py:218-222`). 운영에서 그대로 두면 **"영상 미저장" PIPA 예외 조항이 깨진다**
 - systemd 유닛 + 자동 재시작 (현재 배포 파일 전부 없음)
 - 로그 회전
 - 원격 접속(Tailscale 등) — 필요 시
@@ -555,7 +555,7 @@ median_frames=2 → 5프레임
 | pose 모델 | **사실상 불가** ❌ — keypoint 17개 라벨링은 비용 차원이 다름. COCO 유지 |
 | 데이터 | 1시간 영상 → 2초당 1프레임 = 1,800장. 현실적 라벨링 300~600장. Roboflow 공개셋을 베이스로 |
 | 클래스 축소 | COCO 80 → 12개 내외(person, chair, dining table, couch, bench, cup, bottle, laptop, cell phone, handbag, backpack, book). 헤드가 작아져 속도 이득 |
-| ⚠️ 주의 | 클래스 축소 시 `EXCLUDED_OBJECT_CLASSES`(`seatnow_core.py:43-79`)와 클래스명 매핑을 함께 수정. **이름이 바뀌면 판정 로직이 조용히 오작동한다** |
+| ⚠️ 주의 | 클래스 축소 시 `EXCLUDED_OBJECT_CLASSES`(`engine/seatnow_core.py:43-79`)와 클래스명 매핑을 함께 수정. **이름이 바뀌면 판정 로직이 조용히 오작동한다** |
 | 환경 | Google Colab (T4) |
 
 **파인튜닝의 두 가지 용도 — 지금은 전자**
@@ -594,9 +594,9 @@ median_frames=2 → 5프레임
 | 레이아웃 스키마 v2 | `kind: "counted_zone"` + `seats[]`. `capacity`는 `len(seats)`에서 파생 |
 | 판정 단위 평탄화 | `judgement_units()` — 바 구역이 좌석 칸마다 독립 관측이 됨 |
 | 걸침 규칙 | 한 사람이 칸 2개 이상에 걸치면 그 칸 전부 UNKNOWN(`spans_multiple_seats`) |
-| 사유 코드 | `seatnow_report.py`의 닫힌 Enum. `install`/`geometry`/`model`/`time`/`settled` |
+| 사유 코드 | `engine/seatnow_report.py`의 닫힌 Enum. `install`/`geometry`/`model`/`time`/`settled` |
 | 앱 계약 | `seat_report` — tick마다 JSONL 최상위. `tables[]`는 진단용으로 유지 |
-| 캘리브레이션 | `calibrate.py`에 `[z]`(바 구역) `[x]`(자리 칸) 모드 |
+| 캘리브레이션 | `install/calibrate.py`에 `[z]`(바 구역) `[x]`(자리 칸) 모드 |
 | 채점 | `verify_seatnow.summarize_unknown_reasons()` — UNKNOWN을 그룹별로 분해 |
 
 **핵심 구현 판단**: 좌석 칸을 **판정 단위로 평탄화**해서 기존 증거 연결·디바운싱이
@@ -661,7 +661,7 @@ median_frames=2 → 5프레임
 것**이 T13 사유 코드 체계의 출발점이다. (`CLAUDE.md`)
 
 ### 매장별·각도별 임계값 튜닝 — ❌ 설계에서 금지
-매장에 요구할 수 있는 수작업은 **설치 당일 `calibrate.py` 검수 1회가 전부**다
+매장에 요구할 수 있는 수작업은 **설치 당일 `install/calibrate.py` 검수 1회가 전부**다
 (`_preseed`가 자동으로 채운 것에서 잘못 잡힌 것 지우고, 못 잡은 것 추가). `AnalysisSettings`
 기본값 하나로 굴러가야 한다. 운영 중 재캘리브레이션을 전제한 설계도 만들지 않는다.
 
@@ -685,7 +685,7 @@ T6에서 나온 최대 프로파일이 있어야 해상도(2MP/4MP)를 제대로
 구매 시 **RTSP 개방 여부 확인 필수** — 하이크비전/다후아 계열은 확정, 국내 저가 브랜드는 검증 필요.
 
 > **2026-08-31 정정 — "추론 벤치로 해상도를 고른다"는 틀렸다.**
-> `bench.py`가 재는 추론은 프레임을 `imgsz`(640/960/1280)로 **줄여서** 모델에 넣는다.
+> `edge/bench.py`가 재는 추론은 프레임을 `imgsz`(640/960/1280)로 **줄여서** 모델에 넣는다.
 > 그래서 **카메라가 2MP든 8MP든 추론 시간이 거의 같다.** 이 표만으로는 해상도를
 > 고를 근거가 나오지 않는다.
 >
@@ -694,8 +694,8 @@ T6에서 나온 최대 프로파일이 있어야 해상도(2MP/4MP)를 제대로
 > 하드웨어 디코딩 옵션(`-hwaccel`)도 없었다. 있는 그대로 쟀으면 소프트웨어 숫자만
 > 나와서 4MP를 부당하게 탈락시켰을 것이다.
 >
-> → **T9**(하드웨어 디코딩)와 **T17**(`bench_decode.py`)로 해결. 카메라 선정 근거는
-> 이제 `bench_decode.py`가 내는 **합산 표**(디코딩 + 추론)다.
+> → **T9**(하드웨어 디코딩)와 **T17**( `edge/bench_decode.py`)로 해결. 카메라 선정 근거는
+> 이제 `edge/bench_decode.py`가 내는 **합산 표**(디코딩 + 추론)다.
 > 절차는 `docs/edge-setup.md`, 설계는
 > `docs/superpowers/specs/2026-08-31-edge-decode-bench-design.md`.
 
@@ -743,7 +743,7 @@ T6에서 나온 최대 프로파일이 있어야 해상도(2MP/4MP)를 제대로
   T14 좌석 레이아웃 그리기 ──> T15 설치 각도 선정 ──> T16 라벨링 ──┐
                                                                     ├──> T7 스윕
 트랙 B (엣지 박스 도착 후)                                          │      ↓
-  check_edge.py ──> bench.py ──> bench_decode.py ──> 카메라 확정 ───┘   T11 판단
+  edge/check_edge.py ──> edge/bench.py ──> edge/bench_decode.py ──> 카메라 확정 ───┘   T11 판단
                                                           ↓
                                                   T8 RTSP 리더 ──> T10 배포
 ```
@@ -760,8 +760,8 @@ angle1의 캘리브레이션은 끝났다 — 테이블 6개, 창가 6석, 의�
 남은 것은 **평면도에 벽을 그리는 것**이다.
 
 ```bash
-./venv/Scripts/python.exe floorplan_editor.py --layout layouts/cafe_angle1.json \
-  --log sample_results/angle1_layout.jsonl
+./venv/Scripts/python.exe -m install.floorplan_editor --layout layouts/cafe_angle1.json \
+  --log results/angle1_layout/log.jsonl
 ```
 
 브라우저에서 `[벽 그리기]`로 방 둘레를 클릭하고(마지막 점을 다시 누르면 닫힌다),
@@ -780,12 +780,12 @@ T16(라벨링)이다.
 | 좌석 레이아웃 그리기 → `layouts/cafe_angle1.json` | ✅ 2026-09-01 (테이블 6, 창가 6석, 의자 25) |
 | 검출 검사 하네스로 angle1~4 완주 + 레이아웃 전후 비교 | ✅ 2026-09-01 → §0-c |
 
-**끝났다.** 아래는 다음 매장에서 반복할 절차다. `calibrate.py`는 마우스로 그리는 창이라
-(`calibrate.py:306-307`) 자동화 대상이 아니고, `CLAUDE.md`가 허용한 "설치 시 1회
+**끝났다.** 아래는 다음 매장에서 반복할 절차다. `install/calibrate.py`는 마우스로 그리는 창이라
+(`install/calibrate.py:306-307`) 자동화 대상이 아니고, `CLAUDE.md`가 허용한 "설치 시 1회
 검수" 그 자체다.
 
 ```bash
-./venv/Scripts/python.exe calibrate.py sample_raw/cafe_sample_angle1.mov --output layouts/cafe_angle1.json
+./venv/Scripts/python.exe -m install.calibrate sample_raw/cafe_sample_angle1.mov --output layouts/cafe_angle1.json
 #   키: [t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit
 ```
 
@@ -813,19 +813,19 @@ T16(라벨링)이다.
 ```bash
 # 각도 4개에 각각 캘리브레이션 (T14를 나머지 3개에 반복)
 for a in 1 2 3 4; do
-  ./venv/Scripts/python.exe calibrate.py sample_raw/cafe_sample_angle${a}.mov \
+  ./venv/Scripts/python.exe -m install.calibrate sample_raw/cafe_sample_angle${a}.mov \
     --output layouts/cafe_angle${a}.json
 done
 
 # 각도별로 실제 분석 실행 (78초 영상이라 tick을 줄여 표본을 늘린다)
 for a in 1 2 3 4; do
-  ./venv/Scripts/python.exe seatnow.py sample_raw/cafe_sample_angle${a}.mov \
+  ./venv/Scripts/python.exe -m engine.seatnow sample_raw/cafe_sample_angle${a}.mov \
     --layout layouts/cafe_angle${a}.json --sample-seconds 5 \
     --log-detections --no-video
 done
 
 # 사유 코드 분포 비교
-./venv/Scripts/python.exe verify_seatnow.py sample_results/*.jsonl
+./venv/Scripts/python.exe -m checks.verify_seatnow results/*.jsonl
 ```
 
 **판단 기준 — 이 순서로 본다**
@@ -837,7 +837,7 @@ done
 | 3 | **`geometry` 그룹 UNKNOWN** | 가림이 얼마나 심한가 |
 | 4 | `model` 그룹 UNKNOWN | 모델이 못 보는 정도 — T11 판단 근거 |
 
-> `verify_seatnow.py`는 라벨(fixture) 없이도 커버리지·사유 분포를 낸다. 정확도만
+> `checks/verify_seatnow.py`는 라벨(fixture) 없이도 커버리지·사유 분포를 낸다. 정확도만
 > 라벨이 필요하다. **각도 선정에는 라벨이 필요 없다.**
 
 **완료 기준**: 각도 하나가 근거(위 4개 지표 표)와 함께 확정된다.
@@ -859,10 +859,10 @@ done
   으로는 T7 파라미터 스윕의 A/B 차이를 가릴 수 없다
 
 ```bash
-./venv/Scripts/python.exe make_labels.py sample_raw/<확정영상> --interval 10 \
+./venv/Scripts/python.exe -m checks.make_labels sample_raw/<확정영상> --interval 10 \
   --contact-sheet labels/<이름> --layout layouts/<확정레이아웃>.json
 # labels/<이름>/*.jpg 를 보며 각 interval의 occupied / empty / ignore 를 채운다
-./venv/Scripts/python.exe make_labels.py x \
+./venv/Scripts/python.exe -m checks.make_labels x \
   --validate tests/fixtures/<이름>_expectations.json
 ```
 
@@ -881,7 +881,7 @@ done
 ### 트랙 B — 엣지 박스가 도착하면 (하드웨어 필요)
 
 ```
-엣지 도착 ──> check_edge.py ──> bench.py ──> bench_decode.py ──> 카메라 확정
+엣지 도착 ──> edge/check_edge.py ──> edge/bench.py ──> edge/bench_decode.py ──> 카메라 확정
                   │                                                   │
             (드라이버 못 잡으면                                   T8 RTSP 리더
              여기서 멈추고 해결)                                       │
@@ -891,16 +891,16 @@ done
 절차 전문은 `docs/edge-setup.md`. 요약하면 세 줄이다.
 
 ```bash
-python check_edge.py       # 이 박스가 돌릴 수 있는가 (항목별 합격/불합격)
-python bench.py --frames sample_raw/cafe_sample_angle1.mov --label edge-box
-python bench_decode.py --source sample_raw/cafe_sample_angle1.mov
+python -m edge.check_edge       # 이 박스가 돌릴 수 있는가 (항목별 합격/불합격)
+python -m edge.bench --frames sample_raw/cafe_sample_angle1.mov --label edge-box
+python -m edge.bench_decode --source sample_raw/cafe_sample_angle1.mov
 ```
 
-**`check_edge.py`에서 하드웨어 디코딩이 "꺼짐"으로 나오면 거기서 멈추고 드라이버부터
+** `edge/check_edge.py`에서 하드웨어 디코딩이 "꺼짐"으로 나오면 거기서 멈추고 드라이버부터
 잡는다.** 꺼진 채로 재면 비용이 3~6배로 나와서 살 수 있는 카메라를 못 산다고 잘못
 판단한다. Linux는 `intel-media-va-driver-non-free`, Windows는 인텔 그래픽 드라이버다.
 
-**OpenVINO 익스포트를 먼저 하는 편이 낫다** (`python export.py`). 실제 배포는
+**OpenVINO 익스포트를 먼저 하는 편이 낫다** (`python -m edge.export`). 실제 배포는
 OpenVINO로 하므로 `pt` 숫자는 참고치일 뿐이다.
 
 #### 파인튜닝 판단은 엣지로 안 나온다
@@ -916,7 +916,7 @@ OpenVINO로 하므로 `pt` 숫자는 참고치일 뿐이다.
 
 ### 두 트랙이 만나는 지점
 
-**트랙 A(T16 라벨링)와 트랙 B(카메라 확정)가 둘 다 끝나야** `bench_sweep.py`로 T7을
+**트랙 A(T16 라벨링)와 트랙 B(카메라 확정)가 둘 다 끝나야** `edge/bench_sweep.py`로 T7을
 돌려 배포 프로파일을 확정할 수 있다. 정확도를 재려면 라벨이 필요하고, 속도 예산을
 알려면 박스 숫자가 필요하기 때문이다.
 

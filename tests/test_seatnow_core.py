@@ -8,7 +8,7 @@ import unittest
 import cv2
 import numpy as np
 
-from seatnow_core import (
+from engine.seatnow_core import (
     L_ANK,
     L_HIP,
     L_KNE,
@@ -923,7 +923,7 @@ class MovingPersonCascadeTests(unittest.TestCase):
 
     @staticmethod
     def _fake_analyzer(previous_poses, previous_timestamp):
-        from seatnow_core import AnalyzerConfig, SeatNowAnalyzer
+        from engine.seatnow_core import AnalyzerConfig, SeatNowAnalyzer
 
         class Fake:
             config = AnalyzerConfig()

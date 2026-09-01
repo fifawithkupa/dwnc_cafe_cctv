@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from seatnow_core import (
+from engine.seatnow_core import (
     Detection,
     OccupancyState,
     TableObservation,

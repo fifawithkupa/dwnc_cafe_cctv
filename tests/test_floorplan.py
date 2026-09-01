@@ -11,8 +11,8 @@ from collections import Counter
 import unittest
 from pathlib import Path
 
-from floor_projection import FloorProjectionError
-from floorplan import (
+from install.floor_projection import FloorProjectionError
+from install.floorplan import (
     EXTENT_LONG_SIDE,
     FloorChair,
     FloorSeat,
@@ -25,7 +25,7 @@ from floorplan import (
     load_floorplan,
     save_floorplan,
 )
-from seatnow_layout import (
+from engine.seatnow_layout import (
     FloorReference,
     LayoutChair,
     LayoutSeat,

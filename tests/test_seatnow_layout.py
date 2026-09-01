@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from seatnow_layout import (
+from engine.seatnow_layout import (
     FloorReference,
     LayoutChair,
     LayoutSeat,
@@ -455,7 +455,7 @@ class RefuseIncompleteLayoutTests(unittest.TestCase):
     """
 
     def test_seatless_zone_is_refused(self):
-        from seatnow import _require_complete_layout
+        from engine.seatnow import _require_complete_layout
 
         data = json.loads(json.dumps(COUNTED_ZONE))
         data["tables"][0]["seats"] = []
@@ -467,13 +467,13 @@ class RefuseIncompleteLayoutTests(unittest.TestCase):
         self.assertIn("seat[x]", str(caught.exception))
 
     def test_complete_layout_passes(self):
-        from seatnow import _require_complete_layout
+        from engine.seatnow import _require_complete_layout
 
         layout = load_layout(write_json(COUNTED_ZONE))
         self.assertIsNone(_require_complete_layout(layout))
 
     def test_no_layout_passes(self):
-        from seatnow import _require_complete_layout
+        from engine.seatnow import _require_complete_layout
 
         self.assertIsNone(_require_complete_layout(None))
 

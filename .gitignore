@@ -4,13 +4,21 @@ __pycache__/
 .DS_Store
 .Rhistory
 sample_raw/
-sample_results/
-cctv_results/
+
+# results/ — 폴더와 판독표(report.md), Codex 정답지(judge/*.json)는 저장소에 남긴다.
+# 사진·로그·영상은 용량과 개인정보 때문에 각자 컴퓨터에만 둔다.
 *.jpg
 *.jsonl
+*.mp4
+results/edge/clips/
+results/edge/*.json
 
-# 익스포트된 모델 디렉터리 (export.py 산출물)
+# results/ 로 옮기기 전의 옛 폴더 (지워도 된다)
+frames/
+sample_results/
+bench/
+cctv_results/
+
+# 익스포트된 모델 디렉터리 (edge/export.py 산출물)
 *_openvino_model/
 *.onnx
-bench/
-frames/

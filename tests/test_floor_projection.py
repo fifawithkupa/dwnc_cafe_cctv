@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from floor_projection import (
+from install.floor_projection import (
     FLOOR_UNIT,
     FloorProjectionError,
     build_transform,

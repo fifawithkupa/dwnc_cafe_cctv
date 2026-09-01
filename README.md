@@ -7,25 +7,60 @@
 
 ## 저장소 구성
 
+폴더는 **무엇을 할 때 쓰는지**로 나뉜다.
+
+| 폴더 | 언제 쓰나 |
+|---|---|
+| `engine/` | **판정.** 영상을 보고 자리가 찼는지 정하는 코드. 여기만 매장에서 돌아간다 |
+| `install/` | **설치 당일 한 번.** 좌석을 그리고(캘리브레이션) 손님용 2D 평면도를 만든다 |
+| `checks/` | **우리가 잘 하고 있는지 채점.** 판독표·정답 대조·라벨링 |
+| `edge/` | **엣지 박스 성능 재기.** 벤치·익스포트·RTSP 재송출 |
+| `results/` | **결과는 전부 여기.** 판독표·사진·로그. 아래 참조 |
+| `layouts/` | 매장별 좌석 도면 (판정의 입력) |
+
+실행은 저장소 최상위에서 `python -m <폴더>.<파일>` 형태다.
+예: `python -m engine.seatnow ...`, `python -m install.calibrate ...`
+
+### 결과 보는 곳 — `results/`
+
+한 번 돌린 결과는 **폴더 하나에 다 들어 있다.**
+
+```
+results/
+  angle1/          ← 영상 하나를 돌린 결과
+    report.md        판독표 — 사람이 읽는 것. 여기부터 보면 된다
+    log.jsonl        원시 판정 로그 (tick마다 한 줄)
+    clean/           주석 없는 원본 사진 (세는 용도)
+    marked/          판정을 그려 넣은 사진 (진단 용도)
+    judge/           Codex가 매긴 정답지
+  angle2/ angle3/ angle4/ angle1_layout/
+  preseed/         캘리브레이션 자동 초안 미리보기
+  edge/            벤치 결과 (bench_report.json, decode_report.json, clips/)
+```
+
+저장소에 올라가는 건 **`report.md`와 `judge/`**다. 판독표는 팀이 같이 봐야 하고,
+Codex 정답지는 다시 만들려면 Codex를 또 돌려야 하기 때문이다. 사진·로그·영상은
+용량과 개인정보 때문에 각자 컴퓨터에만 남는다.
+
 | 파일 | 역할 |
 |------|------|
-| `seatnow_core.py` | 본체: 추론·점유 판정·의자/물체/사람 연결·추적(디바운싱)·FFmpeg 영상 I/O·렌더링 |
-| `seatnow.py` | CLI 진입점 (이미지/영상 → 주석 영상 + JSONL 로그) |
-| `seatnow_layout.py`, `calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존, 바 구역·자리 칸) 정의·로드 |
-| `seatnow_report.py` | 앱용 좌석 가용성 계약(`seat_report`) 생성 + UNKNOWN 사유 코드 |
-| `verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 (영상 여러 개 동시 채점) |
-| `make_labels.py` | 라벨링용 대조표 프레임 추출 + fixture 스켈레톤 생성·검사 |
-| `export.py` | `.pt` → OpenVINO FP32/INT8 익스포트 (엣지 배포용) |
-| `bench.py` | 추론 latency 측정 → tick 예산 산출 |
-| `bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
-| `rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
-| `frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
-| `judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
-| `inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
-| `tests/` | 유닛 테스트 446개 (모델 없이 순수 로직 검증) |
+| `engine/seatnow_core.py` | 본체: 추론·점유 판정·의자/물체/사람 연결·추적(디바운싱)·FFmpeg 영상 I/O·렌더링 |
+| `engine/seatnow.py` | CLI 진입점 (이미지/영상 → 주석 영상 + JSONL 로그) |
+| `engine/seatnow_layout.py`, `install/calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존, 바 구역·자리 칸) 정의·로드 |
+| `engine/seatnow_report.py` | 앱용 좌석 가용성 계약(`seat_report`) 생성 + UNKNOWN 사유 코드 |
+| `checks/verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 (영상 여러 개 동시 채점) |
+| `checks/make_labels.py` | 라벨링용 대조표 프레임 추출 + fixture 스켈레톤 생성·검사 |
+| `edge/export.py` | `.pt` → OpenVINO FP32/INT8 익스포트 (엣지 배포용) |
+| `edge/bench.py` | 추론 latency 측정 → tick 예산 산출 |
+| `edge/bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
+| `edge/rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
+| `engine/frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
+| `checks/judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
+| `checks/inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
+| `checks/judge_schema.json` | Codex가 답해야 하는 JSON 모양 |
+| `tests/` | 유닛 테스트 514개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
 | `plan.md` | 코드 작업 플랜 (T1~T12) |
-| `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용) |
 
 ## 환경 설정 (팀원용)
 
@@ -46,32 +81,33 @@ python3 -m venv venv
 
 # 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 446 tests ... OK
+# 기대: Ran 514 tests ... OK
 ```
 
 **모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
 (기본: `yolov8n.pt`/`yolov8n-pose.pt` 경량 모델. 정확도 검증·데모용은
 `--det-model yolov8x.pt --pose-model yolov8x-pose.pt` — 약 270MB, 역시 자동 다운로드).
 
-**샘플 영상(`sample_raw/`)과 결과(`sample_results/`)도 저장소에 없습니다** (용량·개인정보).
+**샘플 영상(`sample_raw/`)은 저장소에 없습니다** (용량·개인정보).
+`results/`는 판독표(`report.md`)만 올라가고 사진·로그·영상은 빠집니다.
 팀 구글 드라이브로 공유 — 받는 방법과 **"오프라인 사용 가능" 고정이 왜 필수인지**는
 [`ONBOARDING.md` §2](ONBOARDING.md) 참조.
 
 ## 실행
 
 ```bash
-# 영상 분석 → 주석 영상 + JSONL (sample_results/에 저장)
-./venv/bin/python seatnow.py sample_raw/cafe_sample_1.mp4 --debug
+# 영상 분석 → 주석 영상 + JSONL (results/에 저장)
+./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_1.mp4 --debug
 
 # 정확도 우선(느림, 프레임당 ~8초 on CPU)
-./venv/bin/python seatnow.py sample_raw/cafe_sample_1.mp4 --debug \
+./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_1.mp4 --debug \
   --det-model yolov8x.pt --pose-model yolov8x-pose.pt
 
 # 수동 라벨 정답과 대조 (fixture 영상 결과에 대해)
-./venv/bin/python verify_seatnow.py sample_results/<결과>.jsonl
+./venv/bin/python -m checks.verify_seatnow results/<결과>/log.jsonl
 
 # 영상 여러 개를 한 번에 채점 (fixture는 영상 sha256으로 자동 매칭)
-./venv/bin/python verify_seatnow.py sample_results/*.jsonl --expectations tests/fixtures
+./venv/bin/python -m checks.verify_seatnow results/*/log.jsonl --expectations tests/fixtures
 ```
 
 ### 평가·벤치 도구
@@ -81,7 +117,7 @@ python3 -m venv venv
 #    yolov8x가 테이블·의자를 미리 잡아주고, 사람은 잘못 잡힌 것만 지우고
 #    못 잡은 것만 추가한다. 일자형·벽 책상은 모델이 절대 못 잡으므로
 #    [z]로 바 구역을 치고 [x]로 자리마다 칸을 긋는다 (칸 수 = 자리 수).
-./venv/bin/python calibrate.py sample_raw/cafe_sample_angle1.mov \
+./venv/bin/python -m install.calibrate sample_raw/cafe_sample_angle1.mov \
   --output layouts/cafe_angle1.json
 #    키: [t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit
 #    [f] 바닥에서 실제로 직사각형인 것의 네 귀퉁이를 시계방향 클릭 (2D 평면도용)
@@ -89,43 +125,43 @@ python3 -m venv venv
 #    [g] 바 구역을 선택하고 누르면 붙어 있는 의자에서 자리 칸을 그대로 만든다
 
 # 1. 새 영상 라벨링: 대조표 프레임 + fixture 스켈레톤 생성
-./venv/bin/python make_labels.py sample_raw/cafe_1h.mp4 --interval 30 \
+./venv/bin/python -m checks.make_labels sample_raw/cafe_1h.mp4 --interval 30 \
   --contact-sheet labels/cafe_1h --layout layouts/cafe.json
 #    → labels/cafe_1h/*.jpg 를 보며 occupied/empty/ignore 를 손으로 채운 뒤
-./venv/bin/python make_labels.py x --validate tests/fixtures/cafe_1h_expectations.json
+./venv/bin/python -m checks.make_labels x --validate tests/fixtures/cafe_1h_expectations.json
 
 # 2. 엣지 배포용 익스포트 + 추론 latency/tick 예산 측정
-./venv/bin/python export.py --imgsz 640 960 1280
-./venv/bin/python bench.py --frames sample_raw/cafe_sample_1.mp4 --label macbook
+./venv/bin/python -m edge.export --imgsz 640 960 1280
+./venv/bin/python -m edge.bench --frames sample_raw/cafe_sample_1.mp4 --label macbook
 
 # 3. 파라미터 스윕 (라벨된 평가셋 필요)
-./venv/bin/python bench_sweep.py sample_raw/*.mp4 --dry-run
+./venv/bin/python -m edge.bench_sweep sample_raw/*.mp4 --dry-run
 
 # 4. 카메라 없이 RTSP 파이프라인 검증
-./venv/bin/python rtsp_republish.py sample_raw/cafe_sample_1.mp4
+./venv/bin/python -m edge.rtsp_republish sample_raw/cafe_sample_1.mp4
 
 # 5. 엣지 박스 검수 (새 박스에서 제일 먼저)
-./venv/bin/python check_edge.py
+./venv/bin/python -m edge.check_edge
 
 # 6. 디코딩 비용 측정 → 살 카메라의 해상도·코덱 결정
-./venv/bin/python bench_decode.py --source sample_raw/cafe_sample_angle1.mov
+./venv/bin/python -m edge.bench_decode --source sample_raw/cafe_sample_angle1.mov
 
 # 7. 검출 검사 하네스 — "모델이 이 카페를 제대로 보는가"
 #    라벨(T16) 없이 지금 돌릴 수 있다. 레이아웃도 주지 않는다 —
 #    사람이 그려준 정답을 빼고 모델만 놓고 봐야 답이 나오기 때문이다.
-./venv/bin/python seatnow.py sample_raw/cafe_sample_angle1.mov \
+./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_angle1.mov \
   --no-video --log-detections \
-  --frame-dir frames/angle1 --log sample_results/angle1.jsonl
+  --frame-dir results/angle1 --log results/angle1/log.jsonl
 
 #    깨끗한 사진마다 Codex가 사람 수를 센다. 우리 답은 안 보여준다
-./venv/bin/python judge_frames.py frames/angle1
+./venv/bin/python -m checks.judge_frames results/angle1
 
 #    세 층을 한 줄에 놓고 층별 재현율을 낸다
-./venv/bin/python inspect_run.py sample_results/angle1.jsonl \
-  --judge frames/angle1/judge --output docs/inspect/angle1.md
+./venv/bin/python -m checks.inspect_run results/angle1/log.jsonl \
+  --judge results/angle1/judge --output results/angle1/report.md
 ```
 
-> `judge_frames.py`를 안 돌려도 판독표는 나온다. `실제` 칸이 `___`로 비어
+> `checks/judge_frames.py`를 안 돌려도 판독표는 나온다. `실제` 칸이 `___`로 비어
 > 있을 뿐이고, 사람이 사진을 보며 손으로 채워도 같은 표가 된다.
 
 ### 엣지 박스 세팅
@@ -133,9 +169,9 @@ python3 -m venv venv
 새로 산 미니PC를 켜서 "이 박스로 어떤 카메라를 살 수 있나"를 재는 데까지의 절차는
 [`docs/edge-setup.md`](docs/edge-setup.md)에 있습니다 (Windows·Linux 양쪽).
 
-`bench.py`가 재는 **추론**은 프레임을 `imgsz`로 줄여서 넣기 때문에 카메라 해상도와
+ `edge/bench.py`가 재는 **추론**은 프레임을 `imgsz`로 줄여서 넣기 때문에 카메라 해상도와
 거의 무관합니다. 카메라 해상도가 실제로 잡아먹는 것은 24시간 도는 **디코딩**이고,
-그것을 재는 것이 `bench_decode.py`입니다. 두 도구의 결과가 합쳐져야 카메라를 고를
+그것을 재는 것이 `edge/bench_decode.py`입니다. 두 도구의 결과가 합쳐져야 카메라를 고를
 수 있습니다.
 
 디코딩은 `--hwaccel`(기본 `auto`)로 하드웨어 가속을 씁니다. **켜졌는지 꺼졌는지가
@@ -169,9 +205,9 @@ python3 -m venv venv
 - ✅ 진단 로깅(T2), 다중 영상 평가셋·커버리지 집계(T3), OpenVINO 익스포트·벤치(T4),
   RTSP 재송출 하네스(T5), 파라미터 스윕 하네스(T7 코드)
 - ✅ 좌석 리포트 출력 계약 `seat_report` + 바형 좌석 칸 (T13)
-- ✅ Quick Sync 하드웨어 디코딩(T9), 디코딩 벤치 `bench_decode.py`,
-  엣지 박스 검수 `check_edge.py`, 설치 절차 `docs/edge-setup.md`
-- 🚧 다음: 엣지 박스 도착 → `check_edge.py` → `bench.py` → `bench_decode.py`
+- ✅ Quick Sync 하드웨어 디코딩(T9), 디코딩 벤치 `edge/bench_decode.py`,
+  엣지 박스 검수 `edge/check_edge.py`, 설치 절차 `docs/edge-setup.md`
+- 🚧 다음: 엣지 박스 도착 → `edge/check_edge.py` → `edge/bench.py` → `edge/bench_decode.py`
   → 카메라 확정 → RTSP 리더(T8) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
 
 작업 순서와 근거는 [`plan.md`](plan.md) 참조.
@@ -182,4 +218,4 @@ python3 -m venv venv
 - **`analyze()`의 배선을 바꿨다면 `tests/test_analyze_pipeline.py`에도 추가.**
   헬퍼만 직접 호출하는 테스트는 "호출이 사라지는" 회귀를 못 잡는다 (T1이 그렇게 새어나갔다)
 - 커밋 전 `./venv/bin/python -m unittest discover tests` 통과 확인
-- 시나리오 영상 재실행 결과는 `sample_results/v5_*` 네이밍 사용
+- 시나리오 영상 재실행 결과는 `results/v5_*/` 네이밍 사용

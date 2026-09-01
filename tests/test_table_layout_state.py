@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from seatnow_core import OccupancyState, TableObservation, TableTracker
+from engine.seatnow_core import OccupancyState, TableObservation, TableTracker
 
 
 FRAME_SHAPE = (1000, 1000)

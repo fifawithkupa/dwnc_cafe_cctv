@@ -40,6 +40,7 @@ class CalibrationState:
         self.unassigned_chairs: List[Box] = []
         self.floor_points: List[Tuple[float, float]] = []
         self.selected: Optional[Tuple[str, int, int]] = None
+        self.pending_reassign: Optional[Tuple[str, int, int]] = None
         self._history: List[
             Tuple[
                 List[Dict],
@@ -150,6 +151,61 @@ class CalibrationState:
             self.floor_points,
             self.selected,
         ) = self._history.pop()
+
+    def begin_reassign(self) -> bool:
+        """Arm a chair for reassignment.  True if a chair was selected.
+
+        Delete-and-redraw loses the box position, which is the part the
+        installer already got right; only the ownership is wrong.
+        """
+        if self.selected is None or self.selected[0] not in ("chair", "orphan"):
+            return False
+        self.pending_reassign = self.selected
+        return True
+
+    def _table_at(self, x: float, y: float) -> Optional[int]:
+        """Smallest table/zone containing the point, ignoring chairs and seats.
+
+        ``select_at`` prefers the smallest box of any kind, so on a table
+        crowded with chairs it always lands on a chair.  Picking a
+        reassignment target has to look past them.
+        """
+        hits = [
+            (_area(table["box"]), index)
+            for index, table in enumerate(self.tables)
+            if _contains(table["box"], x, y)
+        ]
+        return min(hits)[1] if hits else None
+
+    def reassign_to(self, x: float, y: float) -> Optional[str]:
+        """Move the armed chair to whatever table is under the point.
+
+        Returns "table", "zone", or "unassigned"; None when nothing is armed.
+        A counted_zone is judged by its seat slots and ``unit_chair_assignments``
+        hands those an empty list, so a chair parked on a bar does nothing at
+        all -- it is left unassigned rather than pretending it attached.
+        """
+        if self.pending_reassign is None:
+            return None
+        kind, table_index, chair_index = self.pending_reassign
+        self._snapshot()
+
+        if kind == "orphan":
+            box = self.unassigned_chairs.pop(chair_index)
+        else:
+            box = self.tables[table_index]["chairs"].pop(chair_index)
+
+        target = self._table_at(x, y)
+        self.pending_reassign = None
+        self.selected = None
+        if target is None:
+            self.unassigned_chairs.append(box)
+            return "unassigned"
+        if self.tables[target].get("kind") == "counted_zone":
+            self.unassigned_chairs.append(box)
+            return "zone"
+        self.tables[target]["chairs"].append(box)
+        return "table"
 
     def add_floor_point(self, x: float, y: float) -> int:
         """Collect one of the four floor corners; the fifth click starts over.
@@ -300,7 +356,7 @@ def _preseed(frame, det_model_path):
 
 
 HELP_TEXT = (
-    "[t]able  [c]hair  [z]one(bar)  seat[x]  [f]loor  [d]elete  [u]ndo  [s]ave  [q]uit"
+    "[t]able [c]hair [z]one(bar) seat[x] [f]loor [m]ove-chair [d]elete [u]ndo [s]ave [q]uit"
 )
 
 TABLE_COLOR = (80, 200, 80)
@@ -356,6 +412,9 @@ def _draw(frame, state, mode, drag):
                       SELECT_COLOR if selected else ORPHAN_CHAIR_COLOR, 2)
         cv2.putText(canvas, "?", (ox1 + 4, oy2 - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, ORPHAN_CHAIR_COLOR, 2, cv2.LINE_AA)
+    if state.pending_reassign is not None:
+        cv2.putText(canvas, "MOVE: click the target table", (12, 52),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, SELECT_COLOR, 2, cv2.LINE_AA)
     for index, (px, py) in enumerate(state.floor_points, start=1):
         cv2.circle(canvas, (int(px), int(py)), 7, FLOOR_COLOR, -1)
         cv2.putText(canvas, str(index), (int(px) + 10, int(py) - 8),
@@ -395,6 +454,18 @@ def run_gui(frame, state, output_path, source):
             box = (min(x1, x), min(y1, y), max(x1, x), max(y1, y))
             drag_start = None
             drag_current = None
+            if state.pending_reassign is not None:
+                result = state.reassign_to(x, y)
+                if result == "table":
+                    print("의자를 그 테이블로 옮겼습니다")
+                elif result == "zone":
+                    print(
+                        "바 구역은 자리 칸이 판정 단위라 의자를 붙여도 쓰이지 "
+                        "않습니다 — 소속 미정으로 두었습니다"
+                    )
+                else:
+                    print("의자를 소속 미정으로 두었습니다")
+                return
             if mode == "floor":
                 count = state.add_floor_point(x, y)
                 if count == FLOOR_REFERENCE_POINTS:
@@ -434,6 +505,11 @@ def run_gui(frame, state, output_path, source):
             mode = "seat"
         elif key == ord("f"):
             mode = "floor"
+        elif key == ord("m"):
+            if state.begin_reassign():
+                print("옮길 테이블을 클릭하세요 (빈 곳을 클릭하면 소속 미정)")
+            else:
+                print("먼저 옮길 의자를 클릭해 선택하세요")
         elif key == ord("d"):
             state.delete_selected()
         elif key == ord("u"):

@@ -291,5 +291,114 @@ class FloorPointTests(unittest.TestCase):
         self.assertEqual(restored.floor_points[2], (95.0, 80.0))
 
 
+class ReassignChairTests(unittest.TestCase):
+    """Move a chair to another table without redrawing its box.
+
+    Delete-and-redraw loses the box position, which is the one thing the
+    installer got right.  Only the ownership is wrong, so only the ownership
+    should have to change.
+    """
+
+    def _two_tables_one_chair(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 300.0))   # index 0
+        state.add_table((500.0, 100.0, 700.0, 300.0))   # index 1
+        state.selected = ("table", 0, -1)
+        state.add_chair((150.0, 320.0, 200.0, 380.0))
+        return state
+
+    def test_begin_needs_a_chair_selected(self):
+        state = self._two_tables_one_chair()
+        state.selected = None
+        self.assertFalse(state.begin_reassign())
+        state.selected = ("table", 0, -1)
+        self.assertFalse(state.begin_reassign())
+
+    def test_begin_accepts_an_attached_chair(self):
+        state = self._two_tables_one_chair()
+        state.select_at(175.0, 350.0)
+        self.assertEqual(state.selected, ("chair", 0, 0))
+        self.assertTrue(state.begin_reassign())
+
+    def test_begin_accepts_an_orphan_chair(self):
+        state = CalibrationState()
+        state.add_chair((10.0, 10.0, 40.0, 40.0))
+        state.select_at(20.0, 20.0)
+        self.assertTrue(state.begin_reassign())
+
+    def test_chair_moves_to_the_clicked_table(self):
+        state = self._two_tables_one_chair()
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        self.assertEqual(state.reassign_to(600.0, 200.0), "table")
+        self.assertEqual(len(state.tables[0]["chairs"]), 0)
+        self.assertEqual(len(state.tables[1]["chairs"]), 1)
+        self.assertEqual(state.tables[1]["chairs"][0], (150.0, 320.0, 200.0, 380.0))
+
+    def test_clicking_empty_space_unassigns(self):
+        state = self._two_tables_one_chair()
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        self.assertEqual(state.reassign_to(900.0, 900.0), "unassigned")
+        self.assertEqual(len(state.tables[0]["chairs"]), 0)
+        self.assertEqual(len(state.unassigned_chairs), 1)
+
+    def test_clicking_a_bar_zone_unassigns_and_says_so(self):
+        # A counted_zone judges by seat slots; unit_chair_assignments() hands
+        # its seats an empty list, so a chair parked on a bar does nothing at
+        # all.  Pretending it attached would be a lie the installer acts on.
+        state = self._two_tables_one_chair()
+        state.selected = None
+        state.add_zone((800.0, 100.0, 1000.0, 200.0))
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        self.assertEqual(state.reassign_to(900.0, 150.0), "zone")
+        self.assertEqual(len(state.unassigned_chairs), 1)
+
+    def test_orphan_moves_onto_a_table(self):
+        state = CalibrationState()
+        state.add_table((100.0, 100.0, 300.0, 300.0))
+        state.selected = None
+        state.add_chair((900.0, 900.0, 940.0, 940.0))
+        state.select_at(920.0, 920.0)
+        state.begin_reassign()
+        self.assertEqual(state.reassign_to(200.0, 200.0), "table")
+        self.assertEqual(len(state.tables[0]["chairs"]), 1)
+        self.assertEqual(state.unassigned_chairs, [])
+
+    def test_reassign_clears_the_pending_chair(self):
+        state = self._two_tables_one_chair()
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        state.reassign_to(600.0, 200.0)
+        self.assertIsNone(state.pending_reassign)
+
+    def test_reassign_without_begin_does_nothing(self):
+        state = self._two_tables_one_chair()
+        self.assertIsNone(state.reassign_to(600.0, 200.0))
+        self.assertEqual(len(state.tables[0]["chairs"]), 1)
+
+    def test_undo_restores_the_previous_owner(self):
+        state = self._two_tables_one_chair()
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        state.reassign_to(600.0, 200.0)
+        state.undo()
+        self.assertEqual(len(state.tables[0]["chairs"]), 1)
+        self.assertEqual(len(state.tables[1]["chairs"]), 0)
+
+    def test_target_pick_ignores_chairs_on_the_target(self):
+        # select_at() prefers the smallest box, so clicking a table crowded
+        # with chairs selects a chair.  Picking a reassign target must look
+        # at tables only, or a busy table can never be chosen.
+        state = self._two_tables_one_chair()
+        state.selected = ("table", 1, -1)
+        state.add_chair((550.0, 150.0, 650.0, 250.0))
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        self.assertEqual(state.reassign_to(600.0, 200.0), "table")
+        self.assertEqual(len(state.tables[1]["chairs"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

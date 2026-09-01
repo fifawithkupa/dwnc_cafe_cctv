@@ -29,7 +29,9 @@ from install.floor_projection import FloorProjectionError, build_transform, floo
 from engine.seatnow_layout import COUNTED_ZONE_KIND, SeatLayout
 
 
-FLOORPLAN_SCHEMA_VERSION = 1
+# 2 added angle/shape on furniture and capacity on chairs.  Older files
+# still open: everything new has a default that means "as it was".
+FLOORPLAN_SCHEMA_VERSION = 2
 EXTENT_LONG_SIDE = 1000.0
 MARGIN_FRACTION = 0.08
 
@@ -55,6 +57,11 @@ class FloorSeat:
     h: float
     image_anchor: Point
     needs_review: bool = False
+    # Degrees clockwise.  A cafe's tables are rarely square to the walls, and
+    # a map where they all are does not look like the room.
+    angle: float = 0.0
+    # "rect" or "round".  A round table reads as one at a glance.
+    shape: str = "rect"
 
 
 @dataclass(frozen=True)
@@ -66,6 +73,10 @@ class FloorChair:
     h: float
     image_anchor: Point
     needs_review: bool = False
+    # How many people it seats.  A two-person bench is one chair in the
+    # layout and one chair here, but a customer must see it holds two.
+    # Judgement is unaffected: a table is one unit whatever sits at it.
+    capacity: int = 1
 
 
 @dataclass(frozen=True)
@@ -88,6 +99,7 @@ class Landmark:
     y: float
     w: float
     h: float
+    angle: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -111,20 +123,42 @@ SIDE_ORDER = ("top", "bottom", "top", "bottom", "right", "left")
 CHAIR_GAP = 0.55  # of a chair, between the table edge and the chair
 
 
-def _side_positions(seat: "FloorSeat", side: str, count: int, size: float):
-    """Evenly spaced points along one side of a table, just outside it."""
-    gap = size * CHAIR_GAP
+def _turn(point: Point, degrees: float) -> Point:
+    """Rotate a point about the origin, clockwise on screen."""
+    if not degrees:
+        return point
+    radians = math.radians(degrees)
+    cosine, sine = math.cos(radians), math.sin(radians)
+    return (
+        point[0] * cosine - point[1] * sine,
+        point[0] * sine + point[1] * cosine,
+    )
+
+
+def _side_positions(seat: "FloorSeat", side: str, sizes: List[float]):
+    """Points along one side of a table, just outside it, following its angle.
+
+    Laid out by width rather than by count: a two-person bench is wider than
+    the chair beside it, and spacing everything by the first one's size drops
+    the bench on top of its neighbour.
+    """
+    span = sum(size * 1.25 for size in sizes)
     points = []
-    for index in range(count):
-        offset = (index - (count - 1) / 2.0) * size * 1.25
+    cursor = -span / 2.0
+    for size in sizes:
+        along = cursor + size * 1.25 / 2.0
+        cursor += size * 1.25
+        gap = size * CHAIR_GAP
         if side == "top":
-            points.append((seat.x + offset, seat.y - seat.h / 2 - gap - size / 2))
+            local = (along, -seat.h / 2 - gap - size / 2)
         elif side == "bottom":
-            points.append((seat.x + offset, seat.y + seat.h / 2 + gap + size / 2))
+            local = (along, seat.h / 2 + gap + size / 2)
         elif side == "right":
-            points.append((seat.x + seat.w / 2 + gap + size / 2, seat.y + offset))
+            local = (seat.w / 2 + gap + size / 2, along)
         else:
-            points.append((seat.x - seat.w / 2 - gap - size / 2, seat.y + offset))
+            local = (-seat.w / 2 - gap - size / 2, along)
+        turned = _turn(local, seat.angle)
+        points.append((seat.x + turned[0], seat.y + turned[1]))
     return points
 
 
@@ -160,8 +194,8 @@ def arrange_chairs(
             count = per_side.get(side, 0)
             if not count:
                 continue
-            size = placed[indices[cursor]].w
-            for (x, y) in _side_positions(seat, side, count, size):
+            sizes = [placed[index].w for index in indices[cursor:cursor + count]]
+            for (x, y) in _side_positions(seat, side, sizes):
                 placed[indices[cursor]] = replace(
                     placed[indices[cursor]], x=x, y=y, needs_review=False
                 )
@@ -521,6 +555,8 @@ def save_floorplan(plan: FloorPlan, path: Path) -> None:
                     round(seat.image_anchor[1], 2),
                 ],
                 "needs_review": seat.needs_review,
+                "angle": round(seat.angle, 2),
+                "shape": seat.shape,
             }
             for seat in plan.seats
         ],
@@ -536,6 +572,7 @@ def save_floorplan(plan: FloorPlan, path: Path) -> None:
                     round(chair.image_anchor[1], 2),
                 ],
                 "needs_review": chair.needs_review,
+                "capacity": chair.capacity,
             }
             for chair in plan.chairs
         ],
@@ -547,6 +584,7 @@ def save_floorplan(plan: FloorPlan, path: Path) -> None:
                 "y": round(landmark.y, 2),
                 "w": round(landmark.w, 2),
                 "h": round(landmark.h, 2),
+                "angle": round(landmark.angle, 2),
             }
             for landmark in plan.landmarks
         ],
@@ -588,6 +626,8 @@ def load_floorplan(path: Path) -> FloorPlan:
                     float(seat["image_anchor"][1]),
                 ),
                 needs_review=bool(seat.get("needs_review", False)),
+                angle=float(seat.get("angle", 0.0)),
+                shape=str(seat.get("shape", "rect")),
             )
             for seat in data["seats"]
         ),
@@ -603,6 +643,7 @@ def load_floorplan(path: Path) -> FloorPlan:
                     float(chair["image_anchor"][1]),
                 ),
                 needs_review=bool(chair.get("needs_review", False)),
+                capacity=int(chair.get("capacity", 1)),
             )
             for chair in data["chairs"]
         ),
@@ -614,6 +655,7 @@ def load_floorplan(path: Path) -> FloorPlan:
                 y=float(landmark["y"]),
                 w=float(landmark["w"]),
                 h=float(landmark["h"]),
+                angle=float(landmark.get("angle", 0.0)),
             )
             for landmark in data["landmarks"]
         ),

@@ -97,6 +97,8 @@ def editor_state(
                 "w": seat.w,
                 "h": seat.h,
                 "needs_review": seat.needs_review,
+                "angle": seat.angle,
+                "shape": seat.shape,
                 "state": states.get(seat.seat_id, "unknown"),
             }
             for seat in plan.seats
@@ -110,6 +112,7 @@ def editor_state(
                 "w": chair.w,
                 "h": chair.h,
                 "needs_review": chair.needs_review,
+                "capacity": chair.capacity,
             }
             for chair in plan.chairs
         ],
@@ -121,6 +124,7 @@ def editor_state(
                 "y": landmark.y,
                 "w": landmark.w,
                 "h": landmark.h,
+                "angle": landmark.angle,
             }
             for landmark in plan.landmarks
         ],
@@ -181,6 +185,8 @@ def apply_edits(
             y=float(seat_edits[seat.seat_id]["y"]),
             w=float(seat_edits[seat.seat_id]["w"]),
             h=float(seat_edits[seat.seat_id]["h"]),
+            angle=float(seat_edits[seat.seat_id].get("angle", seat.angle)),
+            shape=str(seat_edits[seat.seat_id].get("shape", seat.shape)),
             needs_review=False,
         )
         if seat.seat_id in seat_edits
@@ -212,6 +218,7 @@ def apply_edits(
                 y=float(edit["y"]),
                 w=float(edit["w"]),
                 h=float(edit["h"]),
+                capacity=max(1, int(edit.get("capacity", chair.capacity))),
                 needs_review=False,
             )
         )
@@ -225,6 +232,7 @@ def apply_edits(
             y=float(landmark["y"]),
             w=float(landmark["w"]),
             h=float(landmark["h"]),
+            angle=float(landmark.get("angle", 0.0)),
         )
         for landmark in payload.get("landmarks", [])
     )

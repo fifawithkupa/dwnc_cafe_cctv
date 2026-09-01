@@ -5,15 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SeatNow 평면도 편집기</title>
 <style>
-  body { margin: 0; font-family: system-ui, sans-serif; background: #f2f3f5; color: #1c2128; }
+  /* Column layout rather than a magic height: the toolbar wraps to two rows
+     on a phone and any fixed number leaves the page scrolling. */
+  html, body { height: 100%; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f2f3f5; color: #1c2128;
+         display: flex; flex-direction: column; overflow: hidden; }
   header { padding: 10px 14px; background: #ffffff; border-bottom: 1px solid #d6dae0;
-           display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+           display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: none; }
   button { background: #ffffff; color: #1c2128; border: 1px solid #b9c0c9; border-radius: 6px;
            padding: 7px 12px; font-size: 14px; cursor: pointer; }
   button.on { background: #2f6fd0; border-color: #2f6fd0; color: #ffffff; }
   button.primary { background: #1f7a3d; border-color: #1f7a3d; color: #ffffff; }
   #hint { margin-left: auto; font-size: 13px; color: #5b6673; }
-  svg { display: block; width: 100vw; height: calc(100vh - 128px); background: #e9eaec; touch-action: none; }
+  svg { display: block; width: 100%; flex: 1 1 auto; min-height: 0; background: #e9eaec;
+        touch-action: none; }
 
   /* Architectural drawing: white rooms, dark outlines, thick walls. */
   .wall { fill: #ffffff; stroke: #6f7681; stroke-width: 14; stroke-linejoin: round; }
@@ -25,6 +30,11 @@
      must read at a glance that it is not somewhere to sit. */
   .area.entrance { fill: #eef4ff; stroke: #2f6fd0; stroke-width: 6; stroke-dasharray: 18 12; }
   .area.counter  { fill: #e6e8eb; stroke: #4b535c; stroke-width: 5; }
+  .area.sofa     { fill: #f0ece6; stroke: #7a6a56; stroke-width: 5; rx: 14; }
+  .area.window   { fill: #dcecf7; stroke: #4a90b8; stroke-width: 5; }
+  .chair.bench   { rx: 14; }
+  .handle        { fill: #ffffff; stroke: #2f6fd0; stroke-width: 3; }
+  .handle-line   { stroke: #2f6fd0; stroke-width: 2; stroke-dasharray: 5 4; }
   .counter { fill: #ffffff; stroke: #333a42; stroke-width: 3; }
   .arealabel { font-size: 22px; fill: #1c2128; font-weight: 600; }
 
@@ -41,7 +51,7 @@
   .seatlabel { font-size: 20px; font-weight: 600; fill: #1c2128; }
   text { fill: #1c2128; pointer-events: none; user-select: none; }
   footer { padding: 6px 14px; font-size: 12px; color: #5b6673; background: #ffffff;
-           border-top: 1px solid #d6dae0; line-height: 1.6; }
+           border-top: 1px solid #d6dae0; line-height: 1.6; flex: none; }
 </style>
 </head>
 <body>
@@ -50,8 +60,12 @@
   <button id="mode-wall">벽 그리기</button>
   <button id="mode-entrance">입구</button>
   <button id="mode-counter">카운터</button>
+  <button id="mode-sofa">소파</button>
+  <button id="mode-window">창문</button>
+  <button id="mode-bench">2인 의자</button>
   <button id="zoom-in">확대 +</button>
   <button id="zoom-out">축소 −</button>
+  <button id="shape-toggle">원형 / 사각</button>
   <button id="zoom-fit">화면에 맞추기</button>
   <button id="toggle-preview">미리보기</button>
   <button id="save" class="primary">저장</button>
@@ -59,8 +73,8 @@
 </header>
 <svg id="canvas"></svg>
 <footer>
-  <b>빈 곳을 끌면 화면이 움직이고, 휠을 굴리면 확대·축소됩니다.</b>
-  버튼으로도 됩니다 — 폰에서는 [확대 +] [축소 −] [화면에 맞추기]를 쓰세요.<br>
+  <b>테이블을 한 번 누르면</b> 크기 손잡이(모서리)와 회전 손잡이(위쪽)가 나옵니다.
+  [원형 / 사각]으로 모양을 바꿉니다. 빈 곳을 끌면 화면이 움직이고 휠로 확대·축소됩니다.<br>
   <b>초록 = 빈 자리 · 빨강 = 사용 중 · 회색 = 가려서 확인이 안 되는 자리</b> ·
   보라 점선 = 소속 미정 의자 (calibrate.py 에서 정합니다) · 주황 점선 = 위치 확인 필요<br>
   <b>테이블은 통째로 한 자리로 표시됩니다</b> — 4인석에 한 명만 앉아 있어도 그 테이블 전체가 빨강입니다.
@@ -75,16 +89,22 @@ let view = null;
 const canvas = document.getElementById("canvas");
 const hint = document.getElementById("hint");
 const MODES = [["mode-move", "move"], ["mode-wall", "wall"],
-               ["mode-entrance", "entrance"], ["mode-counter", "counter"]];
+               ["mode-entrance", "entrance"], ["mode-counter", "counter"],
+               ["mode-sofa", "sofa"], ["mode-window", "window"],
+               ["mode-bench", "bench"]];
 // Drawn by dragging a box, exactly like the wall.  These are the two things
 // a customer needs to orient themselves -- which door they came in and where
 // they order -- and neither is anything the camera can see.
-const DRAWN_AREAS = { entrance: "입구", counter: "카운터" };
+const DRAWN_AREAS = { entrance: "입구", counter: "카운터",
+                     sofa: "소파", window: "창문" };
 const HINTS = {
   move: "테이블과 바를 끌어서 실제 배치에 맞춥니다. 의자는 따라옵니다. 바를 돌리려면 양 끝 스툴을 끄세요.",
   wall: "화면 캡처하듯 방 전체를 대각선으로 끌어 네모를 그립니다.",
   entrance: "손님이 들어오는 문 자리를 끌어서 그립니다. 벽 위에 걸치게 그리면 됩니다.",
   counter: "주문하는 카운터를 끌어서 그립니다. 손님이 앉는 자리가 아닙니다.",
+  sofa: "벽에 붙은 소파를 벽을 따라 길게 끌어서 그립니다.",
+  window: "창문이 있는 벽을 따라 길게 끌어서 그립니다. 손님이 방향을 잡는 단서입니다.",
+  bench: "두 명이 앉는 의자를 눌러 표시합니다. 다시 누르면 1인용으로 돌아갑니다.",
 };
 
 function setMode(next) {
@@ -107,11 +127,50 @@ function node(name, attrs) {
   return element;
 }
 
+function turned(item) {
+  return item.angle ? "rotate(" + item.angle + " " + item.x + " " + item.y + ")" : null;
+}
+
 function rect(item, cls) {
-  return node("rect", {
+  if (item.shape === "round") {
+    const ellipse = node("ellipse", {
+      cx: item.x, cy: item.y, rx: item.w / 2, ry: item.h / 2, class: cls,
+    });
+    if (turned(item)) ellipse.setAttribute("transform", turned(item));
+    return ellipse;
+  }
+  const box = node("rect", {
     x: item.x - item.w / 2, y: item.y - item.h / 2,
     width: item.w, height: item.h, rx: 8, class: cls,
   });
+  if (turned(item)) box.setAttribute("transform", turned(item));
+  return box;
+}
+
+// Handles for the selected piece: a corner to resize by, and a stalk above
+// it to swing it round.  Only one is ever shown, so the map stays readable.
+let selected = null;
+
+function handleAt(item, which) {
+  const half = { x: item.w / 2, y: item.h / 2 };
+  const local = which === "size" ? { x: half.x, y: half.y }
+                                 : { x: 0, y: -half.y - 46 };
+  const radians = (item.angle || 0) * Math.PI / 180;
+  const cos = Math.cos(radians), sin = Math.sin(radians);
+  return {
+    x: item.x + local.x * cos - local.y * sin,
+    y: item.y + local.x * sin + local.y * cos,
+  };
+}
+
+function drawHandles(item) {
+  const spin = handleAt(item, "spin");
+  const size = handleAt(item, "size");
+  canvas.appendChild(node("line", { x1: item.x, y1: item.y, x2: spin.x, y2: spin.y,
+                                    class: "handle-line" }));
+  canvas.appendChild(node("circle", { cx: spin.x, cy: spin.y, r: 15, class: "handle" }));
+  canvas.appendChild(node("rect", { x: size.x - 13, y: size.y - 13, width: 26, height: 26,
+                                    rx: 4, class: "handle" }));
 }
 
 function label(item, text, cls) {
@@ -180,7 +239,9 @@ function draw() {
     }
   }
   for (const chair of state.chairs) {
-    canvas.appendChild(rect(chair, chair.seat_id ? "chair" : "chair orphan"));
+    const cls = (chair.seat_id ? "chair" : "chair orphan")
+      + (chair.capacity > 1 ? " bench" : "");
+    canvas.appendChild(rect(chair, cls));
   }
   // Labels last, so a chair can never cover the name of the seat it sits at.
   // Stools are not labelled one by one: six names crowded along a counter
@@ -200,6 +261,8 @@ function draw() {
       counter.zone_id + " (" + stools.length + "석)", "seatlabel"
     ));
   }
+  // Handles last: under the furniture they cannot be grabbed.
+  if (selected && mode === "move") drawHandles(selected);
 }
 
 // Screen pixels -> map units.  Doing this arithmetically means redoing what
@@ -219,7 +282,12 @@ function toCanvas(event) {
 }
 
 function hits(item, point) {
-  return Math.abs(item.x - point.x) <= item.w / 2 && Math.abs(item.y - point.y) <= item.h / 2;
+  // Undo the piece's own turn, then it is a plain box test again.
+  const radians = -(item.angle || 0) * Math.PI / 180;
+  const dx = point.x - item.x, dy = point.y - item.y;
+  const lx = dx * Math.cos(radians) - dy * Math.sin(radians);
+  const ly = dx * Math.sin(radians) + dy * Math.cos(radians);
+  return Math.abs(lx) <= item.w / 2 && Math.abs(ly) <= item.h / 2;
 }
 
 function zoneOf(seat) {
@@ -233,6 +301,15 @@ function nearCounter(counter, point) {
     : Math.max(0, Math.min(1, ((point.x - counter.x1) * vx + (point.y - counter.y1) * vy) / len2));
   return Math.hypot(point.x - (counter.x1 + vx * ratio),
                     point.y - (counter.y1 + vy * ratio)) <= counter.depth;
+}
+
+function handleHit(point) {
+  if (!selected || mode !== "move") return null;
+  for (const which of ["spin", "size"]) {
+    const at = handleAt(selected, which);
+    if (Math.hypot(point.x - at.x, point.y - at.y) <= 22) return which;
+  }
+  return null;
 }
 
 function itemAt(point) {
@@ -325,6 +402,15 @@ document.getElementById("zoom-in").onclick = () => zoomBy(1 / 1.25);
 document.getElementById("zoom-out").onclick = () => zoomBy(1.25);
 document.getElementById("zoom-fit").onclick = () => { fitView(); draw(); };
 
+document.getElementById("shape-toggle").onclick = () => {
+  if (!selected) { hint.textContent = "먼저 테이블을 한 번 누르세요."; return; }
+  selected.shape = selected.shape === "round" ? "rect" : "round";
+  if (selected.shape === "round") selected.h = selected.w;  // 둥근 것은 원으로
+  hint.textContent = selected.shape === "round" ? "원형으로 바꿨습니다." : "사각으로 바꿨습니다.";
+  draw();
+  reArrange();
+};
+
 canvas.addEventListener("wheel", (event) => {
   if (!state) return;
   event.preventDefault();
@@ -353,7 +439,33 @@ canvas.addEventListener("pointerdown", (event) => {
     return;
   }
 
+  if (mode === "bench") {
+    const chair = state.chairs.find((candidate) => hits(candidate, point));
+    if (!chair) {
+      hint.textContent = "의자를 눌러주세요.";
+      return;
+    }
+    // Width carries it: the server spaces a side by the widths it is given,
+    // so a bench pushes its neighbours along instead of landing on them.
+    const wide = chair.capacity > 1;
+    chair.capacity = wide ? 1 : 2;
+    chair.w = wide ? chair.w / 2.4 : chair.w * 2.4;
+    hint.textContent = wide ? "1인용으로 되돌렸습니다." : "2인 의자로 표시했습니다.";
+    draw();
+    reArrange();
+    return;
+  }
+
+  const grip = handleHit(point);
+  if (grip) {
+    dragging = { kind: grip, item: selected };
+    offset = { x: 0, y: 0 };
+    canvas.setPointerCapture(event.pointerId);
+    return;
+  }
+
   const hit = itemAt(point);
+  selected = hit && (hit.kind === "seat" || hit.kind === "area") ? hit.item : null;
 
   if (!hit) {
     // Empty space drags the paper.  Anchoring on screen pixels keeps the pan
@@ -406,6 +518,27 @@ canvas.addEventListener("pointermove", (event) => {
   }
 
   const item = dragging.item;
+
+  if (dragging.kind === "spin") {
+    // Angle from the piece's middle to the cursor; the stalk sticks up, so
+    // straight up must read as zero.
+    let degrees = Math.atan2(point.y - item.y, point.x - item.x) * 180 / Math.PI + 90;
+    if (!event.shiftKey) degrees = Math.round(degrees / 5) * 5;
+    item.angle = ((degrees % 360) + 360) % 360;
+    draw();
+    return;
+  }
+
+  if (dragging.kind === "size") {
+    const radians = -(item.angle || 0) * Math.PI / 180;
+    const dx = point.x - item.x, dy = point.y - item.y;
+    item.w = Math.max(30, Math.abs(dx * Math.cos(radians) - dy * Math.sin(radians)) * 2);
+    item.h = Math.max(30, Math.abs(dx * Math.sin(radians) + dy * Math.cos(radians)) * 2);
+    item.needs_review = false;
+    draw();
+    return;
+  }
+
   item.x = point.x - offset.x;
   item.y = point.y - offset.y;
   item.needs_review = false;
@@ -423,9 +556,14 @@ async function reArrange() {
   });
   const data = await response.json();
   if (data.error) { hint.textContent = data.error; return; }
+  // The server hands back new objects, so a selection held by reference
+  // would point at a piece that is no longer on the map and its handles
+  // would sit where the table used to be.
+  const keep = selected && selected.seat_id;
   state.seats = data.seats;
   state.chairs = data.chairs;
   state.counters = data.counters;
+  selected = keep ? state.seats.find((seat) => seat.seat_id === keep) || null : selected;
   draw();
 }
 

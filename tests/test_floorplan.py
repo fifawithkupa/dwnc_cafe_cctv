@@ -14,6 +14,7 @@ from pathlib import Path
 from install.floor_projection import FloorProjectionError
 from install.floorplan import (
     EXTENT_LONG_SIDE,
+    FLOORPLAN_SCHEMA_VERSION,
     FloorChair,
     FloorSeat,
     arrange_chairs,
@@ -617,3 +618,89 @@ class BarStaysPutTests(unittest.TestCase):
                 continue
             self.assertAlmostEqual(before.x, after.x, places=6)
             self.assertAlmostEqual(before.y, after.y, places=6)
+
+
+class RealisticFurnitureTests(unittest.TestCase):
+    """The map's only job is to look like the room.
+
+    Judgement never reads it (tests/test_judgement_inputs.py), so shape,
+    angle and bench width are free to describe the furniture as it actually
+    is: a long table turned to the window, a round metal table, a two-person
+    bench that seats more than the chair beside it.
+    """
+
+    def _table(self, **kwargs):
+        base = dict(seat_id="T1", kind="table", x=500.0, y=500.0,
+                    w=200.0, h=100.0, image_anchor=(0.0, 0.0))
+        base.update(kwargs)
+        return FloorSeat(**base)
+
+    def _chair(self, index, **kwargs):
+        base = dict(seat_id="T1", x=0.0, y=0.0, w=46.0, h=46.0,
+                    image_anchor=(float(index), 0.0))
+        base.update(kwargs)
+        return FloorChair(**base)
+
+    def test_a_table_defaults_to_a_square_facing_forward(self):
+        table = self._table()
+        self.assertEqual(table.angle, 0.0)
+        self.assertEqual(table.shape, "rect")
+
+    def test_chairs_turn_with_the_table(self):
+        upright = arrange_chairs((self._table(),), (self._chair(1),))[0]
+        turned = arrange_chairs((self._table(angle=90.0),), (self._chair(1),))[0]
+        # The first chair goes above an upright table; turning the table a
+        # quarter turn must swing it to the side, not leave it hanging there.
+        self.assertLess(upright.y, 500.0)
+        self.assertAlmostEqual(upright.x, 500.0, places=3)
+        self.assertAlmostEqual(turned.y, 500.0, places=3)
+        self.assertNotAlmostEqual(turned.x, 500.0, places=1)
+
+    def test_a_two_person_bench_does_not_sit_on_its_neighbour(self):
+        chairs = (self._chair(1, w=120.0), self._chair(2), self._chair(3))
+        placed = arrange_chairs((self._table(),), chairs)
+        top = [chair for chair in placed if chair.y < 500.0]
+        self.assertGreaterEqual(len(top), 2)
+        top.sort(key=lambda chair: chair.x)
+        for left, right in zip(top, top[1:]):
+            self.assertGreaterEqual(
+                right.x - left.x, (left.w + right.w) / 2 - 1e-6,
+                "넓은 의자가 옆 의자를 덮었다")
+
+    def test_the_new_fields_survive_a_save(self):
+        plan = FloorPlan(
+            schema_version=FLOORPLAN_SCHEMA_VERSION,
+            extent=(1000.0, 1000.0),
+            seats=(self._table(angle=37.0, shape="round"),),
+            chairs=(self._chair(1, w=120.0, capacity=2),),
+            landmarks=(Landmark(kind="sofa", label="소파", x=1.0, y=2.0,
+                                w=300.0, h=60.0, angle=90.0),),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plan.json"
+            save_floorplan(plan, path)
+            back = load_floorplan(path)
+        self.assertAlmostEqual(back.seats[0].angle, 37.0)
+        self.assertEqual(back.seats[0].shape, "round")
+        self.assertEqual(back.chairs[0].capacity, 2)
+        self.assertAlmostEqual(back.landmarks[0].angle, 90.0)
+
+    def test_a_plan_written_before_these_fields_still_opens(self):
+        # An install done last week must not need a migration to be edited.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "old.json"
+            path.write_text(json.dumps({
+                "schema_version": 1,
+                "extent": {"width": 100.0, "height": 100.0},
+                "seats": [{"seat_id": "T1", "kind": "table", "x": 1.0, "y": 2.0,
+                           "w": 3.0, "h": 4.0, "image_anchor": [0.0, 0.0]}],
+                "chairs": [{"seat_id": "T1", "x": 1.0, "y": 2.0, "w": 3.0,
+                            "h": 4.0, "image_anchor": [0.0, 0.0]}],
+                "landmarks": [{"kind": "area", "label": "주방", "x": 1.0,
+                               "y": 2.0, "w": 3.0, "h": 4.0}],
+            }, ensure_ascii=False), encoding="utf-8")
+            back = load_floorplan(path)
+        self.assertEqual(back.seats[0].angle, 0.0)
+        self.assertEqual(back.seats[0].shape, "rect")
+        self.assertEqual(back.chairs[0].capacity, 1)
+        self.assertEqual(back.landmarks[0].angle, 0.0)

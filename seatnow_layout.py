@@ -47,6 +47,23 @@ def _box_contains(outer: Box, inner: Box, tolerance: float = 1.0) -> bool:
     )
 
 
+def _overlap_area(a: Box, b: Box) -> float:
+    width = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    height = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    return width * height
+
+
+def _best_covering_seat(chair_box: Box, seats):
+    """The seat slot a chair overlaps most, or None if it touches none."""
+    best = None
+    best_area = 0.0
+    for seat in seats:
+        area = _overlap_area(chair_box, seat.box)
+        if area > best_area:
+            best, best_area = seat, area
+    return best
+
+
 @dataclass(frozen=True)
 class LayoutChair:
     id: int
@@ -220,19 +237,35 @@ class SeatLayout:
         ]
 
     def unit_chair_assignments(self) -> Dict[int, List[int]]:
-        """Chair indices per judgement-unit index.
+        """Chair indices per judgement-unit index, into ``chair_boxes()``.
 
-        Chairs belong to plain tables only; counted_zone seats get an empty
-        list so downstream indexing stays uniform.
+        A plain table takes all of its chairs.  A counted_zone hands each of
+        its chairs to the one seat slot it covers most, because a bag on one
+        bar stool occupies that stool -- giving the chair to every slot would
+        fill the whole bar from a single bag, and giving it to none would
+        throw the evidence away.
+
+        The cursor advances for a zone's chairs too.  It used to skip them
+        while ``chair_boxes()`` still counted them, so every table after a
+        zone pointed at boxes that were not its own.
         """
         assignments: Dict[int, List[int]] = {}
         unit_index = 0
         chair_cursor = 0
         for table in self.tables:
             if table.kind == COUNTED_ZONE_KIND:
-                for _ in table.seats:
-                    assignments[unit_index] = []
-                    unit_index += 1
+                seat_units = {
+                    seat.id: unit_index + offset
+                    for offset, seat in enumerate(table.seats)
+                }
+                for offset in range(len(table.seats)):
+                    assignments[unit_index + offset] = []
+                for offset, chair in enumerate(table.chairs):
+                    best = _best_covering_seat(chair.box, table.seats)
+                    if best is not None:
+                        assignments[seat_units[best.id]].append(chair_cursor + offset)
+                chair_cursor += len(table.chairs)
+                unit_index += len(table.seats)
                 continue
             count = len(table.chairs)
             assignments[unit_index] = list(range(chair_cursor, chair_cursor + count))

@@ -10,6 +10,7 @@ from pathlib import Path
 from seatnow_layout import (
     FloorReference,
     LayoutChair,
+    LayoutSeat,
     LayoutError,
     LayoutTable,
     SeatLayout,
@@ -470,6 +471,85 @@ class RefuseIncompleteLayoutTests(unittest.TestCase):
         from seatnow import _require_complete_layout
 
         self.assertIsNone(_require_complete_layout(None))
+
+
+class ZoneChairTests(unittest.TestCase):
+    """A chair parked at a bar stool belongs to that one seat slot.
+
+    Two things had to be true before this could work at all.  chair_boxes()
+    already included a zone's chairs, but unit_chair_assignments() skipped a
+    zone without advancing its cursor -- so every table after a zone pointed
+    at the wrong boxes.  And a chair on a zone must land on the seat slot it
+    covers, not on all of them: one bag would otherwise fill the whole bar.
+    """
+
+    def _layout(self, zone_chairs=(), zone_first=True):
+        zone = LayoutTable(
+            id=7,
+            name="BAR",
+            box=(1000.0, 100.0, 1600.0, 300.0),
+            kind="counted_zone",
+            seats=(
+                LayoutSeat(id=1, box=(1000.0, 100.0, 1200.0, 300.0)),
+                LayoutSeat(id=2, box=(1200.0, 100.0, 1400.0, 300.0)),
+                LayoutSeat(id=3, box=(1400.0, 100.0, 1600.0, 300.0)),
+            ),
+            chairs=tuple(
+                LayoutChair(id=index, box=box)
+                for index, box in enumerate(zone_chairs, start=1)
+            ),
+        )
+        table = LayoutTable(
+            id=1,
+            name="T1",
+            box=(100.0, 500.0, 300.0, 700.0),
+            chairs=(LayoutChair(id=1, box=(80.0, 520.0, 120.0, 580.0)),),
+        )
+        tables = (zone, table) if zone_first else (table, zone)
+        return SeatLayout(
+            schema_version=3,
+            source={"width": 1920, "height": 1080},
+            tables=tables,
+        )
+
+    def test_table_after_a_zone_keeps_its_own_chair(self):
+        # The cursor bug: with the zone first and holding one chair, T1's
+        # link used to point at the zone's chair instead of its own.
+        layout = self._layout(zone_chairs=[(1220.0, 260.0, 1280.0, 340.0)])
+        boxes = layout.chair_boxes()
+        assignments = layout.unit_chair_assignments()
+        table_unit = len(layout.tables[0].seats)  # zone contributes one per seat
+        linked = assignments[table_unit]
+        self.assertEqual([boxes[index] for index in linked],
+                         [(80.0, 520.0, 120.0, 580.0)])
+
+    def test_zone_chair_lands_on_the_seat_it_covers(self):
+        layout = self._layout(zone_chairs=[(1220.0, 120.0, 1380.0, 280.0)])
+        assignments = layout.unit_chair_assignments()
+        # seat slots are units 0,1,2 in zone order
+        self.assertEqual(assignments[0], [])
+        self.assertEqual(len(assignments[1]), 1)
+        self.assertEqual(assignments[2], [])
+
+    def test_zone_chair_covering_nothing_is_dropped(self):
+        layout = self._layout(zone_chairs=[(1700.0, 700.0, 1750.0, 760.0)])
+        assignments = layout.unit_chair_assignments()
+        for unit in range(3):
+            self.assertEqual(assignments[unit], [])
+
+    def test_zone_without_chairs_is_unchanged(self):
+        layout = self._layout()
+        assignments = layout.unit_chair_assignments()
+        self.assertEqual([assignments[unit] for unit in range(3)], [[], [], []])
+
+    def test_every_chair_index_is_valid(self):
+        layout = self._layout(
+            zone_chairs=[(1220.0, 120.0, 1380.0, 280.0), (1420.0, 120.0, 1580.0, 280.0)]
+        )
+        boxes = layout.chair_boxes()
+        for indices in layout.unit_chair_assignments().values():
+            for index in indices:
+                self.assertLess(index, len(boxes))
 
 
 if __name__ == "__main__":

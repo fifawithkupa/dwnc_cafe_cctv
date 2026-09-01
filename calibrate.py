@@ -201,10 +201,9 @@ class CalibrationState:
         if target is None:
             self.unassigned_chairs.append(box)
             return "unassigned"
-        if self.tables[target].get("kind") == "counted_zone":
-            self.unassigned_chairs.append(box)
-            return "zone"
         self.tables[target]["chairs"].append(box)
+        if self.tables[target].get("kind") == "counted_zone":
+            return "zone"
         return "table"
 
     def add_floor_point(self, x: float, y: float) -> int:
@@ -460,8 +459,8 @@ def run_gui(frame, state, output_path, source):
                     print("의자를 그 테이블로 옮겼습니다")
                 elif result == "zone":
                     print(
-                        "바 구역은 자리 칸이 판정 단위라 의자를 붙여도 쓰이지 "
-                        "않습니다 — 소속 미정으로 두었습니다"
+                        "의자를 그 바 구역으로 옮겼습니다 — 겹치는 자리 칸의 "
+                        "증거로 쓰입니다 (칸이 아직 없으면 칸을 그은 뒤부터)"
                     )
                 else:
                     print("의자를 소속 미정으로 두었습니다")

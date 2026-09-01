@@ -343,17 +343,29 @@ class ReassignChairTests(unittest.TestCase):
         self.assertEqual(len(state.tables[0]["chairs"]), 0)
         self.assertEqual(len(state.unassigned_chairs), 1)
 
-    def test_clicking_a_bar_zone_unassigns_and_says_so(self):
-        # A counted_zone judges by seat slots; unit_chair_assignments() hands
-        # its seats an empty list, so a chair parked on a bar does nothing at
-        # all.  Pretending it attached would be a lie the installer acts on.
+    def test_chair_moves_onto_a_bar_zone(self):
+        # A zone's chair lands on the seat slot it covers, so a bag on one
+        # bar stool occupies that stool.
         state = self._two_tables_one_chair()
         state.selected = None
         state.add_zone((800.0, 100.0, 1000.0, 200.0))
         state.select_at(175.0, 350.0)
         state.begin_reassign()
         self.assertEqual(state.reassign_to(900.0, 150.0), "zone")
-        self.assertEqual(len(state.unassigned_chairs), 1)
+        self.assertEqual(len(state.tables[2]["chairs"]), 1)
+        self.assertEqual(state.unassigned_chairs, [])
+
+    def test_zone_without_seat_slots_still_takes_the_chair(self):
+        # The slots come later in the install; the chair waits for them
+        # rather than being thrown back to unassigned.
+        state = self._two_tables_one_chair()
+        state.selected = None
+        state.add_zone((800.0, 100.0, 1000.0, 200.0))
+        self.assertEqual(state.tables[2]["seats"], [])
+        state.select_at(175.0, 350.0)
+        state.begin_reassign()
+        state.reassign_to(900.0, 150.0)
+        self.assertEqual(len(state.tables[2]["chairs"]), 1)
 
     def test_orphan_moves_onto_a_table(self):
         state = CalibrationState()

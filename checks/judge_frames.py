@@ -258,12 +258,18 @@ def judge_directory(
     codex: str = "codex",
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     runner: Optional[Callable[[List[str], Path, float], str]] = None,
+    skip_existing: bool = False,
 ) -> List[Judgement]:
     """Count people in every clean still, one throwaway session each.
 
     A failed call costs one still, never the run: with roughly 22 stills per
     angle, throwing the batch away over a single timeout would make the
     harness more fragile than the thing it is measuring.
+
+    ``skip_existing`` reads back an answer already on disk instead of asking
+    again.  The still is what is judged, and it does not change when the run
+    that produced it is repeated -- so a run interrupted halfway, or one
+    whose stills overlap an earlier run, should not be paid for twice.
     """
     call = runner or run_codex
     output_dir = Path(output_dir)
@@ -271,6 +277,12 @@ def judge_directory(
     for frame in clean_frames(frame_dir):
         stem = frame.stem
         answer_path = output_dir / f"{stem}.json"
+        if skip_existing and answer_path.exists():
+            kept = parse_judgement(stem, answer_path.read_text(encoding="utf-8"))
+            if kept.error is None:
+                results.append(kept)
+                print(f"[{stem}] 이미 채점됨 - 건너뜀", flush=True)
+                continue
         command = build_codex_command(frame, SCHEMA_PATH, answer_path, codex=codex)
         try:
             text = call(command, answer_path, timeout)
@@ -302,12 +314,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="한 사진당 제한 시간(초)"
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="이미 채점된 사진은 다시 묻지 않는다 (중단된 실행 이어하기)",
+    )
     args = parser.parse_args(argv)
 
     output_dir = args.output or (args.frame_dir / "judge")
     codex = resolve_codex(args.codex)
     results = judge_directory(
-        args.frame_dir, output_dir, codex=codex, timeout=args.timeout
+        args.frame_dir, output_dir, codex=codex, timeout=args.timeout,
+        skip_existing=args.skip_existing,
     )
     failed = sum(result.error is not None for result in results)
     live = [result for result in results if result.error is None]

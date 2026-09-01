@@ -368,3 +368,72 @@ class BelongingsParseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkipExistingTests(unittest.TestCase):
+    """An answer already on disk must not be bought again.
+
+    The still is what Codex judges, and repeating a run produces the same
+    still.  Without this, resuming after one timeout re-asks for every photo
+    already answered, and a run whose stills overlap an earlier one pays
+    twice for the same picture.
+    """
+
+    ANSWER = json.dumps({
+        "stem": "t0000.0s", "people_total": 2, "people_seated": 2,
+        "people_standing": 0, "uncertain_people": False,
+        "tables_visible": 6, "tables_in_use": 2,
+        "tables_belongings_only": 0, "uncertain_tables": False, "note": "",
+    }, ensure_ascii=False)
+
+    def _frames(self, directory: Path, names):
+        clean = directory / CLEAN_DIR
+        clean.mkdir(parents=True)
+        for name in names:
+            (clean / f"{name}.jpg").write_bytes(b"jpeg")
+        return directory
+
+    def test_an_answered_still_is_not_asked_again(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._frames(Path(directory), ["t0000.0s", "t0005.0s"])
+            answers = root / "judge"
+            answers.mkdir()
+            (answers / "t0000.0s.json").write_text(self.ANSWER, encoding="utf-8")
+
+            asked = []
+
+            def runner(command, output_path, timeout):
+                asked.append(output_path.stem)
+                return self.ANSWER
+
+            results = judge_directory(root, answers, runner=runner,
+                                      skip_existing=True)
+
+        self.assertEqual(asked, ["t0005.0s"], "이미 채점된 사진을 다시 물었다")
+        self.assertEqual(len(results), 2, "건너뛴 사진이 결과에서 빠졌다")
+        self.assertEqual(results[0].people_total, 2)
+
+    def test_without_the_flag_everything_is_asked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._frames(Path(directory), ["t0000.0s", "t0005.0s"])
+            answers = root / "judge"
+            answers.mkdir()
+            (answers / "t0000.0s.json").write_text(self.ANSWER, encoding="utf-8")
+            asked = []
+            judge_directory(root, answers,
+                            runner=lambda c, o, t: (asked.append(o.stem), self.ANSWER)[1])
+        self.assertEqual(asked, ["t0000.0s", "t0005.0s"])
+
+    def test_a_failed_answer_is_retried(self):
+        # A stored error is not an answer; skipping it would freeze the gap.
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._frames(Path(directory), ["t0000.0s"])
+            answers = root / "judge"
+            answers.mkdir()
+            (answers / "t0000.0s.json").write_text(
+                json.dumps({"stem": "t0000.0s", "error": "TimeoutExpired"}),
+                encoding="utf-8")
+            asked = []
+            judge_directory(root, answers, skip_existing=True,
+                            runner=lambda c, o, t: (asked.append(o.stem), self.ANSWER)[1])
+        self.assertEqual(asked, ["t0000.0s"], "실패한 채점을 다시 시도하지 않았다")

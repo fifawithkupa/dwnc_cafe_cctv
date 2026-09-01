@@ -1,0 +1,13 @@
+{
+  "stem": "t0000.0s",
+  "people_total": 2,
+  "people_seated": 0,
+  "people_standing": 2,
+  "tables_visible": 6,
+  "tables_in_use": 3,
+  "tables_belongings_only": 3,
+  "uncertain_people": false,
+  "uncertain_tables": true,
+  "note": "노트북과 가방이 놓인 테이블은 사용 중으로 보이나, 중앙 흰 테이블 위 물건은 손님 짐인지 카페 비품인지 애매합니다.",
+  "error": null
+}

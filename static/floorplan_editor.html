@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SeatNow 평면도 편집기</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #14171c; color: #e8ecf1; }
+  header { padding: 10px 14px; background: #1d2129; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { background: #2b313d; color: #e8ecf1; border: 1px solid #3a4250; border-radius: 6px; padding: 7px 12px; font-size: 14px; cursor: pointer; }
+  button.on { background: #3f6fd8; border-color: #5b87ea; }
+  #hint { margin-left: auto; font-size: 13px; color: #9aa6b6; }
+  svg { display: block; width: 100vw; height: calc(100vh - 104px); background: #0f1216; touch-action: none; }
+  .seat { fill: #2f3948; stroke: #58657a; stroke-width: 2; }
+  .seat.occupied { fill: #7d2b2b; stroke: #c05252; }
+  .seat.empty    { fill: #2b6b3a; stroke: #4fbf70; }
+  .seat.unknown  { fill: #3a3f47; stroke: #6b737f; }
+  .seat.review   { stroke: #e0a13c; stroke-dasharray: 6 4; }
+  .chair { fill: #d8c04a; stroke: #b8a032; stroke-width: 1.5; }
+  .chair.orphan { fill: #a35bb0; stroke: #c47dd0; }
+  .landmark { fill: #26303c; stroke: #47566b; stroke-width: 2; }
+  .picked { stroke: #ff5757 !important; stroke-width: 4 !important; }
+  text { font-size: 13px; fill: #cbd4e1; pointer-events: none; user-select: none; }
+  footer { padding: 6px 14px; font-size: 12px; color: #8b96a6; background: #1d2129; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <button id="mode-move" class="on">끌어서 옮기기</button>
+  <button id="mode-assign">의자 소속 정하기</button>
+  <button id="mode-landmark">지형지물 추가</button>
+  <button id="toggle-preview">미리보기</button>
+  <button id="save">저장</button>
+  <span id="hint">좌석과 의자를 끌어서 실제 배치에 맞춥니다.</span>
+</header>
+<svg id="canvas"></svg>
+<footer>
+  초록 = 빈 자리 · 빨강 = 사용 중 · <b>회색 = 가려서 확인이 안 되는 자리</b> ·
+  노랑 = 의자 · 보라 = 소속 미정 의자 · 주황 점선 = 위치 확인 필요<br>
+  <b>테이블은 통째로 한 자리로 표시됩니다</b> — 4인석에 한 명만 앉아 있어도 그 테이블 전체가 빨강입니다.
+  창가 자리는 칸마다 따로 세지만, 미리보기에서는 회색입니다 (칸별 상태가 아직 리포트에 없습니다).
+</footer>
+<script>
+const SVG_NS = "http://www.w3.org/2000/svg";
+let state = null, mode = "move", preview = false, pickedChair = null;
+const canvas = document.getElementById("canvas");
+const hint = document.getElementById("hint");
+const MODES = [["mode-move", "move"], ["mode-assign", "assign"], ["mode-landmark", "landmark"]];
+
+function setMode(next) {
+  mode = next;
+  pickedChair = null;
+  for (const [id, name] of MODES) document.getElementById(id).classList.toggle("on", name === mode);
+  hint.textContent = {
+    move: "좌석과 의자를 끌어서 실제 배치에 맞춥니다.",
+    assign: "의자를 누른 뒤 붙일 좌석을 누르세요. 빈 곳을 누르면 소속 미정.",
+    landmark: "빈 곳을 눌러 입구·카운터 같은 표시를 놓습니다.",
+  }[mode];
+  draw();
+}
+for (const [id, name] of MODES) document.getElementById(id).onclick = () => setMode(name);
+
+document.getElementById("toggle-preview").onclick = (event) => {
+  preview = !preview;
+  event.target.classList.toggle("on", preview);
+  draw();
+};
+
+function rect(item, cls) {
+  const node = document.createElementNS(SVG_NS, "rect");
+  node.setAttribute("x", item.x - item.w / 2);
+  node.setAttribute("y", item.y - item.h / 2);
+  node.setAttribute("width", item.w);
+  node.setAttribute("height", item.h);
+  node.setAttribute("rx", 6);
+  node.setAttribute("class", cls);
+  return node;
+}
+
+function label(item, text) {
+  const node = document.createElementNS(SVG_NS, "text");
+  node.setAttribute("x", item.x);
+  node.setAttribute("y", item.y + 4);
+  node.setAttribute("text-anchor", "middle");
+  node.textContent = text;
+  return node;
+}
+
+function draw() {
+  if (!state) return;
+  canvas.setAttribute("viewBox", "0 0 " + state.extent.width + " " + state.extent.height);
+  canvas.innerHTML = "";
+  for (const landmark of state.landmarks) {
+    canvas.appendChild(rect(landmark, "landmark"));
+    canvas.appendChild(label(landmark, landmark.label));
+  }
+  for (const seat of state.seats) {
+    let cls = "seat";
+    if (preview) cls += " " + seat.state;
+    if (seat.needs_review) cls += " review";
+    canvas.appendChild(rect(seat, cls));
+    canvas.appendChild(label(seat, seat.seat_id));
+  }
+  for (const chair of state.chairs) {
+    const picked = pickedChair && pickedChair.image_anchor.join() === chair.image_anchor.join();
+    let cls = "chair";
+    if (!chair.seat_id) cls += " orphan";
+    if (picked) cls += " picked";
+    canvas.appendChild(rect(chair, cls));
+  }
+}
+
+function toCanvas(event) {
+  const box = canvas.getBoundingClientRect();
+  const scale = state.extent.width / box.width;
+  return { x: (event.clientX - box.left) * scale, y: (event.clientY - box.top) * scale };
+}
+
+function hits(item, point) {
+  return Math.abs(item.x - point.x) <= item.w / 2 && Math.abs(item.y - point.y) <= item.h / 2;
+}
+
+function itemAt(point) {
+  for (const chair of state.chairs) if (hits(chair, point)) return { kind: "chair", item: chair };
+  for (const seat of state.seats) if (hits(seat, point)) return { kind: "seat", item: seat };
+  for (const landmark of state.landmarks) if (hits(landmark, point)) return { kind: "landmark", item: landmark };
+  return null;
+}
+
+let dragging = null, offset = null;
+
+canvas.addEventListener("pointerdown", (event) => {
+  if (!state) return;
+  const point = toCanvas(event);
+  const hit = itemAt(point);
+
+  if (mode === "landmark") {
+    if (hit) return;
+    const text = prompt("표시 이름 (예: 입구, 카운터, 화장실)");
+    if (!text) return;
+    state.landmarks.push({ kind: "landmark", label: text, x: point.x, y: point.y, w: 120, h: 46 });
+    draw();
+    return;
+  }
+
+  if (mode === "assign") {
+    if (hit && hit.kind === "chair") { pickedChair = hit.item; draw(); return; }
+    if (!pickedChair) { hint.textContent = "먼저 옮길 의자를 누르세요."; return; }
+    pickedChair.seat_id = hit && hit.kind === "seat" ? hit.item.seat_id : null;
+    hint.textContent = pickedChair.seat_id
+      ? "의자를 " + pickedChair.seat_id + " 에 붙였습니다."
+      : "의자를 소속 미정으로 두었습니다.";
+    pickedChair = null;
+    draw();
+    return;
+  }
+
+  if (!hit) return;
+  dragging = hit.item;
+  offset = { x: point.x - hit.item.x, y: point.y - hit.item.y };
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  if (!dragging) return;
+  const point = toCanvas(event);
+  dragging.x = point.x - offset.x;
+  dragging.y = point.y - offset.y;
+  dragging.needs_review = false;
+  draw();
+});
+
+canvas.addEventListener("pointerup", () => { dragging = null; });
+
+document.getElementById("save").onclick = async () => {
+  hint.textContent = "저장 중...";
+  try {
+    const response = await fetch("/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seats: state.seats, chairs: state.chairs, landmarks: state.landmarks }),
+    });
+    const result = await response.json();
+    hint.textContent = result.ok ? "저장했습니다 (평면도 + 레이아웃)" : "저장 실패: " + result.error;
+  } catch (error) {
+    hint.textContent = "저장 실패: " + error;
+  }
+};
+
+fetch("/state")
+  .then((response) => response.json())
+  .then((data) => {
+    if (data.error) { hint.textContent = data.error; return; }
+    state = data;
+    const review = data.seats.filter((seat) => seat.needs_review).length
+      + data.chairs.filter((chair) => chair.needs_review).length;
+    if (data.unmapped_seats.length) {
+      hint.textContent = "지도에 없는 좌석 " + data.unmapped_seats.length + "개 — 레이아웃과 지도가 어긋났습니다";
+    } else if (review) {
+      hint.textContent = "위치 확인이 필요한 것 " + review + "개 (주황 점선) — 끌어서 제자리에 놓으세요";
+    }
+    draw();
+  });
+</script>
+</body>
+</html>

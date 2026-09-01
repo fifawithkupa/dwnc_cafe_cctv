@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 Box = Tuple[float, float, float, float]
 
-SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = (1, 2)
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
 
 TABLE_KIND = "table"
 COUNTED_ZONE_KIND = "counted_zone"
@@ -95,6 +95,7 @@ class SeatLayout:
     schema_version: int
     source: Dict[str, object]
     tables: Tuple[LayoutTable, ...]
+    unassigned_chairs: Tuple[LayoutChair, ...] = ()
 
     def scaled_to(self, width: int, height: int) -> "SeatLayout":
         src_width = float(self.source.get("width", width))
@@ -117,11 +118,24 @@ class SeatLayout:
             )
             for table in self.tables
         )
+        unassigned = tuple(
+            replace(chair, box=scale(chair.box)) for chair in self.unassigned_chairs
+        )
         source = dict(self.source, width=width, height=height)
-        return replace(self, source=source, tables=tables)
+        return replace(
+            self, source=source, tables=tables, unassigned_chairs=unassigned
+        )
 
     def chair_boxes(self) -> List[Box]:
-        return [chair.box for table in self.tables for chair in table.chairs]
+        """Assigned chairs first (table order), then the unassigned ones.
+
+        ``unit_chair_assignments`` indexes into this list, so the assigned
+        chairs must keep the leading positions: inserting an orphan anywhere
+        earlier would silently repoint every chair->table link.
+        """
+        boxes = [chair.box for table in self.tables for chair in table.chairs]
+        boxes.extend(chair.box for chair in self.unassigned_chairs)
+        return boxes
 
     def chair_assignments(self) -> Dict[int, List[int]]:
         assignments: Dict[int, List[int]] = {}
@@ -264,10 +278,18 @@ def load_layout(path: Path) -> SeatLayout:
                 seats=seats,
             )
         )
+    unassigned_chairs = tuple(
+        LayoutChair(
+            id=int(chair.get("id", position)),
+            box=_parse_box(chair.get("box"), f"unassigned chair #{position}"),
+        )
+        for position, chair in enumerate(data.get("unassigned_chairs", []), start=1)
+    )
     return SeatLayout(
         schema_version=SCHEMA_VERSION,
         source=dict(data.get("source", {})),
         tables=tuple(tables),
+        unassigned_chairs=unassigned_chairs,
     )
 
 
@@ -291,6 +313,10 @@ def save_layout(layout: SeatLayout, path: Path) -> None:
                 ],
             }
             for table in layout.tables
+        ],
+        "unassigned_chairs": [
+            {"id": chair.id, "box": [round(v, 2) for v in chair.box]}
+            for chair in layout.unassigned_chairs
         ],
     }
     path = Path(path)

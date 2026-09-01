@@ -256,5 +256,107 @@ class JudgementUnitTests(unittest.TestCase):
         self.assertEqual(layout.unit_chair_assignments(), layout.chair_assignments())
 
 
+class UnassignedChairTests(unittest.TestCase):
+    """Chairs drawn before anyone decided which table they serve.
+
+    Step 3-c of the install draws chair boxes; step 5-b (stage 2) decides
+    ownership.  Between those two the chair has to exist somewhere without
+    claiming a table, because a wrong claim marks the wrong table occupied.
+    """
+
+    def _layout(self, unassigned=()):
+        return SeatLayout(
+            schema_version=3,
+            source={"width": 1920, "height": 1080},
+            tables=(
+                LayoutTable(
+                    id=1,
+                    name="T1",
+                    box=(100.0, 100.0, 300.0, 200.0),
+                    chairs=(LayoutChair(id=1, box=(80.0, 120.0, 120.0, 180.0)),),
+                ),
+                LayoutTable(
+                    id=2,
+                    name="T2",
+                    box=(500.0, 100.0, 700.0, 200.0),
+                    chairs=(LayoutChair(id=1, box=(480.0, 120.0, 520.0, 180.0)),),
+                ),
+            ),
+            unassigned_chairs=tuple(
+                LayoutChair(id=index, box=box)
+                for index, box in enumerate(unassigned, start=1)
+            ),
+        )
+
+    def test_chair_boxes_includes_unassigned(self):
+        layout = self._layout(unassigned=[(900.0, 900.0, 950.0, 950.0)])
+        self.assertEqual(len(layout.chair_boxes()), 3)
+
+    def test_unassigned_chairs_come_last(self):
+        # unit_chair_assignments() indexes into chair_boxes(); putting an
+        # unassigned chair anywhere but the end silently shifts every link.
+        orphan = (900.0, 900.0, 950.0, 950.0)
+        layout = self._layout(unassigned=[orphan])
+        self.assertEqual(layout.chair_boxes()[-1], orphan)
+
+    def test_unassigned_chairs_claim_no_table(self):
+        layout = self._layout(unassigned=[(900.0, 900.0, 950.0, 950.0)])
+        assignments = layout.unit_chair_assignments()
+        linked = [index for indices in assignments.values() for index in indices]
+        self.assertEqual(sorted(linked), [0, 1])
+
+    def test_assignments_are_unchanged_by_adding_orphans(self):
+        without = self._layout().unit_chair_assignments()
+        with_orphan = self._layout(unassigned=[(900.0, 900.0, 950.0, 950.0)])
+        self.assertEqual(with_orphan.unit_chair_assignments(), without)
+
+    def test_scaled_to_scales_unassigned_chairs(self):
+        layout = self._layout(unassigned=[(960.0, 540.0, 1000.0, 580.0)])
+        scaled = layout.scaled_to(960, 540)
+        self.assertEqual(scaled.unassigned_chairs[0].box, (480.0, 270.0, 500.0, 290.0))
+
+
+class SchemaV3RoundTripTests(unittest.TestCase):
+    def test_v3_file_round_trips_unassigned_chairs(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "layout.json"
+            original = SeatLayout(
+                schema_version=3,
+                source={"width": 1920, "height": 1080},
+                tables=(
+                    LayoutTable(id=1, name="T1", box=(10.0, 10.0, 50.0, 50.0)),
+                ),
+                unassigned_chairs=(
+                    LayoutChair(id=7, box=(60.0, 60.0, 80.0, 80.0)),
+                ),
+            )
+            save_layout(original, path)
+            loaded = load_layout(path)
+            self.assertEqual(len(loaded.unassigned_chairs), 1)
+            self.assertEqual(loaded.unassigned_chairs[0].id, 7)
+            self.assertEqual(loaded.unassigned_chairs[0].box, (60.0, 60.0, 80.0, 80.0))
+
+    def test_v2_file_still_loads_with_no_unassigned_chairs(self):
+        # layouts/cafe_angle1.json on disk is v2; refusing it would throw away
+        # work already done at the cafe.
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "old.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "source": {"width": 1920, "height": 1080},
+                        "tables": [
+                            {"id": 1, "name": "T1", "kind": "table",
+                             "box": [10, 10, 50, 50], "chairs": [], "seats": []}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            loaded = load_layout(path)
+            self.assertEqual(loaded.unassigned_chairs, ())
+
+
 if __name__ == "__main__":
     unittest.main()

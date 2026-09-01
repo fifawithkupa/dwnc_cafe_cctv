@@ -285,6 +285,12 @@ def render_summary(rows: List[Row], records: List[Dict[str, object]]) -> str:
         f"- 판정한 tick: {len(rows)}회",
         _recall_line("검출", detector),
         _recall_line("포즈", pose),
+        _over_detection_line("검출", over_detection(rows, "detector")),
+        _over_detection_line("포즈", over_detection(rows, "pose")),
+        "",
+        "> 재현율만 보면 안 된다. 재현율은 \"있는 사람을 몇 % 찾았나\"라서",
+        "> 없는 사람을 만들어내는 것을 아예 못 본다 — 2명짜리 장면에서 7명을",
+        "> 잡아도 재현율은 1.00이다. 두 줄을 같이 읽어야 한다.",
         "",
         "### 사유 코드 분포 (무엇이 고치는가로 묶음)",
         "",
@@ -346,6 +352,66 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(report)
     return 0
 
+
+
+@dataclass
+class OverDetection:
+    """The failure recall cannot see: boxes that no person stands behind.
+
+    Recall caps found at truth, so seven boxes over two people still scores
+    1.00.  In this café the misses are rare and the inventions are not, which
+    makes this the number that actually describes the system.
+    """
+
+    layer: str
+    scored_frames: int
+    frames_over: int
+    frames_under: int
+    frames_exact: int
+    extra_total: int
+    worst_gap: int
+
+
+def over_detection(rows: List[Row], layer: str) -> OverDetection:
+    """Count invented people, in frames and in heads."""
+    if layer not in LAYERS:
+        raise ValueError(f"Unknown layer: {layer}. Expected one of {LAYERS}")
+    scored = over = under = exact = extra = 0
+    worst = 0
+    for row in rows:
+        if row.excluded is not None or row.truth is None:
+            continue
+        scored += 1
+        gap = row.found(layer) - row.truth
+        if gap > 0:
+            over += 1
+            extra += gap
+            worst = max(worst, gap)
+        elif gap < 0:
+            under += 1
+        else:
+            exact += 1
+    return OverDetection(
+        layer=layer,
+        scored_frames=scored,
+        frames_over=over,
+        frames_under=under,
+        frames_exact=exact,
+        extra_total=extra,
+        worst_gap=worst,
+    )
+
+
+def _over_detection_line(label: str, result: OverDetection) -> str:
+    if result.scored_frames == 0:
+        return f"- **{label} 과탐**: 정답 없음"
+    share = result.frames_over / result.scored_frames
+    return (
+        f"- **{label} 과탐**: {result.frames_over}/{result.scored_frames}장 "
+        f"({share:.0%}), 없는 사람 총 {result.extra_total}명, "
+        f"최악 한 장 +{result.worst_gap}명 "
+        f"| 놓침 {result.frames_under}장 | 정확 {result.frames_exact}장"
+    )
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -244,5 +244,58 @@ class RenderSummaryTests(unittest.TestCase):
         self.assertIn("제외", render_summary(rows, [record(0.0)]))
 
 
+from inspect_run import over_detection
+
+
+class OverDetectionTests(unittest.TestCase):
+    """Recall cannot see the failure this café actually has.
+
+    Recall caps found at truth, so a frame with 7 boxes over 2 people scores
+    a perfect 1.00.  The real failure here is the opposite direction, and a
+    harness whose only number hides its subject is worse than no harness.
+    """
+
+    def test_extra_people_are_counted(self):
+        rows = build_rows([record(0.0, person=7)], {"t0000.0s": truth(2)})
+        result = over_detection(rows, "detector")
+        self.assertEqual(result.frames_over, 1)
+        self.assertEqual(result.extra_total, 5)
+        self.assertEqual(result.worst_gap, 5)
+
+    def test_missing_people_are_counted_separately(self):
+        rows = build_rows([record(0.0, person=1)], {"t0000.0s": truth(3)})
+        result = over_detection(rows, "detector")
+        self.assertEqual(result.frames_under, 1)
+        self.assertEqual(result.frames_over, 0)
+        self.assertEqual(result.extra_total, 0)
+
+    def test_exact_frames_are_counted(self):
+        rows = build_rows([record(0.0, person=2)], {"t0000.0s": truth(2)})
+        result = over_detection(rows, "detector")
+        self.assertEqual(result.frames_exact, 1)
+
+    def test_excluded_frames_are_not_scored(self):
+        rows = build_rows([record(0.0, person=9)], {"t0000.0s": truth(2, uncertain=True)})
+        result = over_detection(rows, "detector")
+        self.assertEqual(result.scored_frames, 0)
+        self.assertEqual(result.frames_over, 0)
+
+    def test_pose_layer_is_scored_separately(self):
+        rows = build_rows(
+            [record(0.0, person=7, seated=0, standing=2, unknown=0)],
+            {"t0000.0s": truth(2)},
+        )
+        self.assertEqual(over_detection(rows, "detector").extra_total, 5)
+        self.assertEqual(over_detection(rows, "pose").extra_total, 0)
+
+    def test_unknown_layer_is_rejected(self):
+        with self.assertRaises(ValueError):
+            over_detection(build_rows([record(0.0)], {}), "seats")
+
+    def test_summary_reports_over_detection(self):
+        rows = build_rows([record(0.0, person=7)], {"t0000.0s": truth(2)})
+        self.assertIn("과탐", render_summary(rows, [record(0.0)]))
+
+
 if __name__ == "__main__":
     unittest.main()

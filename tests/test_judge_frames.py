@@ -29,7 +29,8 @@ class PromptTests(unittest.TestCase):
         self.assertIn("열지 마라", prompt)
 
     def test_prompt_asks_for_the_uncertain_flag(self):
-        self.assertIn("uncertain", judge_prompt(CLEAN))
+        self.assertIn("uncertain_people", judge_prompt(CLEAN))
+        self.assertIn("uncertain_tables", judge_prompt(CLEAN))
 
     def test_prompt_does_not_mention_the_marked_directory(self):
         self.assertNotIn("marked", judge_prompt(CLEAN))
@@ -98,7 +99,8 @@ class SchemaTests(unittest.TestCase):
                 "tables_belongings_only",
                 "tables_in_use",
                 "tables_visible",
-                "uncertain",
+                "uncertain_people",
+                "uncertain_tables",
             ],
         )
 
@@ -121,7 +123,8 @@ GOOD = json.dumps(
         "tables_visible": 6,
         "tables_in_use": 4,
         "tables_belongings_only": 2,
-        "uncertain": False,
+        "uncertain_people": False,
+        "uncertain_tables": False,
         "note": "",
     }
 )
@@ -133,7 +136,8 @@ class ParseJudgementTests(unittest.TestCase):
         self.assertIsNone(result.error)
         self.assertEqual(result.people_total, 3)
         self.assertEqual(result.people_seated, 2)
-        self.assertFalse(result.uncertain)
+        self.assertFalse(result.uncertain_people)
+        self.assertFalse(result.uncertain_tables)
 
     def test_answer_wrapped_in_prose_still_parses(self):
         # Codex sometimes frames the JSON with a sentence even under a schema.
@@ -312,6 +316,15 @@ class BelongingsPromptTests(unittest.TestCase):
         for example in ("가방", "노트북"):
             self.assertIn(example, prompt)
 
+    def test_prompt_excludes_the_wall_counter(self):
+        # plan.md section 0-c: the long window/wall bench is one blob to the
+        # model and a six-seat row to a person.  Until someone draws its seat
+        # slots it is not a judgement unit, so counting it on one side only
+        # would manufacture an inflation that is not there.
+        prompt = judge_prompt(CLEAN)
+        self.assertIn("일자형", prompt)
+        self.assertIn("세지 마라", prompt)
+
 
 class BelongingsParseTests(unittest.TestCase):
     def _payload(self, **overrides):
@@ -322,7 +335,8 @@ class BelongingsParseTests(unittest.TestCase):
             "tables_visible": 6,
             "tables_in_use": 4,
             "tables_belongings_only": 2,
-            "uncertain": False,
+            "uncertain_people": False,
+            "uncertain_tables": False,
             "note": "",
         }
         payload.update(overrides)

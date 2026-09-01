@@ -33,7 +33,8 @@ def record(timestamp, person=3, chair=7, table=2, seated=2, standing=1, unknown=
     }
 
 
-def truth(total=3, uncertain=False, error=None, visible=6, in_use=4, bags_only=2):
+def truth(total=3, uncertain=False, error=None, visible=6, in_use=4, bags_only=2,
+          uncertain_people=None, uncertain_tables=None):
     return Judgement(
         stem="ignored",
         people_total=total,
@@ -42,7 +43,8 @@ def truth(total=3, uncertain=False, error=None, visible=6, in_use=4, bags_only=2
         tables_visible=visible,
         tables_in_use=in_use,
         tables_belongings_only=bags_only,
-        uncertain=uncertain,
+        uncertain_people=uncertain if uncertain_people is None else uncertain_people,
+        uncertain_tables=uncertain if uncertain_tables is None else uncertain_tables,
         error=error,
     )
 
@@ -77,11 +79,11 @@ class BuildRowsTests(unittest.TestCase):
 
     def test_uncertain_judgement_is_marked_excluded(self):
         rows = build_rows([record(15.0)], {"t0015.0s": truth(uncertain=True)})
-        self.assertEqual(rows[0].excluded, "uncertain")
+        self.assertEqual(rows[0].excluded_people, "uncertain")
 
     def test_failed_judgement_is_marked_excluded(self):
         rows = build_rows([record(15.0)], {"t0015.0s": truth(error="timeout")})
-        self.assertEqual(rows[0].excluded, "error")
+        self.assertEqual(rows[0].excluded_people, "error")
 
 
 class RecallTests(unittest.TestCase):

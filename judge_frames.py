@@ -49,10 +49,18 @@ PROMPT_TEMPLATE = """\
 - tables_in_use: 그중 사용 중인 테이블 수
 - tables_belongings_only: 사용 중인 것 중 사람 없이 짐만 놓인 테이블 수
 
-**그 외**
-- uncertain: 사람인지, 또는 놓인 물건이 손님 짐인지 확실하지 않은 것이 하나라도
-  있으면 true
+**창가나 벽에 붙은 긴 일자형 카운터·바는 세지 마라.** 의자가 여러 개 늘어서
+있어도 테이블 1개로도, 여러 개로도 세지 않는다 — 자리 칸을 사람이 긋기 전에는
+판정 단위가 아니기 때문이다. 네 다리로 서 있는 독립된 테이블만 센다.
+
+**확실하지 않음 — 사람과 짐을 따로 판단하라**
+- uncertain_people: 사람인지 아닌지 확실하지 않은 대상이 있으면 true.
+  **짐이 애매한 것은 여기에 넣지 마라.** 사람은 다 셌는데 짐만 애매하면 false다
+- uncertain_tables: 놓인 물건이 손님 짐인지 카페 비품인지 확실하지 않으면 true
 - note: 애매했던 점을 한 줄로. 없으면 빈 문자열
+
+두 플래그는 **서로 독립이다.** 하나가 true라고 다른 하나를 true로 만들지 마라 —
+사람 판독과 짐 판독은 따로 채점된다.
 
 people_seated 와 people_standing 의 합은 people_total 과 같아야 한다.
 tables_belongings_only <= tables_in_use <= tables_visible 이어야 한다.
@@ -104,7 +112,8 @@ _REQUIRED = (
     "tables_visible",
     "tables_in_use",
     "tables_belongings_only",
-    "uncertain",
+    "uncertain_people",
+    "uncertain_tables",
     "note",
 )
 
@@ -120,14 +129,25 @@ class Judgement:
     tables_visible: int = 0
     tables_in_use: int = 0
     tables_belongings_only: int = 0
-    uncertain: bool = False
+    uncertain_people: bool = False
+    uncertain_tables: bool = False
     note: str = ""
     error: Optional[str] = None
 
     @property
-    def usable(self) -> bool:
-        """Whether this may be counted in a score at all."""
-        return self.error is None and not self.uncertain
+    def usable_people(self) -> bool:
+        """Whether the people count may be scored."""
+        return self.error is None and not self.uncertain_people
+
+    @property
+    def usable_tables(self) -> bool:
+        """Whether the table counts may be scored.
+
+        Kept apart from the people flag on purpose.  One ambiguous grey
+        object -- customer bag or cafe supply? -- must not throw away a
+        people count that was never in doubt.
+        """
+        return self.error is None and not self.uncertain_tables
 
 
 def parse_judgement(stem: str, text: str) -> Judgement:
@@ -182,7 +202,8 @@ def parse_judgement(stem: str, text: str) -> Judgement:
         tables_visible=visible,
         tables_in_use=in_use,
         tables_belongings_only=bags_only,
-        uncertain=bool(payload["uncertain"]),
+        uncertain_people=bool(payload["uncertain_people"]),
+        uncertain_tables=bool(payload["uncertain_tables"]),
         note=str(payload["note"]),
     )
 
@@ -264,7 +285,10 @@ def judge_directory(
         )
         results.append(judgement)
         state = judgement.error or (
-            f"people={judgement.people_total} uncertain={judgement.uncertain}"
+            f"people={judgement.people_total} "
+            f"tables={judgement.tables_visible}/{judgement.tables_in_use}/"
+            f"{judgement.tables_belongings_only} "
+            f"unc(사람/짐)={judgement.uncertain_people}/{judgement.uncertain_tables}"
         )
         print(f"[{stem}] {state}", flush=True)
     return results
@@ -286,10 +310,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.frame_dir, output_dir, codex=codex, timeout=args.timeout
     )
     failed = sum(result.error is not None for result in results)
-    unsure = sum(result.uncertain for result in results if result.error is None)
+    live = [result for result in results if result.error is None]
     print(
-        f"\n{len(results)}장 판독: 실패 {failed}장, 불확실 {unsure}장, "
-        f"채점 가능 {sum(result.usable for result in results)}장"
+        f"\n{len(results)}장 판독: 실패 {failed}장 | "
+        f"사람 채점 가능 {sum(r.usable_people for r in live)}장 "
+        f"(불확실 {sum(r.uncertain_people for r in live)}장) | "
+        f"짐 채점 가능 {sum(r.usable_tables for r in live)}장 "
+        f"(불확실 {sum(r.uncertain_tables for r in live)}장)"
     )
     print(f"결과: {output_dir}")
     return 0

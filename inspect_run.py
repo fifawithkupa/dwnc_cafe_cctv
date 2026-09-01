@@ -54,7 +54,8 @@ class Row:
     truth_tables_visible: Optional[int] = None
     truth_tables_in_use: Optional[int] = None
     truth_tables_belongings_only: Optional[int] = None
-    excluded: Optional[str] = None
+    excluded_people: Optional[str] = None
+    excluded_tables: Optional[str] = None
 
     @property
     def pose_total(self) -> int:
@@ -108,17 +109,25 @@ def build_rows(
         tables_visible: Optional[int] = None
         tables_in_use: Optional[int] = None
         tables_bags_only: Optional[int] = None
-        excluded: Optional[str] = None
+        excluded_people: Optional[str] = None
+        excluded_tables: Optional[str] = None
         if judgement is not None:
+            # People and belongings are excluded independently.  One
+            # ambiguous grey object -- customer bag or cafe supply? -- must
+            # not throw away a people count that was never in doubt.
             if judgement.error is not None:
-                excluded = "error"
-            elif judgement.uncertain:
-                excluded = "uncertain"
+                excluded_people = excluded_tables = "error"
             else:
-                truth = judgement.people_total
-                tables_visible = judgement.tables_visible
-                tables_in_use = judgement.tables_in_use
-                tables_bags_only = judgement.tables_belongings_only
+                if judgement.uncertain_people:
+                    excluded_people = "uncertain"
+                else:
+                    truth = judgement.people_total
+                if judgement.uncertain_tables:
+                    excluded_tables = "uncertain"
+                else:
+                    tables_visible = judgement.tables_visible
+                    tables_in_use = judgement.tables_in_use
+                    tables_bags_only = judgement.tables_belongings_only
 
         rows.append(
             Row(
@@ -138,7 +147,8 @@ def build_rows(
                 truth_tables_visible=tables_visible,
                 truth_tables_in_use=tables_in_use,
                 truth_tables_belongings_only=tables_bags_only,
-                excluded=excluded,
+                excluded_people=excluded_people,
+                excluded_tables=excluded_tables,
             )
         )
     return rows
@@ -170,7 +180,7 @@ def recall(rows: List[Row], layer: str) -> Recall:
     scored = 0
     excluded = 0
     for row in rows:
-        if row.excluded is not None:
+        if row.excluded_people is not None:
             excluded += 1
             continue
         if row.truth is None:
@@ -241,20 +251,20 @@ def disagreements(rows: List[Row]) -> List[Row]:
     return [
         row
         for row in rows
-        if row.excluded is None and row.truth is not None and row.detector_gap != 0
+        if row.excluded_people is None and row.truth is not None and row.detector_gap != 0
     ]
 
 
 def _truth_cell(row: Row) -> str:
-    if row.excluded is not None:
-        return row.excluded
+    if row.excluded_people is not None:
+        return row.excluded_people
     if row.truth is None:
         return "___"
     return str(row.truth)
 
 
 def _gap_cell(row: Row) -> str:
-    if row.excluded is not None or row.detector_gap is None:
+    if row.excluded_people is not None or row.detector_gap is None:
         return ""
     if row.detector_gap == 0:
         return "0"
@@ -262,8 +272,8 @@ def _gap_cell(row: Row) -> str:
 
 
 def _table_truth_cell(row: Row) -> str:
-    if row.excluded is not None:
-        return row.excluded
+    if row.excluded_tables is not None:
+        return row.excluded_tables
     if row.truth_tables_in_use is None:
         return "___ / ___ / ___ (짐만)"
     return (
@@ -273,7 +283,7 @@ def _table_truth_cell(row: Row) -> str:
 
 
 def _seat_gap_cell(row: Row) -> str:
-    if row.excluded is not None or row.seat_gap is None:
+    if row.excluded_tables is not None or row.seat_gap is None:
         return ""
     if row.seat_gap == 0:
         return "0"
@@ -425,7 +435,7 @@ def over_detection(rows: List[Row], layer: str) -> OverDetection:
     scored = over = under = exact = extra = 0
     worst = 0
     for row in rows:
-        if row.excluded is not None or row.truth is None:
+        if row.excluded_people is not None or row.truth is None:
             continue
         scored += 1
         gap = row.found(layer) - row.truth
@@ -470,7 +480,7 @@ def seat_inflation(rows: List[Row]) -> OverDetection:
     scored = over = under = exact = extra = 0
     worst = 0
     for row in rows:
-        if row.excluded is not None or row.seat_gap is None:
+        if row.excluded_tables is not None or row.seat_gap is None:
             continue
         scored += 1
         gap = row.seat_gap

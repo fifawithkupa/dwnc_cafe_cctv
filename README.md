@@ -22,7 +22,7 @@
 | `frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
 | `judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
 | `inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
-| `tests/` | 유닛 테스트 361개 (모델 없이 순수 로직 검증) |
+| `tests/` | 유닛 테스트 446개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
 | `plan.md` | 코드 작업 플랜 (T1~T12) |
 | `occupancy_mvp.py`, `pose_judge.py` | 초기 PoC (참고용) |
@@ -46,7 +46,7 @@ python3 -m venv venv
 
 # 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 361 tests ... OK
+# 기대: Ran 446 tests ... OK
 ```
 
 **모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
@@ -83,7 +83,10 @@ python3 -m venv venv
 #    [z]로 바 구역을 치고 [x]로 자리마다 칸을 긋는다 (칸 수 = 자리 수).
 ./venv/bin/python calibrate.py sample_raw/cafe_sample_angle1.mov \
   --output layouts/cafe_angle1.json
-#    키: [t]able [c]hair [z]one(bar) seat[x] [d]elete [u]ndo [s]ave [q]uit
+#    키: [t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit
+#    [f] 바닥에서 실제로 직사각형인 것의 네 귀퉁이를 시계방향 클릭 (2D 평면도용)
+#    [m] 의자 클릭 -> m -> 옮길 테이블/바 클릭. 지웠다 다시 그리지 않고 소속만 바꾼다
+#    [g] 바 구역을 선택하고 누르면 붙어 있는 의자에서 자리 칸을 그대로 만든다
 
 # 1. 새 영상 라벨링: 대조표 프레임 + fixture 스켈레톤 생성
 ./venv/bin/python make_labels.py sample_raw/cafe_1h.mp4 --interval 30 \

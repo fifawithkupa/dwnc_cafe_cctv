@@ -249,5 +249,36 @@ class JudgeDirectoryTests(unittest.TestCase):
             self.assertIn("boom", written["error"])
 
 
+class ResolveCodexTests(unittest.TestCase):
+    """A missing CLI must fail once, before any still is attempted.
+
+    subprocess does not apply PATHEXT, so a bare "codex" never finds the
+    npm shim (codex.CMD) on Windows -- and without an up-front check that
+    surfaced as thirty identical FileNotFoundErrors, one per still, which
+    reads like thirty judging failures instead of one missing tool.
+    """
+
+    def test_existing_binary_resolves_to_a_full_path(self):
+        from judge_frames import resolve_codex
+
+        resolved = resolve_codex("python")
+        self.assertTrue(Path(resolved).is_absolute())
+
+    def test_missing_binary_raises_before_any_call(self):
+        from judge_frames import resolve_codex
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            resolve_codex("definitely-not-a-real-binary-xyz")
+        self.assertIn("definitely-not-a-real-binary-xyz", str(caught.exception))
+
+    def test_explicit_existing_path_is_kept(self):
+        from judge_frames import resolve_codex
+
+        with tempfile.TemporaryDirectory() as raw:
+            binary = Path(raw) / "codex-fake"
+            binary.write_text("", encoding="utf-8")
+            self.assertEqual(resolve_codex(str(binary)), str(binary))
+
+
 if __name__ == "__main__":
     unittest.main()

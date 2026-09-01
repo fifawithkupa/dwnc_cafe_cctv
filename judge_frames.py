@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
@@ -156,6 +157,22 @@ def clean_frames(frame_dir: Path) -> List[Path]:
     return sorted(clean_dir.glob("*.jpg"))
 
 
+def resolve_codex(codex: str) -> str:
+    """Find the Codex CLI once, up front, or say so plainly.
+
+    subprocess does not apply PATHEXT, so a bare ``codex`` never matches the
+    npm shim (``codex.CMD``) on Windows.  Resolving here rather than per call
+    also keeps one missing tool from being reported as N judging failures.
+    """
+    resolved = shutil.which(codex)
+    if resolved is None:
+        raise FileNotFoundError(
+            f"Codex CLI를 찾을 수 없다: {codex!r}. "
+            "설치되어 있으면 --codex 로 실행 파일 경로를 직접 준다."
+        )
+    return resolved
+
+
 def run_codex(command: List[str], output_path: Path, timeout: float) -> str:
     """Run one Codex call and return its answer text."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,8 +243,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     output_dir = args.output or (args.frame_dir / "judge")
+    codex = resolve_codex(args.codex)
     results = judge_directory(
-        args.frame_dir, output_dir, codex=args.codex, timeout=args.timeout
+        args.frame_dir, output_dir, codex=codex, timeout=args.timeout
     )
     failed = sum(result.error is not None for result in results)
     unsure = sum(result.uncertain for result in results if result.error is None)

@@ -528,6 +528,16 @@ def deduplicate_tables(tables: Sequence[Detection], overlap_threshold: float = 0
     return kept
 
 
+# 자리를 이 비율 넘게 채우는 "물건"은 짐이 아니라 가구를 잘못 본 것이다.
+# 비어 있는 밝은 상판은 닫힌 노트북과 모양이 같아서, 탐지기가 상판 전체를
+# laptop/book 으로 잡고 아무도 없는 테이블이 사용중이 된다.
+#
+# 0.50 은 실측에서 왔다 (angle1 6틱, 물건 34개): 진짜 짐은 자리의 30%
+# 이하, 유령은 80% 이상으로 갈렸고 그 사이가 비어 있다.  매장별로 조정하는
+# 값이 아니다 (CLAUDE.md).
+MAXIMUM_OBJECT_SEAT_AREA_FRACTION = 0.50
+
+
 def _object_table_score(
     obj: Detection, table: Detection, surface: Optional[Box] = None
 ) -> float:
@@ -535,7 +545,9 @@ def _object_table_score(
         surface = table_surface_box(table.box)
     object_area = box_area(obj.box)
     table_area = box_area(table.box)
-    if object_area <= 0 or table_area <= 0 or object_area > table_area * 1.25:
+    if object_area <= 0 or table_area <= 0:
+        return 0.0
+    if object_area > table_area * MAXIMUM_OBJECT_SEAT_AREA_FRACTION:
         return 0.0
 
     intersection_ratio = intersection_area(obj.box, surface) / object_area

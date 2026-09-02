@@ -1360,8 +1360,12 @@ class DrawnLayoutObjectAssignmentTests(unittest.TestCase):
     좌표는 실제 실행에서 그대로 가져왔다.
     """
 
+    # 상자를 다시 그리기 전의 좌표다.  이 회귀는 그 시점의 것이다.
     T4 = (1473.91, 439.4, 1659.57, 549.22)
     T5 = (1372.66, 550.15, 1641.28, 849.54)
+    # 0초에 T4 위에 실제로 있던 흰 노트북.  (30·45초의 laptop 탐지는
+    # 빈 상판을 통째로 잡은 유령이라 회귀 좌표로 쓸 수 없다.)
+    LAPTOP = (1447.0, 492.0, 1561.0, 562.0)
 
     def units(self):
         return [
@@ -1370,7 +1374,7 @@ class DrawnLayoutObjectAssignmentTests(unittest.TestCase):
         ]
 
     def test_laptop_on_the_drawn_table_is_assigned_to_that_table(self):
-        laptop = Detection("laptop", (1452.0, 460.0, 1648.0, 567.0), 0.20)
+        laptop = Detection("book", self.LAPTOP, 0.18)
 
         assignments = associate_objects(
             self.units(), [laptop], surfaces=[self.T4, self.T5]
@@ -1381,7 +1385,7 @@ class DrawnLayoutObjectAssignmentTests(unittest.TestCase):
 
     def test_the_tabletop_estimate_is_what_broke_it(self):
         """추정을 씌우면 여전히 T5 가 이긴다 — 이 테스트가 원인을 고정한다."""
-        laptop = Detection("laptop", (1452.0, 460.0, 1648.0, 567.0), 0.20)
+        laptop = Detection("book", self.LAPTOP, 0.18)
 
         assignments = associate_objects(self.units(), [laptop])
 
@@ -1458,3 +1462,47 @@ class OneObjectBelongsToOneSeatTests(unittest.TestCase):
         self.assertEqual(
             sum(len(objects) for objects in assignments.values()), 1
         )
+
+
+class FurnitureSizedObjectTests(unittest.TestCase):
+    """자리를 절반 넘게 채우는 '물건'은 가구를 잘못 본 것이다.
+
+    회귀 (angle1 30·45초): 비어 있는 T4 의 회색 상판을 통째로 노트북/책
+    으로 잡아, 아무것도 없는 테이블이 계속 사용중으로 떴다.  납작한 밝은
+    직사각형이라 닫힌 노트북처럼 보인다.
+
+    좌표는 실제 실행에서 가져왔다.  같은 실행의 물건 34개를 자리 대비
+    크기로 줄세우면 진짜 짐은 30% 이하, 유령은 80% 이상으로 갈렸다.
+    """
+
+    T4 = (1462.0, 439.0, 1668.0, 568.0)
+
+    def seat(self):
+        return Detection("dining table", self.T4, 1.0)
+
+    def test_a_detection_the_size_of_the_table_is_not_belongings(self):
+        phantom = Detection("laptop", (1472.0, 439.0, 1663.0, 551.0), 0.23)
+
+        assignments = associate_objects(
+            [self.seat()], [phantom], surfaces=[self.T4]
+        )
+
+        self.assertEqual(assignments[0], [])
+
+    def test_a_real_laptop_on_that_same_table_still_counts(self):
+        """0초에 T4 위에 실제로 있던 흰 노트북 (자리의 30%)."""
+        laptop = Detection("book", (1447.0, 492.0, 1561.0, 562.0), 0.18)
+
+        assignments = associate_objects(
+            [self.seat()], [laptop], surfaces=[self.T4]
+        )
+
+        self.assertEqual(assignments[0], [laptop])
+
+    def test_small_belongings_are_untouched(self):
+        """가장 흔한 경우 — 자리의 10% 도 안 되는 가방."""
+        bag = Detection("backpack", (1500.0, 460.0, 1560.0, 500.0), 0.38)
+
+        assignments = associate_objects([self.seat()], [bag], surfaces=[self.T4])
+
+        self.assertEqual(assignments[0], [bag])

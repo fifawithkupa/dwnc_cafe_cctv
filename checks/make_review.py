@@ -168,6 +168,25 @@ def build_ticks(
     return ticks
 
 
+def review_state(table: Dict[str, object]) -> str:
+    """검수용 판정.  손님 앱에 나가는 판정과 일부러 다르다.
+
+    이번 판단에서 아무 근거도 못 봤는데 사용중을 유지하는 자리가 있다
+    (자리를 성급히 놔주지 않으려는 규칙).  손님에게는 그대로 **사용중**
+    으로 나가는 게 맞다 — "곧 빌 것 같다"를 앱에서 지워버리면 더 혼란
+    스럽다.  하지만 검수할 때는 "지금 실제로 보이는 근거가 있어서 빨간
+    것"과 "규칙이 붙잡고 있어서 빨간 것"이 구별돼야 한다.
+
+    앱 계약(seat_report)은 건드리지 않는다.  이 함수는 검수 폴더에서만
+    쓴다.
+    """
+    state = str(table.get("state", "unknown"))
+    raw = str(table.get("raw_state", state))
+    if state == "occupied" and raw == "empty":
+        return "unknown"
+    return state
+
+
 def seat_name(table: Dict[str, object]) -> str:
     """사람이 그린 이름(T1, BAR7-3)을 쓰고, 없으면 추적 번호를 쓴다."""
     name = table.get("layout_name")
@@ -176,7 +195,7 @@ def seat_name(table: Dict[str, object]) -> str:
 
 def seat_caption(table: Dict[str, object]) -> str:
     """상자 위에 올릴 짧은 글자: `X T5 (t)` / `O T3` / `? BAR7-4`."""
-    state = str(table.get("state", "unknown"))
+    state = review_state(table)
     caption = f"{MARK.get(state, '?')} {seat_name(table)}"
     # 근거 글자는 근거를 실제로 본 자리에만 붙인다.  사용중이거나, 점유
     # 근거를 처음 봐서 모름으로 잡아둔 자리다.  빈자리 옆의 괄호는 읽는
@@ -273,8 +292,7 @@ def render_verdict(frame: np.ndarray, tick: Tick) -> np.ndarray:
         draw_label(output, "person", (x1, max(header + 4, y1)), PERSON_COLOR, scale * 0.7)
 
     for table in tick.record.get("tables") or []:  # type: ignore[union-attr]
-        state = str(table.get("state", "unknown"))
-        color = COLORS.get(state, COLORS["unknown"])
+        color = COLORS.get(review_state(table), COLORS["unknown"])
         x1, y1, x2, y2 = [int(round(float(value))) for value in table["box"]]
         cv2.rectangle(output, (x1, y1), (x2, y2), color, 3)
         draw_label(
@@ -302,10 +320,15 @@ def object_basis(table: Dict[str, object]) -> str:
 
 def explain_seat(table: Dict[str, object]) -> str:
     """`00_읽는법.md` 의 "왜 그렇게 봤나" 칸."""
-    state = str(table.get("state", "unknown"))
-    raw = str(table.get("raw_state", state))
+    state = review_state(table)
+    raw = str(table.get("raw_state", table.get("state", "unknown")))
     reason = str(table.get("reason", ""))
 
+    if state == "unknown" and raw == "empty":
+        return (
+            "**이번엔 아무 근거도 못 봤다** — 자리를 성급히 놔주지 않으려고 "
+            "사용중을 유지 중이다 (손님 앱에는 사용중으로 나간다)"
+        )
     if state == "occupied":
         code = evidence_code_from_log(table)
         parts = [EVIDENCE_KOREAN[letter] for letter in code if letter in EVIDENCE_KOREAN]
@@ -359,7 +382,7 @@ HEADER = """# {title} — 사진 한 장씩 확인하기
 | **회색 상자 `? T5`** | **모름** — 보이긴 하는데 판단이 안 됐다 |
 | **회색 상자 `? T3 (t)`** | 모름인데 괄호가 있으면 **점유 근거를 방금 처음 본 자리**다. 다음 판단에서 또 보이면 사용중이 된다 |
 | **파란 상자 `person`** | 우리가 **사람으로 잡은 것** |
-| 맨 위 검은 띠 | 그 시점의 합계 |
+| 맨 위 검은 띠 | 그 시점의 합계 (**손님 앱 기준** — 아래 회색 주의) |
 
 **사용중 옆 괄호 글자 = 왜 사용중인가**
 
@@ -370,6 +393,11 @@ HEADER = """# {title} — 사진 한 장씩 확인하기
 | `c` | 의자에 짐이 있다 |
 
 `stc` 처럼 붙어 나오면 근거가 여러 개라는 뜻이다.
+
+> **회색인데 합계에는 사용중으로 잡히는 자리가 있다.** 이번 판단에서
+> 아무 근거도 못 봤지만, 자리를 성급히 놔주지 않으려고 사용중을 유지하는
+> 경우다. 손님 앱에는 사용중으로 나가고, 이 폴더에서만 회색으로 구분해
+> 보여준다 — 근거가 실제로 보여서 빨간 것과 구별하라고.
 
 ### 특히 이걸 봐줘
 
@@ -431,7 +459,7 @@ def render_readme(title: str, ticks: Sequence[Tick]) -> str:
         lines.append("| 자리 | 판정 | 왜 그렇게 봤나 |")
         lines.append("|---|---|---|")
         for table in tick.record.get("tables") or []:  # type: ignore[union-attr]
-            state = STATE_KOREAN.get(str(table.get("state")), str(table.get("state")))
+            state = STATE_KOREAN.get(review_state(table), review_state(table))
             lines.append(f"| {seat_name(table)} | {state} | {explain_seat(table)} |")
         lines.append("")
     return "\n".join(lines)

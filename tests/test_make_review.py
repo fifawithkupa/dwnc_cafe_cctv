@@ -1,7 +1,7 @@
 import unittest
 
 from checks.judge_frames import Judgement
-from checks.make_review import Tick, explain_seat, seat_caption
+from checks.make_review import Tick, explain_seat, review_state, seat_caption
 
 
 def table(**kwargs):
@@ -99,9 +99,13 @@ class ExplainSeatTests(unittest.TestCase):
         self.assertEqual(text, "brand_new_code")
 
     def test_occupied_without_visible_evidence_says_the_rule_held_it(self):
-        text = explain_seat(table(reason="no_customer_evidence", raw_state="empty"))
+        """검수에서는 회색으로 구분한다 — 손님 앱에는 사용중으로 나간다."""
+        held = table(reason="no_customer_evidence", raw_state="empty")
 
-        self.assertIn("사용중 유지", text)
+        self.assertEqual(review_state(held), "unknown")
+        self.assertEqual(seat_caption(held), "? T5")
+        self.assertIn("아무 근거도 못 봤다", explain_seat(held))
+        self.assertIn("손님 앱에는 사용중", explain_seat(held))
 
 
 class FilenameTests(unittest.TestCase):

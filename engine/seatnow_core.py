@@ -1264,14 +1264,25 @@ def load_model(path: Path, task: str):
 
 
 class LayoutZoneTracker:
-    """Drift calibrated layout zones toward matching furniture detections.
+    """Move calibrated layout zones by however far the furniture actually moved.
 
     Zones follow furniture the detector can see and stay put otherwise, so a
     manually drawn ROI for an undetectable table simply never moves.  Matching
     is deliberately conservative: a detection that overlaps two zones about
     equally is discarded, because dragging a zone onto the wrong table is
     worse than not moving at all.  Zone count, ids, and chair links are fixed
-    by construction — only the boxes drift.
+    by construction — only the boxes move.
+
+    **A zone tracks displacement, not position.**  The first matching
+    detection is only remembered as an anchor; the zone does not move.  After
+    that the zone is the drawn box plus however far that detection has since
+    travelled.  Blending toward the detection's absolute box instead would
+    move every drawn seat on the very first frame, because a detector's
+    "dining table" box and the box a person drew are not the same thing and
+    never were: the person drew the judgement region at install time, exactly
+    because that is the answer (CLAUDE.md).  Anchoring also makes the drift
+    reversible — furniture pushed back returns the zone to where it was
+    drawn, instead of leaving it parked wherever it wandered.
     """
 
     def __init__(
@@ -1289,28 +1300,54 @@ class LayoutZoneTracker:
         self.alpha = alpha
         self.minimum_iou = minimum_iou
         self.ambiguity_margin = ambiguity_margin
+        # 존마다 "처음 매칭된 탐지 박스"(기준점)와 "그 뒤로 움직인 양".
+        self._table_anchors: List[Optional[Box]] = [None] * len(self.table_boxes)
+        self._chair_anchors: List[Optional[Box]] = [None] * len(self.chair_boxes)
+        self._table_offsets: List[Box] = [(0.0, 0.0, 0.0, 0.0)] * len(self.table_boxes)
+        self._chair_offsets: List[Box] = [(0.0, 0.0, 0.0, 0.0)] * len(self.chair_boxes)
 
     def update(
         self,
         table_detections: Sequence[Detection],
         chair_detections: Sequence[Detection],
     ) -> None:
-        self.table_boxes = self._track(self.table_boxes, table_detections)
-        self.chair_boxes = self._track(self.chair_boxes, chair_detections)
+        self.table_boxes = self._track(
+            self._calibrated_tables,
+            self.table_boxes,
+            table_detections,
+            self._table_anchors,
+            self._table_offsets,
+        )
+        self.chair_boxes = self._track(
+            self._calibrated_chairs,
+            self.chair_boxes,
+            chair_detections,
+            self._chair_anchors,
+            self._chair_offsets,
+        )
 
     def reset(self) -> None:
+        """장면이 바뀌었다.  기준점도 버린다 — 카메라가 흔들렸을 수 있다."""
         self.table_boxes = list(self._calibrated_tables)
         self.chair_boxes = list(self._calibrated_chairs)
+        self._table_anchors = [None] * len(self._calibrated_tables)
+        self._chair_anchors = [None] * len(self._calibrated_chairs)
+        self._table_offsets = [(0.0, 0.0, 0.0, 0.0)] * len(self._calibrated_tables)
+        self._chair_offsets = [(0.0, 0.0, 0.0, 0.0)] * len(self._calibrated_chairs)
 
-    def _blend(self, zone: Box, target: Box) -> Box:
+    def _smooth_offset(self, previous: Box, target: Box) -> Box:
         keep = 1.0 - self.alpha
         return tuple(
-            keep * zone_value + self.alpha * target_value
-            for zone_value, target_value in zip(zone, target)
+            keep * old + self.alpha * new for old, new in zip(previous, target)
         )
 
     def _track(
-        self, zones: List[Box], detections: Sequence[Detection]
+        self,
+        calibrated: Sequence[Box],
+        zones: List[Box],
+        detections: Sequence[Detection],
+        anchors: List[Optional[Box]],
+        offsets: List[Box],
     ) -> List[Box]:
         candidates: List[Tuple[float, int, int]] = []
         for det_index, detection in enumerate(detections):
@@ -1343,8 +1380,18 @@ class LayoutZoneTracker:
                 continue
             used_detections.add(det_index)
             used_zones.add(zone_index)
-            updated[zone_index] = self._blend(
-                zones[zone_index], detections[det_index].box
+            detected = detections[det_index].box
+            anchor = anchors[zone_index]
+            if anchor is None:
+                # 처음 본 것은 기준점일 뿐이다.  탐지 박스가 그린 상자와
+                # 다르다는 사실은 가구가 움직였다는 뜻이 아니다.
+                anchors[zone_index] = tuple(detected)
+                continue
+            moved = tuple(now - then for now, then in zip(detected, anchor))
+            offsets[zone_index] = self._smooth_offset(offsets[zone_index], moved)
+            updated[zone_index] = tuple(
+                base + shift
+                for base, shift in zip(calibrated[zone_index], offsets[zone_index])
             )
         return updated
 

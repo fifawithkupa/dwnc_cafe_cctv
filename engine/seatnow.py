@@ -18,7 +18,6 @@ from typing import Optional, Sequence
 import cv2
 
 from engine.seatnow_core import (
-    AdaptiveCadenceController,
     AnalyzerConfig,
     FFmpegBurstReader,
     FFmpegSampleReader,
@@ -62,11 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log", type=Path, help="JSONL output path (video only)")
     parser.add_argument("--det-model", default="yolov8n.pt", help="Ultralytics detect weights")
     parser.add_argument("--pose-model", default="yolov8n-pose.pt", help="Ultralytics pose weights")
-    parser.add_argument("--sample-seconds", type=float, default=15.0, help="Base seconds between analyzed samples (1차 판단 주기)")
-    parser.add_argument("--fast-sample-seconds", type=float, default=5.0, help="Accelerated cadence while an empty seat shows occupied evidence pending confirmation (2차 판단 주기)")
+    parser.add_argument("--sample-seconds", type=float, default=15.0, help="Seconds between analyzed samples (판단 주기)")
     parser.add_argument("--median-frames", type=int, default=2, help="Analyze ±N consecutive native-fps frames per sample and majority-vote per-seat states (0 = single frame)")
-    parser.add_argument("--fast-cycles", type=int, default=3, help="Number of fast-interval rechecks that always run after occupied evidence appears on an empty seat")
-    parser.add_argument("--no-adaptive", action="store_true", help="Pin the cadence to --sample-seconds instead of accelerating on occupancy evidence")
     parser.add_argument("--start-seconds", type=float, default=0.0, help="Start analysis at this media timestamp")
     parser.add_argument("--imgsz", type=int, default=1280, help="YOLO inference image size")
     parser.add_argument("--pose-imgsz", type=int, default=960, help="Pose-model inference image size")
@@ -170,14 +166,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"Input not found: {args.input}")
     if args.sample_seconds <= 0:
         raise ValueError("--sample-seconds must be positive")
-    if args.fast_sample_seconds <= 0:
-        raise ValueError("--fast-sample-seconds must be positive")
-    if not args.no_adaptive and args.fast_sample_seconds > args.sample_seconds:
-        raise ValueError("--fast-sample-seconds cannot exceed --sample-seconds")
     if args.median_frames < 0:
         raise ValueError("--median-frames cannot be negative")
-    if args.fast_cycles < 1:
-        raise ValueError("--fast-cycles must be at least 1")
     if args.start_seconds < 0:
         raise ValueError("--start-seconds cannot be negative")
     if args.imgsz < 320 or args.pose_imgsz < 320 or args.crop_imgsz < 320:
@@ -289,10 +279,9 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     )
     hwaccel = resolve_hwaccel(args.hwaccel, args.input)
     print(hwaccel.describe(), flush=True)
-    adaptive = not args.no_adaptive
-    # --median-frames 0 --no-adaptive reproduces the original fixed-interval
-    # single-frame pipeline exactly (streaming reader, no vote fields).
-    legacy_mode = args.median_frames == 0 and not adaptive
+    # --median-frames 0 reproduces the original single-frame pipeline exactly
+    # (streaming reader, no vote fields).
+    legacy_mode = args.median_frames == 0
     run_context = {
         "profile": (
             "accuracy_default"
@@ -314,9 +303,6 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 and not args.no_inferred_seats
                 and not args.no_scene_reset
                 and args.median_frames == 2
-                and args.fast_sample_seconds == 5.0
-                and args.fast_cycles == 3
-                and not args.no_adaptive
             )
             else ("fast" if not args.table_crops and args.imgsz <= 960 else "custom")
         ),
@@ -339,10 +325,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         },
         "config": {
             "sample_seconds": args.sample_seconds,
-            "fast_sample_seconds": args.fast_sample_seconds,
             "median_frames": args.median_frames,
-            "fast_cycles": args.fast_cycles,
-            "adaptive_cadence": adaptive,
             "start_seconds": args.start_seconds,
             "imgsz": args.imgsz,
             "pose_imgsz": args.pose_imgsz,
@@ -391,14 +374,9 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             flush=True,
         )
     else:
-        cadence_note = (
-            f", {args.fast_sample_seconds:g}s while confirming occupancy"
-            if adaptive
-            else ""
-        )
         print(
             f"Analyzing every {args.sample_seconds:g}s "
-            f"(±{args.median_frames} frame majority vote{cadence_note})",
+            f"(±{args.median_frames} frame majority vote)",
             flush=True,
         )
 
@@ -414,9 +392,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         )
 
     tracker = new_tracker()
-    # Burst mode writes exactly one rendered frame per judgment — fast 5s
-    # rechecks appear as their own frames (tagged in the header) instead of
-    # being outweighed by duplicated base-cadence frames.
+    # Burst mode writes exactly one rendered frame per judgment, so the result
+    # video plays one second per judgment regardless of the sample interval.
     writer_fps = (1.0 / args.sample_seconds) if legacy_mode else 1.0
     writer: Optional[FFmpegVideoWriter] = None
     if not args.no_video:
@@ -507,16 +484,8 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         break
             else:
                 reader = FFmpegBurstReader(args.input, info, hwaccel_args=hwaccel.args)
-                controller = AdaptiveCadenceController(
-                    base_seconds=args.sample_seconds,
-                    fast_seconds=(
-                        args.fast_sample_seconds if adaptive else args.sample_seconds
-                    ),
-                    fast_cycles=args.fast_cycles,
-                )
                 previous_center = None
                 center_time = args.start_seconds
-                scheduled_fast = False
                 while info.duration <= 0 or center_time <= info.duration:
                     center_index, burst = reader.read_burst(
                         center_time, args.median_frames
@@ -582,8 +551,6 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                                 "tracker_reset": True,
                             },
                         )
-                    next_interval = controller.next_interval(update.all_tracks)
-                    fast_mode = next_interval < controller.base_seconds
                     record = frame_log_record(
                         processed,
                         analysis,
@@ -596,8 +563,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     for event in record["events"]:
                         event["scene_id"] = scene_id
                     record["cadence"] = {
-                        "mode": "fast" if fast_mode else "base",
-                        "next_interval_seconds": next_interval,
+                        "interval_seconds": args.sample_seconds,
                         "burst_frames": len(burst),
                     }
                     record["run"] = run_context
@@ -613,7 +579,6 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                             analysis,
                             update,
                             debug=args.debug,
-                            cadence="fast" if scheduled_fast else None,
                         )
                     if writer is not None:
                         writer.write(rendered)
@@ -629,14 +594,12 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         f"occupied={summary['occupied']} empty={summary['empty']} "
                         f"ignore={summary['ignore']} poses(seated/standing/unknown)="
                         f"{summary['seated_poses']}/{summary['standing_poses']}/{summary['unknown_poses']} "
-                        f"inference={analysis.inference_ms:.0f}ms "
-                        f"cadence={'fast' if fast_mode else 'base'}",
+                        f"inference={analysis.inference_ms:.0f}ms",
                         flush=True,
                     )
                     if args.max_samples is not None and processed >= args.max_samples:
                         break
-                    scheduled_fast = fast_mode
-                    center_time += next_interval
+                    center_time += args.sample_seconds
     except BaseException:
         if writer is not None:
             try:

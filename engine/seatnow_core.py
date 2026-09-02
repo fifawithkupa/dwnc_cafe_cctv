@@ -1993,51 +1993,6 @@ def aggregate_burst_observations(
     return center_tables
 
 
-class AdaptiveCadenceController:
-    """Adaptive sample cadence for the two-stage judgment.
-
-    1차 판단 runs at base_seconds.  When a stable-EMPTY seat gains occupied
-    evidence (person sat down or an object appeared), 2차 판단 runs the next
-    fast_cycles samples at fast_seconds UNCONDITIONALLY — the recheck series
-    completes even if the transition confirms or is refuted earlier, so a
-    detection at t=15 always yields fast results at t=20/25/30.  A fresh
-    trigger while counting down re-arms the full series.
-    """
-
-    def __init__(
-        self,
-        base_seconds: float = 15.0,
-        fast_seconds: float = 5.0,
-        fast_cycles: int = 3,
-    ):
-        if base_seconds <= 0 or fast_seconds <= 0:
-            raise ValueError("Cadence intervals must be positive")
-        if fast_seconds > base_seconds:
-            raise ValueError("fast_seconds cannot exceed base_seconds")
-        if fast_cycles < 1:
-            raise ValueError("fast_cycles must be at least 1")
-        self.base_seconds = float(base_seconds)
-        self.fast_seconds = float(fast_seconds)
-        self.fast_cycles = int(fast_cycles)
-        self.remaining_fast = 0
-
-    @staticmethod
-    def wants_fast(tracks: Sequence["Track"]) -> bool:
-        return any(
-            track.stable_state == OccupancyState.EMPTY
-            and track.pending_state == OccupancyState.OCCUPIED
-            and track.pending_count >= 1
-            for track in tracks
-        )
-
-    def next_interval(self, tracks: Sequence["Track"]) -> float:
-        if self.wants_fast(tracks):
-            self.remaining_fast = self.fast_cycles
-        elif self.remaining_fast > 0:
-            self.remaining_fast -= 1
-        return self.fast_seconds if self.remaining_fast > 0 else self.base_seconds
-
-
 class TableTracker:
     """Stable IDs and asymmetric occupancy debouncing for visible tables."""
 
@@ -2518,6 +2473,15 @@ class TableTracker:
                 track.stable_state = raw
                 track.pending_state = None
                 track.pending_count = 0
+            elif (
+                previous == OccupancyState.EMPTY
+                and raw == OccupancyState.OCCUPIED
+            ):
+                # 손님이 막 앉은 자리를 다음 판단까지 "비었다"고 계속 안내하면
+                # 그 손님에게 남의 자리로 가라고 보내는 것과 같다.  아직
+                # 사용중이라고 단정할 수도 없으니 모름으로 남긴다 — 빈자리
+                # 수에서는 빠지고(build_seat_report), 다음 판단이면 풀린다.
+                track.stable_state = OccupancyState.UNKNOWN
         if track.stable_state != previous:
             return {
                 "type": "state_resolved" if was_unresolved else "state_change",
@@ -3324,7 +3288,6 @@ def render_frame(
     analysis: FrameAnalysis,
     update: TrackerUpdate,
     debug: bool = False,
-    cadence: Optional[str] = None,
 ) -> np.ndarray:
     output = frame.copy()
     occupied = sum(track.visible_state == OccupancyState.OCCUPIED for track in update.visible_tracks)
@@ -3341,8 +3304,6 @@ def render_frame(
     cv2.addWeighted(overlay, 0.78, output, 0.22, 0, output)
     scale = max(0.65, min(output.shape[1], output.shape[0]) / 1150.0)
     title = f"SeatNow  t={analysis.timestamp:05.1f}s"
-    if cadence == "fast":
-        title += "  [FAST RECHECK]"
     cv2.putText(
         output,
         title,
@@ -3446,6 +3407,24 @@ def render_frame(
     return output
 
 
+def logged_reason(track: Track) -> str:
+    """관측 사유에 트랙 쪽 맥락을 씌운다.
+
+    관측만 보면 "노트북이 있다"인데 발표된 상태는 모름인 경우가 있다.  사유를
+    그대로 쓰면 로그가 스스로 모순돼 보이므로, 왜 아직 사용중이 아닌지를
+    접두어로 붙인다.
+    """
+    observation = track.last_observation
+    if track.predicted:
+        return f"temporarily_occluded:{observation.reason}"
+    if (
+        track.stable_state == OccupancyState.UNKNOWN
+        and observation.raw_state == OccupancyState.OCCUPIED
+    ):
+        return f"awaiting_confirmation:{observation.reason}"
+    return observation.reason
+
+
 def track_to_dict(track: Track) -> Dict[str, object]:
     observation = track.last_observation
     data: Dict[str, object] = {
@@ -3472,11 +3451,7 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "raw_state": observation.raw_state.value,
         "confidence": round(observation.raw_score, 4),
         "table_confidence": round(observation.table_confidence, 4),
-        "reason": (
-            f"temporarily_occluded:{observation.reason}"
-            if track.predicted
-            else observation.reason
-        ),
+        "reason": logged_reason(track),
         "provisional": observation.provisional,
         "objects": [
             {"class": obj.name, "confidence": round(obj.confidence, 4)}

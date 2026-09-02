@@ -83,6 +83,10 @@ def classify_reason(raw_state: str, reason: str, predicted: bool) -> ReasonCode:
     text = reason or ""
     if text.startswith("temporarily_occluded:"):
         return ReasonCode.TRACK_PREDICTED
+    # 빈자리에 점유 근거가 처음 보인 판단.  기다리면 풀리는 모름이라 개선
+    # 백로그가 아니다 — "time" 그룹으로 간다.
+    if text.startswith("awaiting_confirmation:"):
+        return ReasonCode.PENDING_CONFIRMATION
     # The table layer prefixes the pose-level cause; unwrap it so the cause
     # is what gets classified rather than the wrapper.
     if text.startswith("nearby_person_pose_unknown:"):

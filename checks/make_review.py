@@ -134,8 +134,9 @@ class Tick:
         truth = self.truth_people
         gap = self.gap
         if truth is None:
-            people = f"사람{self.our_people}대?"
-            gap_text = "차이?"
+            # 전각 물음표다.  윈도우 파일 이름에 ASCII "?" 를 못 쓴다.
+            people = f"사람{self.our_people}대？"
+            gap_text = "차이？"
             star = "－"
         else:
             people = f"사람{self.our_people}대{truth}"
@@ -176,9 +177,12 @@ def seat_caption(table: Dict[str, object]) -> str:
     """상자 위에 올릴 짧은 글자: `X T5 (t)` / `O T3` / `? BAR7-4`."""
     state = str(table.get("state", "unknown"))
     caption = f"{MARK.get(state, '?')} {seat_name(table)}"
-    # 근거 글자는 사용중일 때만 붙인다.  빈자리 옆의 괄호는 읽는 사람에게
-    # "그럼 왜 빈자리인가"라는 되묻기를 만들 뿐이다.
-    if state == "occupied":
+    # 근거 글자는 근거를 실제로 본 자리에만 붙인다.  사용중이거나, 점유
+    # 근거를 처음 봐서 모름으로 잡아둔 자리다.  빈자리 옆의 괄호는 읽는
+    # 사람에게 "그럼 왜 빈자리인가"라는 되묻기를 만들 뿐이다.
+    if state == "occupied" or (
+        state == "unknown" and str(table.get("raw_state")) == "occupied"
+    ):
         code = evidence_code_from_log(table)
         if code:
             caption += f" ({code})"
@@ -293,17 +297,16 @@ def explain_seat(table: Dict[str, object]) -> str:
         # 자리를 놔주지 않으려는 규칙이 일한 것이지 버그가 아니다.
         return "이번엔 근거가 안 보였지만 사용중 유지 (연속 3번이 아직 안 됨)"
 
-    # 확정 규칙이 삼킨 근거를 드러낸다.  "이번 장면에는 근거가 보였는데
-    # 발표되지 않았다"가 지금 가장 자주 나오는 오답의 모양이다.  이때 reason
-    # 은 사용중 쪽 근거를 담고 있으므로 빈자리 사유로 읽으면 안 된다.
+    # 점유 근거를 처음 본 판단.  reason 은 사용중 쪽 근거를 담고 있으므로
+    # 빈자리 사유로 읽으면 거짓말이 된다.
     if raw == "occupied" and state != "occupied":
         code = evidence_code_from_log(table)
         seen = " + ".join(
             EVIDENCE_KOREAN[letter] for letter in code if letter in EVIDENCE_KOREAN
         )
         return (
-            f"**이번 장면엔 근거가 보였다 ({seen or '?'})** — "
-            "연속 2번이 안 돼 사용중으로 확정하지 못함"
+            f"**점유 근거를 처음 봤다 ({seen or '?'})** — "
+            "다음 판단에서 또 보이면 사용중이 된다"
         )
 
     for key, korean in REASON_KOREAN.items():
@@ -336,6 +339,7 @@ HEADER = """# {title} — 사진 한 장씩 확인하기
 | **빨간 상자 `X T1 (t)`** | 그 자리를 **사용 중**으로 봤다. 괄호는 그 이유다 |
 | **초록 상자 `O T3`** | 그 자리를 **빈자리**로 봤다 |
 | **회색 상자 `? T5`** | **모름** — 보이긴 하는데 판단이 안 됐다 |
+| **회색 상자 `? T3 (t)`** | 모름인데 괄호가 있으면 **점유 근거를 방금 처음 본 자리**다. 다음 판단에서 또 보이면 사용중이 된다 |
 | **파란 상자 `person`** | 우리가 **사람으로 잡은 것** |
 | 맨 위 검은 띠 | 그 시점의 합계 |
 
@@ -355,6 +359,7 @@ HEADER = """# {title} — 사진 한 장씩 확인하기
 - **사람이 없는 곳에 파란 상자가 있는가** — 헛것을 본 것이다
 - **빨간 자리의 괄호 글자가 실제와 맞는가** — `(t)`인데 책상이 비었으면 헛것이다
 - **초록 자리가 정말 비어 있는가** — 이게 틀리면 손님을 남의 자리로 보낸다
+- **괄호가 붙은 회색 자리** — 손님이 방금 앉았거나, 헛것을 본 것이다. 어느 쪽인지 봐줘
 
 **원본을 먼저 보고 직접 세어 본 뒤 판정을 보는 것**을 권한다.
 
@@ -391,7 +396,10 @@ def render_readme(title: str, ticks: Sequence[Tick]) -> str:
                 f"  - 두 모델이 다르게 봤다: 사람 찾기 {tick.our_people}명, "
                 f"자세 판정 {tick.pose_total}명"
             )
-        if tick.truth_people is None:
+        if tick.judgement is None:
+            # 판단 주기가 바뀌면 예전에 채점하지 않은 시점이 생긴다.
+            lines.append("- 정답지: **이 시점은 아직 채점되지 않았다** — 직접 세어봐줘")
+        elif tick.truth_people is None:
             lines.append("- 정답지: 사람 수를 채점할 수 없다고 했다")
         else:
             lines.append(f"- 정답지가 센 사람: **{tick.truth_people}명**")

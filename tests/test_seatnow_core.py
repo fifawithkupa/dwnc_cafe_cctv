@@ -384,12 +384,19 @@ class TableTrackerTests(unittest.TestCase):
         self.assertEqual(initial.visible_tracks[0].stable_state, OccupancyState.EMPTY)
 
         first_occupied = tracker.update([occupied], 1.0, self.FRAME_SHAPE)
+        # 아직 사용중은 아니지만, 빈자리라고 계속 말하지도 않는다.
         self.assertEqual(
-            first_occupied.visible_tracks[0].stable_state, OccupancyState.EMPTY
+            first_occupied.visible_tracks[0].stable_state, OccupancyState.UNKNOWN
         )
         self.assertEqual(first_occupied.visible_tracks[0].pending_count, 1)
-        self.assertFalse(
-            any(event["type"] == "state_change" for event in first_occupied.events)
+        # 빈자리를 떠난 것 자체가 앱이 알아야 할 변화다.
+        self.assertEqual(
+            [
+                event["to"]
+                for event in first_occupied.events
+                if event["type"] == "state_change"
+            ],
+            ["unknown"],
         )
 
         second_occupied = tracker.update([occupied], 2.0, self.FRAME_SHAPE)
@@ -397,8 +404,13 @@ class TableTrackerTests(unittest.TestCase):
             second_occupied.visible_tracks[0].stable_state,
             OccupancyState.OCCUPIED,
         )
+        # 모름에서 빠져나오는 것이라 state_resolved 다 (provisional 경로와 같다).
         self.assertEqual(
-            [event["to"] for event in second_occupied.events if event["type"] == "state_change"],
+            [
+                event["to"]
+                for event in second_occupied.events
+                if event["type"] == "state_resolved"
+            ],
             ["occupied"],
         )
 
@@ -1236,3 +1248,85 @@ class OccupancyEvidenceCodeTests(unittest.TestCase):
         }
 
         self.assertEqual(evidence_code_from_log(legacy), "s")
+
+
+class EmptyToOccupiedGoesThroughUnknownTests(unittest.TestCase):
+    """빈자리에서 점유 근거가 처음 보이면 **모름**을 거쳐 사용중이 된다.
+
+    예전에는 확정될 때까지 빈자리라고 계속 말했다.  손님이 막 앉은 자리를
+    15초 동안 "비었다"고 안내하는 것이라, 그 손님에게 남의 자리로 가라고
+    보내는 것과 같다.  모름은 빈자리 수에 안 들어가므로(``build_seat_report``)
+    안내가 멈춘다 — 사용중이라고 단정하지도 않는다.
+    """
+
+    FRAME_SHAPE = (1080, 1920)
+
+    def tracker(self) -> TableTracker:
+        return TableTracker(occupy_confirmations=2, empty_confirmations=3)
+
+    def test_first_sighting_is_unknown_and_second_confirms_occupied(self):
+        tracker = self.tracker()
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+
+        # Track 은 같은 객체가 계속 갱신되므로 그 자리에서 바로 확인한다.
+        first = tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        self.assertEqual(
+            first.visible_tracks[0].stable_state, OccupancyState.UNKNOWN
+        )
+
+        second = tracker.update([occupied], 30.0, self.FRAME_SHAPE)
+        self.assertEqual(
+            second.visible_tracks[0].stable_state, OccupancyState.OCCUPIED
+        )
+
+    def test_evidence_that_goes_away_returns_the_seat_to_free(self):
+        """헛것 하나가 자리를 15초 넘게 붙잡고 있으면 안 된다."""
+        tracker = self.tracker()
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+        tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        back = tracker.update([empty], 30.0, self.FRAME_SHAPE)
+
+        self.assertEqual(back.visible_tracks[0].stable_state, OccupancyState.EMPTY)
+
+    def test_the_pending_seat_says_why_it_is_unknown(self):
+        """모름에는 사유가 붙어야 한다 (CLAUDE.md).  이 모름은 기다리면 풀린다."""
+        tracker = self.tracker()
+        tracker.update([table_observation(OccupancyState.EMPTY)], 0.0, self.FRAME_SHAPE)
+        update = tracker.update(
+            [table_observation(OccupancyState.OCCUPIED, reason="objects:laptop")],
+            15.0,
+            self.FRAME_SHAPE,
+        )
+
+        logged = track_to_dict(update.visible_tracks[0])
+
+        self.assertEqual(logged["state"], "unknown")
+        self.assertEqual(logged["reason"], "awaiting_confirmation:objects:laptop")
+
+    def test_a_seat_that_was_already_taken_is_not_re_confirmed(self):
+        """사용중 -> 빈자리는 그대로 3번이다.  자리를 성급히 놔주지 않는다."""
+        tracker = self.tracker()
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+        tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        tracker.update([occupied], 30.0, self.FRAME_SHAPE)
+        for index, timestamp in enumerate((45.0, 60.0), start=1):
+            holding = tracker.update([empty], timestamp, self.FRAME_SHAPE)
+            self.assertEqual(
+                holding.visible_tracks[0].stable_state,
+                OccupancyState.OCCUPIED,
+                f"{index}번째 빈자리 관측에서 벌써 놔줬다",
+            )
+        released = tracker.update([empty], 75.0, self.FRAME_SHAPE)
+
+        self.assertEqual(
+            released.visible_tracks[0].stable_state, OccupancyState.EMPTY
+        )

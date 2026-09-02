@@ -56,7 +56,6 @@
 ④ 프레임 분석기    L972–1562  LayoutZoneTracker(존 드리프트) + SeatNowAnalyzer.analyze()
                               ← 유일하게 YOLO 모델을 잡고 있는 곳
 ⑤ 시간 안정화      L1563–2482 aggregate_burst_observations(버스트 다수결),
-                              AdaptiveCadenceController(주기 제어),
                               TableTracker(ID 추적 + 디바운싱 + 레이아웃 변경 감지)
 ⑥ I/O·렌더         L2483–3194 scene_change 감지, FFmpegSampleReader/BurstReader/VideoWriter,
                               render_frame(주석 영상), track_to_dict / frame_log_record(JSONL)
@@ -87,13 +86,13 @@
   ▼
 [출력]    frame_log_record() → JSONL 1줄   /   render_frame() → 주석 MP4 1프레임
   ▼
-[주기결정] AdaptiveCadenceController        다음 샘플까지 15초? 5초? (§5.2)
+        다음 샘플까지 항상 15초 (§5.2)
 ```
 
 **두 가지 실행 모드**
 
-- **버스트 모드(기본)**: 위 그림 그대로. `--median-frames 2 --fast-sample-seconds 5 --fast-cycles 3`
-- **레거시 모드**: `--median-frames 0 --no-adaptive` → 고정 주기 + 단일 프레임 (`FFmpegSampleReader`).
+- **버스트 모드(기본)**: 위 그림 그대로. `--median-frames 2`
+- **레거시 모드**: `--median-frames 0` → 단일 프레임 (`FFmpegSampleReader`).
 구버전 동작을 그대로 재현하며 JSONL에 `vote_counts` 필드가 붙지 않는다. 회귀 비교용.
 
 ---
@@ -182,18 +181,25 @@ Seatify 논문의 3번째 테스트(Hip-Knee 수직 거리)는 **의도적으로
 
 목적: 한 프레임의 탐지 깜빡임(손이 컵을 가림, 포즈 한 프레임 실패)이 상태를 흔들지 않게 함.
 
-### 5.2 적응형 케이던스 — `AdaptiveCadenceController`
+### 5.2 판단 주기 — 15초 고정
 
-- **1차 판단**: 기본 15초 주기
-- **2차 판단**: 비어있던(`stable EMPTY`) 좌석에 점유 증거가 뜨면, 다음 **3회를 5초 주기로 무조건** 실행
-  - 예: 15초에 감지 → 20/25/30초 재판단 → 45초에 base 복귀
-  - "무조건"이 핵심 — 중간에 확정/번복되어도 3회 시리즈는 끝까지 돈다. 카운트다운 중 새 트리거가 오면 시리즈를 다시 채운다
-- `--no-adaptive`로 고정 주기
+`--sample-seconds`(기본 15초) 하나뿐이다. **엣지 박스에서 돌릴 계산량을 예측
+가능하게 두는 것이 우선**이라, 점유 증거가 보였을 때 5초로 당기던 2차 판단은
+뺐다 (2026-09-02, `plan.md` §0-h). 되살리려면 그 커밋을 되돌리면 된다.
 
 ### 5.3 비대칭 디바운싱 — `TableTracker`
 
 - **점유 확정 2샘플 / 빈자리 확정 3샘플** — 빈자리로 되돌리는 쪽을 더 보수적으로
 (앱에 "빈자리"라고 잘못 띄우는 것이 반대 오류보다 나쁘다)
+- **확정 전 중간 상태는 `UNKNOWN`이다.** 빈자리였던 좌석에 점유 증거가 처음
+보이면 그 즉시 빈자리에서 뺀다 — 손님이 막 앉은 자리를 15초 동안 "비었다"고
+안내하지 않기 위해서다. 사유 코드는 `pending_confirmation`, 로그 사유는
+`awaiting_confirmation:<원래 근거>`.
+
+```
+빈자리 ──(점유 근거)──> 모름 ──(15초 뒤 또 점유 근거)──> 사용중
+                         └──(15초 뒤 근거 없음)──> 빈자리
+```
 - **트랙 TTL**: 탐지가 3샘플까지 사라져도 트랙을 유지하고 속도로 위치를 예측(`predicted=true`) — 잠깐의 가림이 좌석을 없애지 않게
 - `**visible_state` vs `stable_state` 분리**: 이번 프레임이 `IGNORE`/`UNKNOWN`이어도, 이전에 확정된 점유 상태를 `EMPTY`로 뒤집지 않는다
 - **장면 전환 리셋**: `is_scene_change()`가 컷을 감지하면 트래커를 새로 만들고(ID 번호는 이어감) 그 샘플의 관측을 전부 `IGNORE`로 처리
@@ -445,9 +451,9 @@ CCTV → NVR → 엣지 디바이스     →   Supabase   →  SeatNow 앱
 # 실행 예시
 ./venv/bin/python -m engine.seatnow sample_raw/영상.mp4 --debug
 # 짧은 클립은 주기를 줄여서
-./venv/bin/python -m engine.seatnow sample_raw/영상.mp4 --debug --sample-seconds 5 --fast-sample-seconds 2
+./venv/bin/python -m engine.seatnow sample_raw/영상.mp4 --debug --sample-seconds 5
 # 구버전 동작 재현
-./venv/bin/python -m engine.seatnow sample_raw/영상.mp4 --sample-seconds 1 --median-frames 0 --no-adaptive
+./venv/bin/python -m engine.seatnow sample_raw/영상.mp4 --sample-seconds 1 --median-frames 0
 ```
 
 ---

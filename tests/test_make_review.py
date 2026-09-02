@@ -37,6 +37,18 @@ class SeatCaptionTests(unittest.TestCase):
 
         self.assertEqual(caption, "X T5 (t)")
 
+    def test_first_sighting_seat_shows_what_was_seen(self):
+        """방금 앉은 것인지 헛것인지를 사람이 판단할 수 있어야 한다."""
+        caption = seat_caption(
+            table(
+                state="unknown",
+                raw_state="occupied",
+                objects=[{"class": "laptop", "confidence": 0.4}],
+            )
+        )
+
+        self.assertEqual(caption, "? T5 (t)")
+
     def test_empty_seat_carries_no_letters(self):
         """빈자리 옆 괄호는 "그럼 왜 비었나"라는 되묻기만 만든다."""
         caption = seat_caption(
@@ -47,24 +59,21 @@ class SeatCaptionTests(unittest.TestCase):
 
 
 class ExplainSeatTests(unittest.TestCase):
-    def test_evidence_swallowed_by_the_confirmation_rule_is_shown(self):
-        """지금 가장 자주 나오는 오답의 모양이라 표에서 눈에 띄어야 한다.
-
-        근거를 봤는데도 연속 2번이 안 돼 빈자리로 발표된 경우, reason 은
-        사용중 쪽 근거를 담고 있어서 빈자리 사유로 읽으면 거짓말이 된다.
-        """
+    def test_first_sighting_of_evidence_is_named_as_such(self):
+        """점유 근거를 처음 본 판단.  reason 은 사용중 쪽 근거를 담고 있어서
+        빈자리 사유로 읽으면 거짓말이 된다."""
         text = explain_seat(
             table(
-                state="empty",
+                state="unknown",
                 raw_state="occupied",
-                reason="objects:keyboard;occupied_chairs:1",
+                reason="awaiting_confirmation:objects:keyboard;occupied_chairs:1",
                 objects=[{"class": "keyboard", "confidence": 0.3}],
                 occupied_chairs=1,
                 chair_seated_people=1,
             )
         )
 
-        self.assertIn("근거가 보였다", text)
+        self.assertIn("처음 봤다", text)
         self.assertIn("사람이 앉음", text)
         self.assertIn("책상에 짐", text)
         self.assertNotIn("objects:keyboard", text)
@@ -126,7 +135,8 @@ class FilenameTests(unittest.TestCase):
 
         stem = tick(record=record, judgement=judgement).filename_stem
 
-        self.assertEqual(stem, "01_t0000s_점유1빈2모름0_사람2대?_차이?_－")
+        # 전각 물음표 — 윈도우 파일 이름에 ASCII "?" 를 못 쓴다.
+        self.assertEqual(stem, "01_t0000s_점유1빈2모름0_사람2대？_차이？_－")
 
 
 if __name__ == "__main__":

@@ -188,15 +188,13 @@ python3 -m venv venv
 테이블 후보 탈락 사유가 함께 남습니다 — "모델이 못 봤나" vs "코드가 버렸나"를
 로그만으로 구분할 수 있습니다.
 
-주요 옵션: `--sample-seconds`(1차 판단 주기, 기본 15초), `--fast-sample-seconds`(2차 판단
-주기, 기본 5초 — empty 좌석에 착석/물건 증거가 뜨면 `--fast-cycles`(기본 3)회 재판단을
-무조건 수행: 예. 15초 감지 → 20/25/30초 재판단 → 45초 base 복귀),
-`--median-frames N`(샘플 시점 ±N 연속 프레임 다수결, 기본 2 → 5장), `--no-adaptive`(주기
-고정), `--max-samples N`(스모크 테스트), `--no-video`(로그만). 전체는 `--help`.
+주요 옵션: `--sample-seconds`(판단 주기, 기본 15초 고정),
+`--median-frames N`(샘플 시점 ±N 연속 프레임 다수결, 기본 2 → 5장),
+`--max-samples N`(스모크 테스트), `--no-video`(로그만). 전체는 `--help`.
 
 > 짧은 샘플 클립(대부분 15초 미만)은 기본 15초 주기로는 샘플이 1–2개뿐이므로
-> 데모 시 `--sample-seconds 5 --fast-sample-seconds 2`처럼 줄여서 실행하세요.
-> 기존 단일 프레임·고정 주기 동작은 `--sample-seconds 1 --median-frames 0 --no-adaptive`.
+> 데모 시 `--sample-seconds 5`처럼 줄여서 실행하세요.
+> 기존 단일 프레임 동작은 `--sample-seconds 1 --median-frames 0`.
 
 ## 현재 상태 (2026-08-26)
 

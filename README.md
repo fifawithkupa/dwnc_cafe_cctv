@@ -33,7 +33,8 @@ results/
     clean/           주석 없는 원본 사진 (세는 용도)
     marked/          판정을 그려 넣은 사진 (진단 용도)
     judge/           Codex가 매긴 정답지
-  angle2/ angle3/ angle4/ angle1_layout/
+  angle1_layout/   ← 사람이 그린 평면도로 다시 돌린 결과 (지금 쓰는 것)
+    review/          사람 눈으로 한 장씩 넘겨보는 폴더
   preseed/         캘리브레이션 자동 초안 미리보기
   edge/            벤치 결과 (bench_report.json, decode_report.json, clips/)
 ```
@@ -57,8 +58,9 @@ Codex 정답지는 다시 만들려면 Codex를 또 돌려야 하기 때문이�
 | `engine/frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
 | `checks/judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
 | `checks/inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
+| `checks/make_review.py` | 사람이 한 장씩 넘겨보는 `review/` 폴더 — 자리 이름·판정·근거 글자만 남긴 사진 |
 | `checks/judge_schema.json` | Codex가 답해야 하는 JSON 모양 |
-| `tests/` | 유닛 테스트 514개 (모델 없이 순수 로직 검증) |
+| `tests/` | 유닛 테스트 546개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
 | `plan.md` | 코드 작업 플랜 (T1~T12) |
 
@@ -159,6 +161,9 @@ python3 -m venv venv
 #    세 층을 한 줄에 놓고 층별 재현율을 낸다
 ./venv/bin/python -m checks.inspect_run results/angle1/log.jsonl \
   --judge results/angle1/judge --output results/angle1/report.md
+
+#    사람이 한 장씩 넘겨보는 검수 폴더 (review/) 를 만든다
+./venv/bin/python -m checks.make_review results/angle1 --title angle1
 ```
 
 > `checks/judge_frames.py`를 안 돌려도 판독표는 나온다. `실제` 칸이 `___`로 비어

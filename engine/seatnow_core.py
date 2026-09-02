@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -130,6 +130,7 @@ class TableObservation:
     seated_people: List[PoseObservation] = field(default_factory=list)
     connected_chairs: List[Detection] = field(default_factory=list)
     occupied_chairs: List[Detection] = field(default_factory=list)
+    chair_objects: List[Detection] = field(default_factory=list)
     chair_seated_people: List[PoseObservation] = field(default_factory=list)
     reason: str = ""
     provisional: bool = False
@@ -927,6 +928,56 @@ def occupancy_state_from_evidence(
     return OccupancyState.EMPTY
 
 
+# 사용중 근거 글자 — "왜 이 자리가 사용중인가"를 한 글자로 남긴다.
+#   s = 사람이 앉아 있다   t = 책상 위에 짐이 있다   c = 의자에 짐이 있다
+# 사람 > 책상 짐 > 의자 짐 순으로 적는다.  사람이 가장 확실한 근거라서 먼저
+# 읽혀야 하고, 짐만 있는 자리는 손님이 실제로 돌아올지가 덜 확실하다.
+EVIDENCE_SEATED = "s"
+EVIDENCE_TABLE_OBJECT = "t"
+EVIDENCE_CHAIR_OBJECT = "c"
+
+
+def occupancy_evidence_code(observation: TableObservation) -> str:
+    """Summarize why a seat is taken as an ordered letter string.
+
+    ``occupancy_state_from_evidence`` collapses three different situations
+    into one OCCUPIED, and the difference matters to a human reviewer: a
+    person is a fact, a bag on the table is an inference about someone who
+    stepped away.  The reason string already carried this, but only a
+    developer could read it off an annotated frame.
+    """
+    codes: List[str] = []
+    if observation.seated_people or observation.chair_seated_people:
+        codes.append(EVIDENCE_SEATED)
+    if observation.objects:
+        codes.append(EVIDENCE_TABLE_OBJECT)
+    if observation.chair_objects:
+        codes.append(EVIDENCE_CHAIR_OBJECT)
+    return "".join(codes)
+
+
+def evidence_code_from_log(table: Mapping[str, object]) -> str:
+    """The same letters, read back from a log line written by track_to_dict.
+
+    The human-review folder is rebuilt from a run already on disk, and runs
+    made before ``chair_objects`` existed must stay readable.  Those logs
+    recorded the same fact inside the reason string, so it is the fallback.
+    """
+    codes: List[str] = []
+    if int(table.get("seated_people", 0) or 0) or int(
+        table.get("chair_seated_people", 0) or 0
+    ):
+        codes.append(EVIDENCE_SEATED)
+    if table.get("objects"):
+        codes.append(EVIDENCE_TABLE_OBJECT)
+    chair_objects = table.get("chair_objects")
+    if chair_objects is None:
+        chair_objects = "chair_objects:" in str(table.get("reason", ""))
+    if chair_objects:
+        codes.append(EVIDENCE_CHAIR_OBJECT)
+    return "".join(codes)
+
+
 def demote_seats_spanned_by_one_person(
     observations: List[TableObservation],
     units: Sequence[JudgementUnit],
@@ -1614,6 +1665,11 @@ class SeatNowAnalyzer:
                 for chair_index in occupied_chair_indices
                 for person in chair_people_assignments[chair_index]
             ]
+            chair_objects = [
+                obj
+                for chair_index in occupied_chair_indices
+                for obj in chair_object_assignments[chair_index]
+            ]
             # Bar seats need a person; a table takes belongings as evidence.
             seat_requires_person = (
                 self.layout is not None
@@ -1731,6 +1787,7 @@ class SeatNowAnalyzer:
                     seated_people=assigned_people,
                     connected_chairs=connected_chairs,
                     occupied_chairs=occupied_chairs,
+                    chair_objects=chair_objects,
                     chair_seated_people=chair_seated_people,
                     reason=reason,
                     provisional=provisional,
@@ -1931,6 +1988,7 @@ def aggregate_burst_observations(
         center.objects = list(donor.objects)
         center.seated_people = list(donor.seated_people)
         center.occupied_chairs = list(donor.occupied_chairs)
+        center.chair_objects = list(donor.chair_objects)
         center.chair_seated_people = list(donor.chair_seated_people)
     return center_tables
 
@@ -3317,8 +3375,14 @@ def render_frame(
         evidence = observation.reason
         if len(evidence) > 42:
             evidence = evidence[:39] + "..."
+        evidence_code = (
+            occupancy_evidence_code(observation)
+            if track.visible_state == OccupancyState.OCCUPIED
+            else ""
+        )
         label = (
-            f"{track.label} {track.visible_state.value.upper()} "
+            f"{track.label} {track.visible_state.value.upper()}"
+            f"{f'({evidence_code})' if evidence_code else ''} "
             f"layout=v{track.layout_version} {track.layout_state} "
             f"conf={observation.raw_score:.2f} table={observation.table_confidence:.2f}"
         )
@@ -3429,7 +3493,12 @@ def track_to_dict(track: Track) -> Dict[str, object]:
             for chair in observation.connected_chairs
         ],
         "occupied_chairs": len(observation.occupied_chairs),
+        "chair_objects": [
+            {"class": obj.name, "confidence": round(obj.confidence, 4)}
+            for obj in observation.chair_objects
+        ],
         "chair_seated_people": len(observation.chair_seated_people),
+        "evidence_code": occupancy_evidence_code(observation),
         "pending_state": track.pending_state.value if track.pending_state else None,
         "pending_count": track.pending_count,
         "missing_count": track.missed,

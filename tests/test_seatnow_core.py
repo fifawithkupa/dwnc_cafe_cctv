@@ -34,7 +34,9 @@ from engine.seatnow_core import (
     classify_pose,
     deduplicate_tables,
     frame_log_record,
+    evidence_code_from_log,
     is_scene_change,
+    occupancy_evidence_code,
     occupancy_state_from_evidence,
     track_to_dict,
 )
@@ -1125,3 +1127,112 @@ class BarSeatNeedsAPersonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OccupancyEvidenceCodeTests(unittest.TestCase):
+    """왜 사용중인지를 한 글자로 남기는 규칙.
+
+    사용중은 세 갈래로 생기는데(사람이 앉았다 / 책상에 짐 / 의자에 짐) 지금까지
+    로그의 reason 문자열을 읽어야만 구분이 됐다.  사진 위에 글자로 남겨야
+    사람이 검수할 때 "이 빨간 상자는 무엇 때문인가"를 바로 알 수 있다.
+    """
+
+    def observation(self, **kwargs) -> TableObservation:
+        base = dict(
+            box=(0.0, 0.0, 100.0, 100.0),
+            table_confidence=1.0,
+            raw_state=OccupancyState.OCCUPIED,
+            raw_score=0.9,
+        )
+        base.update(kwargs)
+        return TableObservation(**base)
+
+    def test_each_evidence_kind_gets_its_own_letter(self):
+        cup = Detection("cup", (10.0, 10.0, 20.0, 20.0), 0.8)
+        bag = Detection("backpack", (30.0, 30.0, 40.0, 40.0), 0.7)
+        seated = pose_observation(PoseState.SEATED)
+
+        self.assertEqual(
+            occupancy_evidence_code(self.observation(seated_people=[seated])), "s"
+        )
+        self.assertEqual(
+            occupancy_evidence_code(self.observation(objects=[cup])), "t"
+        )
+        self.assertEqual(
+            occupancy_evidence_code(self.observation(chair_objects=[bag])), "c"
+        )
+
+    def test_person_on_a_linked_chair_still_counts_as_a_person(self):
+        seated = pose_observation(PoseState.SEATED)
+        chair = Detection("chair", (0.0, 0.0, 50.0, 80.0), 0.9)
+
+        code = occupancy_evidence_code(
+            self.observation(occupied_chairs=[chair], chair_seated_people=[seated])
+        )
+
+        self.assertEqual(code, "s")
+
+    def test_several_kinds_are_listed_strongest_first(self):
+        cup = Detection("cup", (10.0, 10.0, 20.0, 20.0), 0.8)
+        bag = Detection("backpack", (30.0, 30.0, 40.0, 40.0), 0.7)
+        seated = pose_observation(PoseState.SEATED)
+
+        code = occupancy_evidence_code(
+            self.observation(
+                seated_people=[seated], objects=[cup], chair_objects=[bag]
+            )
+        )
+
+        self.assertEqual(code, "stc")
+
+    def test_no_evidence_has_no_letters(self):
+        self.assertEqual(
+            occupancy_evidence_code(
+                self.observation(raw_state=OccupancyState.EMPTY, raw_score=1.0)
+            ),
+            "",
+        )
+
+    def test_log_line_reproduces_the_same_letters(self):
+        """검수 폴더는 이미 디스크에 있는 로그로부터 다시 그려진다."""
+        cup = Detection("cup", (10.0, 10.0, 20.0, 20.0), 0.8)
+        bag = Detection("backpack", (30.0, 30.0, 40.0, 40.0), 0.7)
+        observation = self.observation(objects=[cup], chair_objects=[bag])
+        track = Track(
+            track_id=1,
+            box=observation.box,
+            stable_state=OccupancyState.OCCUPIED,
+            last_observation=observation,
+            first_seen=0.0,
+            last_seen=0.0,
+        )
+
+        logged = track_to_dict(track)
+
+        self.assertEqual(logged["evidence_code"], "tc")
+        self.assertEqual(evidence_code_from_log(logged), "tc")
+
+    def test_old_log_without_the_field_falls_back_to_the_reason_string(self):
+        """chair_objects 필드가 생기기 전에 돌린 실행도 다시 그릴 수 있어야 한다."""
+        legacy = {
+            "state": "occupied",
+            "reason": "occupied_chairs:1;chair_objects:backpack",
+            "objects": [],
+            "seated_people": 0,
+            "occupied_chairs": 1,
+            "chair_seated_people": 0,
+        }
+
+        self.assertEqual(evidence_code_from_log(legacy), "c")
+
+    def test_old_log_chair_with_a_person_reads_as_a_person(self):
+        legacy = {
+            "state": "occupied",
+            "reason": "occupied_chairs:1",
+            "objects": [],
+            "seated_people": 0,
+            "occupied_chairs": 1,
+            "chair_seated_people": 1,
+        }
+
+        self.assertEqual(evidence_code_from_log(legacy), "s")

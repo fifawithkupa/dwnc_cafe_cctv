@@ -1330,3 +1330,70 @@ class EmptyToOccupiedGoesThroughUnknownTests(unittest.TestCase):
         self.assertEqual(
             released.visible_tracks[0].stable_state, OccupancyState.EMPTY
         )
+
+
+class DrawnLayoutObjectAssignmentTests(unittest.TestCase):
+    """사람이 그린 좌석에는 '상판 띠' 추정을 씌우지 않는다.
+
+    회귀 (angle1, 2026-09-02): T4 위의 노트북이 6틱 중 5틱에서 T5 로
+    붙어 **T4=빈자리 / T5=사용중** 으로 뒤바뀌었다.  손님을 이미 쓰는
+    자리로 보내고, 진짜 빈자리는 감추는 두 방향 모두의 오답이다.
+
+    원인은 ``table_surface_box`` 였다.  탐지된 dining table 상자용 추정
+    (``y1-0.30h`` ~ ``y1+0.58h``)이라, 키가 큰 T5 의 띠는 자기 상자보다
+    90px 위로 뻗어 T4 를 통째로 덮고, 키가 낮은 T4 는 자기 띠가 그린
+    상자의 절반에서 끊긴다.  사람이 그린 상자는 그 자체가 정답이므로
+    추정을 겹칠 이유가 없다.
+
+    좌표는 실제 실행에서 그대로 가져왔다.
+    """
+
+    T4 = (1473.91, 439.4, 1659.57, 549.22)
+    T5 = (1372.66, 550.15, 1641.28, 849.54)
+
+    def units(self):
+        return [
+            Detection("dining table", self.T4, 1.0),
+            Detection("dining table", self.T5, 1.0),
+        ]
+
+    def test_laptop_on_the_drawn_table_is_assigned_to_that_table(self):
+        laptop = Detection("laptop", (1452.0, 460.0, 1648.0, 567.0), 0.20)
+
+        assignments = associate_objects(
+            self.units(), [laptop], surfaces=[self.T4, self.T5]
+        )
+
+        self.assertEqual(assignments[0], [laptop], "T4 위의 노트북이 T4 에 안 붙었다")
+        self.assertEqual(assignments[1], [])
+
+    def test_the_tabletop_estimate_is_what_broke_it(self):
+        """추정을 씌우면 여전히 T5 가 이긴다 — 이 테스트가 원인을 고정한다."""
+        laptop = Detection("laptop", (1452.0, 460.0, 1648.0, 567.0), 0.20)
+
+        assignments = associate_objects(self.units(), [laptop])
+
+        self.assertEqual(assignments[1], [laptop])
+
+    def test_detected_tables_keep_the_tabletop_estimate(self):
+        """탐지된 dining table 상자는 다리·바닥까지 포함하므로 추정이 필요하다."""
+        table = Detection("dining table", (100.0, 100.0, 200.0, 200.0), 0.9)
+        cup_on_table = Detection("cup", (130.0, 95.0, 155.0, 130.0), 0.8)
+
+        assignments = associate_objects([table], [cup_on_table])
+
+        self.assertEqual(assignments[0], [cup_on_table])
+
+    def test_an_object_well_above_a_drawn_table_is_not_on_it(self):
+        """선반 위 카페 비품이 아래 테이블 것으로 딸려오면 안 된다.
+
+        실제 좌표: T6 상자보다 80px 위에 있던 책들이 T6 에 붙고 있었다.
+        """
+        t6 = (695.33, 546.84, 1052.42, 933.59)
+        shelf_book = Detection("book", (790.0, 428.0, 818.0, 463.0), 0.14)
+
+        assignments = associate_objects(
+            [Detection("dining table", t6, 1.0)], [shelf_book], surfaces=[t6]
+        )
+
+        self.assertEqual(assignments[0], [])

@@ -528,8 +528,11 @@ def deduplicate_tables(tables: Sequence[Detection], overlap_threshold: float = 0
     return kept
 
 
-def _object_table_score(obj: Detection, table: Detection) -> float:
-    surface = table_surface_box(table.box)
+def _object_table_score(
+    obj: Detection, table: Detection, surface: Optional[Box] = None
+) -> float:
+    if surface is None:
+        surface = table_surface_box(table.box)
     object_area = box_area(obj.box)
     table_area = box_area(table.box)
     if object_area <= 0 or table_area <= 0 or object_area > table_area * 1.25:
@@ -546,12 +549,32 @@ def _object_table_score(obj: Detection, table: Detection) -> float:
 
 
 def associate_objects(
-    tables: Sequence[Detection], objects: Sequence[Detection]
+    tables: Sequence[Detection],
+    objects: Sequence[Detection],
+    surfaces: Optional[Sequence[Box]] = None,
 ) -> Dict[int, List[Detection]]:
-    """Assign each object to at most one tabletop."""
+    """Assign each object to at most one tabletop.
+
+    ``surfaces`` overrides the region each table collects objects from.  Pass
+    the hand-drawn boxes in layout mode: ``table_surface_box`` estimates a
+    tabletop band from a detected furniture box, and that estimate scales with
+    the box's own height, so a deep table's band reaches far above itself and
+    swallows the shallow table drawn behind it.  A drawn box is already the
+    answer a person gave; re-estimating it only moves it off the table.
+    """
     assignments: Dict[int, List[Detection]] = {index: [] for index in range(len(tables))}
     for obj in objects:
-        scores = [(_object_table_score(obj, table), index) for index, table in enumerate(tables)]
+        scores = [
+            (
+                _object_table_score(
+                    obj,
+                    table,
+                    surfaces[index] if surfaces is not None else None,
+                ),
+                index,
+            )
+            for index, table in enumerate(tables)
+        ]
         score, table_index = max(scores, default=(0.0, -1))
         if table_index >= 0 and score >= 0.22:
             assignments[table_index].append(obj)
@@ -1347,13 +1370,14 @@ class SeatNowAnalyzer:
         frame: np.ndarray,
         tables: Sequence[Detection],
         existing_objects: Sequence[Detection],
+        surfaces: Optional[Sequence[Box]] = None,
     ) -> List[Detection]:
         """Run high-resolution second-pass detection near otherwise bare tables."""
         if not self.config.table_crop_objects or not tables:
             return list(existing_objects)
         height, width = frame.shape[:2]
         objects = list(existing_objects)
-        initial_assignments = associate_objects(tables, objects)
+        initial_assignments = associate_objects(tables, objects, surfaces)
         crop_candidates = [
             (index, table)
             for index, table in enumerate(tables)
@@ -1583,9 +1607,14 @@ class SeatNowAnalyzer:
             )
         suppress_conflicting_weak_seated_poses(poses)
 
-        objects = self._crop_objects(frame, tables, objects)
+        # 사람이 그린 좌석은 그 상자가 곧 정답이다 (CLAUDE.md).  탐지된
+        # dining table 상자만 상판을 추정한다 — 그건 다리와 바닥까지 포함하니까.
+        object_surfaces = (
+            [table.box for table in tables] if self.layout is not None else None
+        )
+        objects = self._crop_objects(frame, tables, objects, object_surfaces)
         objects = filter_carried_objects(objects, poses)
-        object_assignments = associate_objects(tables, objects)
+        object_assignments = associate_objects(tables, objects, object_surfaces)
         table_object_ids = {
             id(obj)
             for assigned in object_assignments.values()

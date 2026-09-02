@@ -127,6 +127,10 @@ class TableObservation:
     raw_score: float
     source: str = "detected"
     objects: List[Detection] = field(default_factory=list)
+    # objects 와 같은 순서.  배정을 결정한 그 순간의 겹침 비율이다 — 나중에
+    # 다시 계산하면 버스트 다수결로 물건 목록이 갈아끼워졌을 때 결정에 쓰이지
+    # 않은 상자로 재는 셈이 되어, 근거가 거짓말이 된다.
+    object_shares: List[float] = field(default_factory=list)
     seated_people: List[PoseObservation] = field(default_factory=list)
     connected_chairs: List[Detection] = field(default_factory=list)
     occupied_chairs: List[Detection] = field(default_factory=list)
@@ -537,6 +541,14 @@ def deduplicate_tables(tables: Sequence[Detection], overlap_threshold: float = 0
 # 값이 아니다 (CLAUDE.md).
 MAXIMUM_OBJECT_SEAT_AREA_FRACTION = 0.50
 
+# 반대쪽 하한: 자리에 이만큼도 걸치지 않은 물건은 그 자리 것이 아니다.
+# 점수식의 근접도 항(35% 비중)만으로도 문턱을 넘을 수 있어서, 겹침이
+# 사실상 0 인 물건이 옆자리로 새어들어갔다.
+#
+# 0.20 도 실측에서 왔다 (angle1 6틱, 배정 30건): 진짜 배정은 겹침 26%
+# 이상, 틀린 배정은 13% 이하였고 그 사이가 비어 있다.
+MINIMUM_OBJECT_SEAT_OVERLAP = 0.20
+
 
 def _object_table_score(
     obj: Detection, table: Detection, surface: Optional[Box] = None
@@ -555,7 +567,7 @@ def _object_table_score(
     anchor_distance = point_box_distance(bottom_center, surface)
     maximum_distance = max(10.0, 0.18 * box_diagonal(table.box))
     proximity = max(0.0, 1.0 - anchor_distance / maximum_distance)
-    if intersection_ratio < 0.08 and proximity <= 0.0:
+    if intersection_ratio < MINIMUM_OBJECT_SEAT_OVERLAP:
         return 0.0
     return 0.65 * min(1.0, intersection_ratio * 2.0) + 0.35 * proximity
 
@@ -1705,6 +1717,9 @@ class SeatNowAnalyzer:
         observations: List[TableObservation] = []
         for index, table in enumerate(tables):
             assigned_objects = object_assignments[index]
+            assigned_object_shares = [
+                object_seat_share(obj, table.box) for obj in assigned_objects
+            ]
             assigned_people = people_assignments[index]
             assigned_unknown_people = unknown_assignments[index]
             connected_chair_indices = chair_table_assignments[index]
@@ -1846,6 +1861,7 @@ class SeatNowAnalyzer:
                     raw_state=state,
                     raw_score=score,
                     objects=assigned_objects,
+                    object_shares=assigned_object_shares,
                     seated_people=assigned_people,
                     connected_chairs=connected_chairs,
                     occupied_chairs=occupied_chairs,
@@ -2048,6 +2064,7 @@ def aggregate_burst_observations(
         center.reason = donor.reason
         center.provisional = donor.provisional
         center.objects = list(donor.objects)
+        center.object_shares = list(donor.object_shares)
         center.seated_people = list(donor.seated_people)
         center.occupied_chairs = list(donor.occupied_chairs)
         center.chair_objects = list(donor.chair_objects)
@@ -3522,9 +3539,9 @@ def track_to_dict(track: Track) -> Dict[str, object]:
                 "class": obj.name,
                 "confidence": round(obj.confidence, 4),
                 "box": [round(value, 2) for value in obj.box],
-                "share": round(object_seat_share(obj, observation.box), 4),
+                "share": round(share, 4),
             }
-            for obj in observation.objects
+            for obj, share in zip(observation.objects, observation.object_shares)
         ],
         "seated_people": len(observation.seated_people),
         "connected_chairs": [

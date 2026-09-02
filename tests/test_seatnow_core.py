@@ -36,6 +36,7 @@ from engine.seatnow_core import (
     frame_log_record,
     evidence_code_from_log,
     is_scene_change,
+    object_seat_share,
     occupancy_evidence_code,
     occupancy_state_from_evidence,
     track_to_dict,
@@ -90,13 +91,15 @@ def table_observation(
     reason: str = "fixture",
     provisional: bool = False,
 ):
+    object_list = list(objects or [])
     return TableObservation(
         box=box,
         table_confidence=confidence,
         raw_state=state,
         raw_score=confidence,
         source=source,
-        objects=list(objects or []),
+        objects=object_list,
+        object_shares=[object_seat_share(obj, box) for obj in object_list],
         seated_people=list(seated_people or []),
         connected_chairs=list(connected_chairs or []),
         occupied_chairs=list(occupied_chairs or []),
@@ -1162,13 +1165,18 @@ class OccupancyEvidenceCodeTests(unittest.TestCase):
     """
 
     def observation(self, **kwargs) -> TableObservation:
+        box = kwargs.get("box", (0.0, 0.0, 100.0, 100.0))
         base = dict(
-            box=(0.0, 0.0, 100.0, 100.0),
+            box=box,
             table_confidence=1.0,
             raw_state=OccupancyState.OCCUPIED,
             raw_score=0.9,
         )
         base.update(kwargs)
+        base.setdefault(
+            "object_shares",
+            [object_seat_share(obj, box) for obj in base.get("objects") or []],
+        )
         return TableObservation(**base)
 
     def test_each_evidence_kind_gets_its_own_letter(self):
@@ -1504,5 +1512,39 @@ class FurnitureSizedObjectTests(unittest.TestCase):
         bag = Detection("backpack", (1500.0, 460.0, 1560.0, 500.0), 0.38)
 
         assignments = associate_objects([self.seat()], [bag], surfaces=[self.T4])
+
+        self.assertEqual(assignments[0], [bag])
+
+
+class MinimumSeatOverlapTests(unittest.TestCase):
+    """자리에 거의 걸치지도 않은 물건은 그 자리 것이 아니다.
+
+    점수식에는 "가까이 있으면 준다"는 근접도 항이 있어서, 겹침이 사실상
+    0 이어도 문턱을 넘을 수 있었다.  회귀 (angle1 45초): T4 의 유령 탐지가
+    크기 필터에 걸려 튕겨나간 뒤, 겨우 1% 걸친 T5 로 새어들어가 멀쩡한
+    빈자리를 모름으로 만들었다.
+
+    좌표는 실제 실행에서 가져왔다.  같은 실행의 배정 30건을 겹침 비율로
+    줄세우면 진짜는 26% 이상, 틀린 것은 13% 이하로 갈렸다.
+    """
+
+    def test_an_object_barely_touching_a_seat_is_not_on_it(self):
+        t5 = (1361.0, 566.0, 1651.0, 794.0)
+        leaked = Detection("book", (1457.0, 459.0, 1655.0, 568.0), 0.33)
+
+        assignments = associate_objects(
+            [Detection("dining table", t5, 1.0)], [leaked], surfaces=[t5]
+        )
+
+        self.assertEqual(assignments[0], [])
+
+    def test_a_bag_hanging_off_the_edge_still_belongs_to_the_table(self):
+        """60초 T1: 자리 상자가 흘러내려 가방이 26% 만 걸쳤지만 진짜다."""
+        t1 = (1024.0, 393.0, 1234.0, 571.0)
+        bag = Detection("handbag", (1064.0, 359.0, 1135.0, 404.0), 0.21)
+
+        assignments = associate_objects(
+            [Detection("dining table", t1, 1.0)], [bag], surfaces=[t1]
+        )
 
         self.assertEqual(assignments[0], [bag])

@@ -176,9 +176,9 @@
       "category": "맞음",
       "direction": null,
       "looking_for": "c (의자에 짐)",
-      "label": "상자밖",
-      "why": "handbag 0.25 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
-      "best_confidence": 0.25031304359436035,
+      "label": "파인튜닝",
+      "why": "backpack 가 0.044 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.043605390936136246,
       "sightings": [
         {
           "class": "dining table",
@@ -260,9 +260,9 @@
       "category": "맞음",
       "direction": null,
       "looking_for": "c (의자에 짐)",
-      "label": "상자밖",
-      "why": "backpack 0.24 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
-      "best_confidence": 0.2359226495027542,
+      "label": "파인튜닝",
+      "why": "handbag 가 0.050 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.04958168417215347,
       "sightings": [
         {
           "class": "dining table",
@@ -439,9 +439,9 @@
       "category": "맞음",
       "direction": null,
       "looking_for": "c (의자에 짐)",
-      "label": "상자밖",
-      "why": "backpack 0.41 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
-      "best_confidence": 0.410109281539917,
+      "label": "임계값경계",
+      "why": "backpack 를 0.07 로만 봤다 (임계값 0.15, 겹침 88%) — 전역 기본값을 내려볼 수 있는 범위다",
+      "best_confidence": 0.06956619769334793,
       "sightings": [
         {
           "class": "dining table",

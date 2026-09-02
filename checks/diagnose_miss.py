@@ -59,7 +59,11 @@ BORDERLINE_FLOOR_RATIO = 1.0 / 3.0
 
 # 자리 상자 밖을 얼마나 넓혀 볼 것인가.  물건이 상자 **바로 밖**에 있으면
 # 그건 탐지 문제가 아니라 상자를 잘못 그린 것이고, 고치는 사람이 다르다.
-NEARBY_MARGIN = 0.6
+#
+# 0.6 은 너무 넓었다: T6 의자5(89x264)를 그만큼 넓히면 옆 테이블 T1 위의
+# 가방까지 들어와서, 모델이 아예 못 본 배낭을 "상자를 다시 그리면 된다"로
+# 잘못 진단했다.  "바로 밖"은 말 그대로 바로 밖이어야 한다.
+NEARBY_MARGIN = 0.25
 
 # 같은 물건으로 볼 겹침.  이미 이 자리에 배정된 물건은 "놓친 것"이 아니다.
 SAME_OBJECT_IOU = 0.5
@@ -354,10 +358,33 @@ def run_detector(
     return items
 
 
+def claimed_by_another_seat(
+    box: Sequence[float],
+    seat: str,
+    seat_boxes: Sequence[Tuple[str, Sequence[float]]],
+) -> bool:
+    """이 물건을 더 많이 덮는 다른 자리가 있나.
+
+    "상자밖"은 *이 자리* 것인데 상자를 벗어났다는 뜻이다.  옆자리 위에
+    멀쩡히 놓인 물건을 끌어오면, 모델이 아예 못 본 짐까지 "상자를 다시
+    그리면 된다"로 둔갑한다 (angle1 30초 T6 에서 실제로 그랬다).
+    """
+    mine = max(
+        (share_inside(box, other) for name, other in seat_boxes if name == seat),
+        default=0.0,
+    )
+    theirs = max(
+        (share_inside(box, other) for name, other in seat_boxes if name != seat),
+        default=0.0,
+    )
+    return theirs > mine
+
+
 def diagnose(
     misses: Sequence[Mapping[str, object]],
     detections_by_time: Mapping[float, Sequence[Mapping[str, object]]],
     threshold: float,
+    seat_boxes_by_time: Optional[Mapping[float, Sequence[Tuple[str, Sequence[float]]]]] = None,
 ) -> List[Diagnosis]:
     """오답 목록에 딱지를 붙인다.  모델 호출은 이미 끝난 상태로 들어온다."""
     results: List[Diagnosis] = []
@@ -413,6 +440,8 @@ def diagnose(
         sightings = collect_sightings(fresh, regions)
         inside = {id(item) for item in sightings}
         wider = [(f"{name} 주변", expand_region(box)) for name, box in regions]
+        seat_boxes = (seat_boxes_by_time or {}).get(timestamp, [])
+        seat_name = str(miss.get("seat", "?"))
         nearby = [
             item
             for item in collect_sightings(fresh, wider)
@@ -420,6 +449,7 @@ def diagnose(
                 other.name == item.name and box_iou(other.box, item.box) >= SAME_OBJECT_IOU
                 for other in sightings
             )
+            and not claimed_by_another_seat(item.box, seat_name, seat_boxes)
         ]
         label, why, best = label_miss(sightings, threshold, wanted, nearby)
         results.append(
@@ -549,7 +579,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             frame, detector, imgsz, FLOOR_CONFIDENCE
         )
 
-    diagnoses = diagnose(misses, detections_by_time, threshold)
+    seat_boxes_by_time: Dict[float, List[Tuple[str, List[float]]]] = {}
+    for record in records:
+        stamp = float(record.get("timestamp", 0.0))
+        seat_boxes_by_time[stamp] = [
+            (
+                str(table.get("layout_name") or table.get("label") or "?"),
+                [float(value) for value in (table.get("box") or [])],
+            )
+            for table in (record.get("tables") or [])
+            if table.get("box")
+        ]
+
+    diagnoses = diagnose(misses, detections_by_time, threshold, seat_boxes_by_time)
     output = args.output or run_dir / "원인진단.md"
     output.write_text(render_report(diagnoses, threshold), encoding="utf-8")
     (run_dir / "원인진단.json").write_text(

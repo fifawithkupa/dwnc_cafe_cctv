@@ -267,5 +267,49 @@ class DiagnoseTests(unittest.TestCase):
         self.assertEqual([s.name for s in results[0].sightings], ["handbag"])
 
 
+class NearbyMarginTests(unittest.TestCase):
+    """'바로 밖'이 옆자리까지 닿으면 안 된다."""
+
+    def test_a_bag_on_the_next_table_is_not_this_seat_s_box_problem(self):
+        """angle1 30초 실제 좌표: T6 의자5 와 T1 위의 배낭.
+
+        모델이 T6 의자 위의 검은 배낭을 아예 못 보는데, 넓힌 영역이 옆
+        테이블까지 닿으면 그게 '상자를 다시 그리면 된다'로 둔갑한다.
+        """
+        chair5 = miss(
+            seat="T6",
+            missed_evidence="c",
+            seat_box=[695.0, 547.0, 1052.0, 934.0],
+            connected_chairs=[{"box": [978.4, 488.08, 1067.41, 752.36]}],
+        )
+        t1_backpack = detection("backpack", 0.41, [1075.0, 389.0, 1150.0, 433.0])
+
+        results = diagnose([chair5], {30.0: [t1_backpack]}, 0.15)
+
+        self.assertEqual(results[0].label, LABEL_FINETUNE)
+
+    def test_a_bag_sitting_on_the_neighbour_seat_is_the_neighbour_s(self):
+        """angle1 0초: T1 위의 handbag 이 T6 의자5 근처까지 온다."""
+        t6 = miss(
+            seat="T6",
+            missed_evidence="c",
+            seat_box=[695.0, 547.0, 1052.0, 934.0],
+            connected_chairs=[{"box": [978.4, 488.08, 1067.41, 752.36]}],
+        )
+        t1_handbag = detection("handbag", 0.25, [1040.55, 414.94, 1106.76, 458.03])
+        seats = {
+            0.0: [
+                ("T6", [695.0, 547.0, 1052.0, 934.0]),
+                ("T1", [1041.6, 382.23, 1249.27, 556.72]),
+            ]
+        }
+
+        results = diagnose(
+            [dict(t6, timestamp=0.0)], {0.0: [t1_handbag]}, 0.15, seats
+        )
+
+        self.assertEqual(results[0].label, LABEL_FINETUNE)
+
+
 if __name__ == "__main__":
     unittest.main()

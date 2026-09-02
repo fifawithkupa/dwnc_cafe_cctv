@@ -1,0 +1,249 @@
+# OptiPlex 7040 Micro에서 지금 로직 그대로 돌리기
+
+> 작성: 2026-09-02
+> 대상 장비: **Dell OptiPlex 7040 Micro, RAM 4GB** (8GB로 증설 가능)
+> 관련: `docs/edge-setup.md`(카메라 고르기까지 가는 긴 절차), `plan.md` T6
+
+## 이 문서의 목표는 딱 하나다
+
+**지금 노트북에서 돌아가는 그 로직을, 손대지 않고 OptiPlex에서 끝까지 돌린다.
+그리고 "판단 한 번에 몇 초 걸리는가"를 숫자로 얻는다.**
+
+합격선은 **7.5초**다 (판단 주기 15초의 절반). 여유 절반을 요구하는 이유는
+24시간 도는 박스에 스트림 재연결·디코더 리셋·로그 정리가 언제든 끼어들기
+때문이다.
+
+### 이번에 하지 않는 것 — 미리 알고 가야 실망하지 않는다
+
+- **카메라는 안 꽂는다.** 지금 코드는 **녹화 파일 전용**이다. 라이브 스트림
+  읽기는 아직 없다 (`plan.md` T8). 카메라를 꽂아도 안 돈다
+- **어떤 카메라를 살지도 안 고른다.** 그건 `docs/edge-setup.md`의
+  `bench_decode` 단계이고, 이 문서 다음이다
+- 그래서 이번에 재는 것은 **같은 영상을 같은 로직으로 돌렸을 때의 속도**다
+
+---
+
+## 0단계 — 지금 터미널에서 30초 (박스 신원 확인)
+
+**설치 전에 이것부터.** 여기서 갈리는 게 있다.
+
+Windows(PowerShell):
+```powershell
+(Get-CimInstance Win32_Processor).Name
+(Get-CimInstance Win32_Processor).NumberOfCores
+[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1)
+[math]::Round((Get-PSDrive C).Free/1GB,1)
+```
+
+Linux:
+```bash
+lscpu | grep -E "Model name|^CPU\(s\)"
+free -g | head -2
+df -h / | tail -1
+```
+
+### 나온 값으로 판단하기
+
+| 항목 | 필요 | 안 되면 |
+|---|---|---|
+| **물리 코어** | **4개 이상** | ⚠️ `i3-6100T`면 **물리 2개**(4스레드)라 검수에서 불합격이 뜬다. 7040 Micro는 i3/i5/i7이 다 나왔으니 **지금 확인해야 한다** |
+| RAM | 4GB (합격선 딱 그것) | ⚠️ 아래 경고 참조 |
+| 디스크 여유 | 10GB 이상 | 정리한다 |
+
+> **RAM 4GB는 "합격"이 떠도 안심하면 안 된다.**
+> 검수 도구의 합격선이 정확히 4.0GB라서 통과는 한다. 하지만 Windows만으로
+> 약 2GB를 먹고, 파이썬+AI 모델이 1.5~2.5GB를 쓴다. **거의 확실히 스왑
+> (디스크로 밀어내기)이 걸린다.** 15초 주기 작업에서 스왑이 걸리면 판단을
+> 통째로 놓친다.
+>
+> **8GB 증설은 이 로드맵에서 가장 싼 위험 제거다.** DDR4 SODIMM 한 개면 되고,
+> 7040 Micro는 슬롯이 2개다. 먼저 4GB로 돌려보고 느리면 그때 올려도 되지만,
+> 지금 올리면 "느린 게 CPU 탓인지 RAM 탓인지" 헷갈릴 일이 없다.
+
+---
+
+## 1단계 — 깔기 (30~60분)
+
+`docs/edge-setup.md` §2-A(Windows) 또는 §2-B(Linux)를 그대로 따르면 된다.
+**OS는 지금 깔려 있는 것 그대로 쓴다** — 속도 차이는 거의 없고, 리눅스는
+실제 매장에 놓을 때 바꾸면 된다.
+
+필요한 것은 넷이다.
+
+1. **Python 3.11** — 설치 화면에서 `Add python.exe to PATH` 체크
+2. **ffmpeg** — 영상을 푸는 프로그램. 없으면 아무것도 안 된다
+3. **인텔 그래픽 드라이버** — 이게 없으면 영상 푸는 데만 CPU를 3~6배 더 쓴다
+4. **저장소**
+   ```
+   git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
+   cd seatnow
+   python -m venv venv
+   venv\Scripts\python.exe -m pip install --upgrade pip
+   venv\Scripts\python.exe -m pip install -r requirements.txt
+   ```
+
+### 영상은 하나만 받으면 된다
+
+`sample_raw/`는 저장소에 없다 (용량·개인정보). 구글 드라이브에서
+**`cafe_sample_angle1.mov` 하나만** 받아 `sample_raw/`에 넣는다.
+
+- 크기 **146MB**. 나머지 영상은 이번에 필요 없다
+- 받는 법은 `ONBOARDING.md` §2. **"오프라인 사용 가능"으로 고정**하는 것을
+  빠뜨리지 말 것 — 스트리밍 상태로 두면 실행할 때마다 146MB를 다시 내려받는다
+
+AI 모델 파일(`yolov8n.pt` 13MB)은 **처음 실행할 때 자동으로 받아진다.**
+따로 챙길 것 없다.
+
+---
+
+## 2단계 — 검수 (5분)
+
+```
+venv\Scripts\python.exe -m edge.check_edge
+```
+
+항목마다 합격/불합격이 나오고, 불합격이면 무엇을 하면 되는지가 `→` 줄에 붙는다.
+
+**여기서 멈춰야 하는 것은 딱 하나다: 하드웨어 디코딩이 "꺼짐"으로 나올 때.**
+꺼진 채로 재면 실제보다 훨씬 나쁜 숫자가 나온다. 그래픽 드라이버부터 잡는다.
+
+---
+
+## 3단계 — 진짜 실행 ⬅️ **오늘의 목표**
+
+지금 노트북에서 돌리는 것과 **한 글자도 다르지 않은 명령**이다.
+
+```
+venv\Scripts\python.exe -m engine.seatnow sample_raw\cafe_sample_angle1.mov ^
+  --layout layouts\cafe_angle1.json ^
+  --log results\edge_angle1\log.jsonl ^
+  --frame-dir results\edge_angle1 ^
+  --log-detections --no-video
+```
+
+화면에 이런 줄이 6개 나온다. **맨 뒤 `inference=` 가 오늘 얻으려는 숫자다.**
+
+```
+[  0.0s] tables=12 occupied=3 empty=8 ... inference=3488ms
+```
+
+| 나온 값 | 뜻 |
+|---|---|
+| **7500ms 이하** | ✅ 합격. 이 박스로 간다 |
+| 7500~15000ms | ⚠️ 돌긴 하는데 여유가 없다 → 4단계 |
+| **15000ms 초과** | ❌ 판단 주기를 못 지킨다 → 4단계 |
+
+참고로 **개발용 노트북(2024년 8코어)에서 3.3초**다. 7040 Micro는 2015년
+칩이라 2.5~4배 느릴 것으로 본다 — 즉 **8~13초 예상**이다. 이건 추정이고,
+진짜 숫자는 위 명령이 알려준다.
+
+### 답이 같은지도 확인한다 — 속도보다 이게 먼저다
+
+장비가 달라도 **판정은 똑같아야 한다.** 정답지로 채점해서 확인한다.
+
+```
+copy results\angle1_layout\angle_answer.md results\edge_angle1\
+venv\Scripts\python.exe -m checks.score_answers results\edge_angle1 ^
+  --answers results\edge_angle1\angle_answer.md --title "엣지 박스"
+```
+
+**`accepted=70`, `wrong=2`가 나와야 한다.** 노트북에서 나온 것과 같은 값이다.
+다르면 속도를 논하기 전에 그것부터 봐야 한다 (보통 라이브러리 버전 문제다).
+
+---
+
+## 4단계 — 7.5초를 못 지켰을 때 (여유 만들기)
+
+**순서대로 하나씩.** 한 번에 여러 개를 바꾸면 무엇이 효과가 있었는지 모른다.
+
+### ① OpenVINO — 공짜이고, 이게 가장 크다
+
+**장비가 아니라 소프트웨어다.** 인텔이 무료로 주는 번역기로, 우리 AI 모델을
+인텔 칩이 알아듣는 형태로 다시 쓴다. **같은 모델, 같은 판정, 같은 정확도 —
+더 빨리 돌기만 한다.**
+
+그리고 OptiPlex 안에서 **놀고 있는 내장 그래픽칩(Intel HD 530)까지 같이 쓴다.**
+이미 사장님이 돈 주고 산 성능인데 안 쓰고 있는 것이다.
+
+```
+venv\Scripts\python.exe -m pip install openvino
+venv\Scripts\python.exe -m edge.export --precision fp32
+```
+
+`yolov8n_openvino_model\` 폴더가 생긴다. 이제 실행할 때 모델만 바꿔 끼운다.
+
+```
+venv\Scripts\python.exe -m engine.seatnow sample_raw\cafe_sample_angle1.mov ^
+  --layout layouts\cafe_angle1.json ^
+  --det-model yolov8n_openvino_model ^
+  --pose-model yolov8n-pose_openvino_model ^
+  --log results\edge_ov\log.jsonl --frame-dir results\edge_ov ^
+  --log-detections --no-video
+```
+
+**3단계와 같은 방법으로 채점도 다시 한다.** 70칸이 유지되는지 봐야 한다.
+
+보통 2~4배 빨라진다고 알려져 있지만, **6세대 Skylake + HD 530에서 실제로 얼마가
+나올지는 이 명령이 알려준다.** 이것만으로 대체로 해결될 것으로 본다.
+
+### ② RAM 8GB — 아직 안 올렸다면 여기서
+
+숫자가 들쭉날쭉하거나(어떤 틱은 4초, 어떤 틱은 20초) 디스크가 계속 돌면
+**스왑이다.** RAM 문제이지 CPU 문제가 아니다.
+
+### ③ 크롭 재탐지 개수 줄이기 — 정확도를 대가로 낸다
+
+지금 **판단 시간의 63%를 크롭 재탐지가 쓴다** (노트북 기준 3.3초 중 2.1초).
+프레임마다 최대 4개씩, 5프레임이니 판단 한 번에 최대 20번 더 돌린다.
+
+**그런데 이건 그냥 끄면 안 된다.** 끄면 72칸 중 70 → 67로 떨어지고 오답이
+2개에서 5개로 는다. 대신 개수를 줄이는 건 조절 여지가 있다.
+
+```
+venv\Scripts\python.exe -m edge.bench --frames sample_raw\cafe_sample_angle1.mov --label optiplex
+```
+
+프로파일 4개(`accuracy_default` / `balanced` / `fast` / `minimum`)의 속도를
+한 번에 재준다. 지금 쓰는 것이 `accuracy_default`다.
+
+> ⚠️ **속도만 보고 프로파일을 고르면 안 된다.** 고른 설정으로 3단계의 채점을
+> 다시 돌려서 **72칸이 몇 개 나오는지 반드시 같이 본다.** 빨라진 대신 손님을
+> 남의 자리로 보내면 아무 의미가 없다.
+
+### 하지 않을 것: `imgsz` 올리기
+
+**측정해봤고, 정확도가 오히려 떨어진다.**
+
+| 설정 | 72칸 중 옳음 | 틱당 시간(노트북) |
+|---|---:|---:|
+| **현재 (1280)** | **70** | 3.3초 |
+| 1536 | 68 | 3.5초 |
+| 1920 | 69 | 4.0초 |
+
+이 모델은 640으로 학습됐다. 1280도 이미 학습 크기의 2배라, 더 올리면 학습 때
+본 적 없는 크기로 물체가 보여서 못 맞춘다. **더 비싸고 더 나쁘다.**
+
+---
+
+## 5단계 — 이 다음 (오늘은 안 함)
+
+7.5초를 지키는 설정을 찾고 나면:
+
+1. **카메라 고르기** — `docs/edge-setup.md` §3의 `bench_decode`.
+   이 박스로 감당 가능한 해상도·코덱을 표로 뽑는다. **RTSP 개방 확인 필수**
+2. **`plan.md` T8 — 라이브 스트림 읽기.** 지금 코드는 파일 전용이다.
+   tick마다 영상의 특정 시각으로 되감는 구조인데, 라이브는 되감기가 안 된다.
+   **아키텍처 변경이라 시간이 든다**
+3. **`plan.md` T10 — 24시간 무인 운영.** 자동 재시작, 로그 정리,
+   **영상 미저장이 기본값**(개인정보)
+
+---
+
+## 막히면
+
+`docs/edge-setup.md` §5에 자주 막히는 곳이 정리돼 있다. 가장 흔한 둘:
+
+| 증상 | 해결 |
+|---|---|
+| `ffmpeg를 찾지 못했다` | 명령 프롬프트를 **새로 연다**. 기존 창은 바뀐 PATH를 모른다 |
+| 하드웨어 디코딩이 계속 "꺼짐" | 인텔 그래픽 드라이버를 다시 설치한다. **가상머신 안에서는 원래 안 된다** |

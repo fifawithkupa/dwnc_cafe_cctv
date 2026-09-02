@@ -3,12 +3,14 @@ import unittest
 from checks.diagnose_miss import (
     LABEL_BORDERLINE,
     LABEL_BOX,
+    LABEL_MISLABEL,
     LABEL_FINETUNE,
     LABEL_LOGIC,
     LABEL_UNSCORED,
     Sighting,
     collect_sightings,
     diagnose,
+    furniture_mistaken_for_belongings,
     label_miss,
     regions_for,
     share_inside,
@@ -180,6 +182,89 @@ class LabelTests(unittest.TestCase):
         label, _, _ = label_miss([self.sighting("person", 0.05)], 0.15, "s")
 
         self.assertEqual(label, LABEL_BORDERLINE)
+
+
+
+class MislabelTests(unittest.TestCase):
+    """모델이 손님 짐을 가구 이름으로 부르면 통째로 버려진다."""
+
+    def sight(self, name, conf, box, share=0.9):
+        return Sighting(name, conf, share, "자리", list(box))
+
+    def test_a_small_chair_standing_on_the_table_is_a_mislabelled_thing(self):
+        """angle1 30초 T5: 세워둔 노트북을 chair 0.196 으로 불렀다."""
+        laptop_as_chair = self.sight("chair", 0.196, [1427, 528, 1530, 586], 1.0)
+
+        suspects = furniture_mistaken_for_belongings(
+            [laptop_as_chair], [1355.0, 583.0, 1648.0, 763.0], [], 0.15
+        )
+
+        self.assertEqual([s.name for s in suspects], ["chair"])
+
+    def test_faint_furniture_is_noise_not_a_wrong_name(self):
+        """chair 0.02 를 '모델이 봤다'고 부르면 진짜 미탐지가 묻힌다."""
+        noise = self.sight("chair", 0.02, [1400, 600, 1450, 650], 1.0)
+
+        suspects = furniture_mistaken_for_belongings(
+            [noise], [1355.0, 583.0, 1648.0, 763.0], [], 0.15
+        )
+
+        self.assertEqual(suspects, [])
+
+    def test_a_chair_the_person_actually_drew_is_a_real_chair(self):
+        drawn = [1307.99, 480.82, 1415.69, 658.34]
+        detected = self.sight("chair", 0.7, drawn, 1.0)
+
+        suspects = furniture_mistaken_for_belongings(
+            [detected], [1300.0, 470.0, 1700.0, 800.0], [drawn]
+        )
+
+        self.assertEqual(suspects, [])
+
+    def test_furniture_as_big_as_the_seat_is_the_furniture(self):
+        table = self.sight("dining table", 0.8, [1360, 560, 1650, 760], 1.0)
+
+        suspects = furniture_mistaken_for_belongings(
+            [table], [1355.0, 550.0, 1648.0, 763.0], []
+        )
+
+        self.assertEqual(suspects, [])
+
+    def test_something_beside_the_seat_is_not_on_it(self):
+        elsewhere = self.sight("chair", 0.5, [100, 100, 140, 150], 0.1)
+
+        suspects = furniture_mistaken_for_belongings(
+            [elsewhere], [1355.0, 550.0, 1648.0, 763.0], []
+        )
+
+        self.assertEqual(suspects, [])
+
+    def test_a_person_is_never_a_mislabelled_belonging(self):
+        someone = self.sight("person", 0.9, [1400, 560, 1450, 640], 1.0)
+
+        suspects = furniture_mistaken_for_belongings(
+            [someone], [1355.0, 550.0, 1648.0, 763.0], []
+        )
+
+        self.assertEqual(suspects, [])
+
+    def test_a_wrong_name_outranks_calling_it_invisible(self):
+        """'못 본다'와 '이름을 틀렸다'는 학습 데이터 요구사항이 다르다."""
+        mislabelled = [self.sight("chair", 0.196, [1427, 528, 1530, 586], 1.0)]
+
+        label, why, best = label_miss([], 0.15, "t", (), mislabelled)
+
+        self.assertEqual(label, LABEL_MISLABEL)
+        self.assertIn("이름을 틀렸다", why)
+        self.assertEqual(best, 0.196)
+
+    def test_a_real_detection_above_the_threshold_still_wins(self):
+        real = Sighting("book", 0.4, 0.9, "자리", [0, 0, 1, 1])
+        mislabelled = [self.sight("chair", 0.196, [1427, 528, 1530, 586], 1.0)]
+
+        label, _, _ = label_miss([real], 0.15, "t", (), mislabelled)
+
+        self.assertEqual(label, LABEL_LOGIC)
 
 
 class WantedEvidenceTests(unittest.TestCase):

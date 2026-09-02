@@ -8,9 +8,9 @@
       "category": "오답",
       "direction": "놓침",
       "looking_for": "t (책상에 짐)",
-      "label": "파인튜닝",
-      "why": "신뢰도 0.01에서도 짐이 안 보인다 (보이는 것은 chair, dining table 뿐)",
-      "best_confidence": null,
+      "label": "가구오인",
+      "why": "자리 위의 물건을 **chair 0.20** 로 불렀다 (겹침 83%) — 못 본 게 아니라 **이름을 틀렸다.** 그 클래스는 가구라 통째로 버려진다",
+      "best_confidence": 0.19637709856033325,
       "sightings": [
         {
           "class": "chair",
@@ -92,9 +92,9 @@
       "category": "오답",
       "direction": "놓침",
       "looking_for": "t (책상에 짐)",
-      "label": "파인튜닝",
-      "why": "cup 가 0.013 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
-      "best_confidence": 0.01286622416228056,
+      "label": "가구오인",
+      "why": "자리 위의 물건을 **chair 0.16** 로 불렀다 (겹침 38%) — 못 본 게 아니라 **이름을 틀렸다.** 그 클래스는 가구라 통째로 버려진다",
+      "best_confidence": 0.16359734535217285,
       "sightings": [
         {
           "class": "chair",
@@ -176,9 +176,9 @@
       "category": "맞음",
       "direction": null,
       "looking_for": "c (의자에 짐)",
-      "label": "파인튜닝",
-      "why": "backpack 가 0.044 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
-      "best_confidence": 0.043605390936136246,
+      "label": "가구오인",
+      "why": "자리 위의 물건을 **dining table 0.70** 로 불렀다 (겹침 22%) — 못 본 게 아니라 **이름을 틀렸다.** 그 클래스는 가구라 통째로 버려진다",
+      "best_confidence": 0.6993587613105774,
       "sightings": [
         {
           "class": "dining table",
@@ -260,9 +260,9 @@
       "category": "맞음",
       "direction": null,
       "looking_for": "c (의자에 짐)",
-      "label": "파인튜닝",
-      "why": "handbag 가 0.050 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
-      "best_confidence": 0.04958168417215347,
+      "label": "가구오인",
+      "why": "자리 위의 물건을 **dining table 0.75** 로 불렀다 (겹침 21%) — 못 본 게 아니라 **이름을 틀렸다.** 그 클래스는 가구라 통째로 버려진다",
+      "best_confidence": 0.7510848045349121,
       "sightings": [
         {
           "class": "dining table",

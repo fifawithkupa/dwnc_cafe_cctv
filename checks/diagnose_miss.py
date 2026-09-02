@@ -15,13 +15,16 @@
 | **로직** | 우리 임계값 위에서 이미 잡고 있었다 | 코드 — 규칙이 버렸다 |
 | **상자밖** | 물건이 자리 상자 바로 밖에 있다 | 설치 검수 — 상자를 다시 그린다 |
 | **임계값경계** | 임계값의 1/3 위에서만 보인다 | 코드 — 전역 기본값을 내려보고 전체 점수로 판단 |
+| **가구오인** | 상판 위의 물건을 `chair`·`tv` 같은 가구로 불렀다 | 모델 — **못 본 게 아니라 이름이 틀렸다** |
 | **파인튜닝** | 그보다 낮거나 아예 안 보인다 | 모델 — 코드로는 못 푼다 |
 
 두 가지를 일부러 안 한다.
 
 * **의자·테이블은 배경이다.**  어느 자리 위에나 늘 보이므로 손님 짐의
   답이 될 수 없다.  이걸 "규칙이 버렸다"로 세면 탐지 실패가 전부 로직
-  문제로 둔갑한다
+  문제로 둔갑한다.  단, **자리보다 훨씬 작은 가구가 상판 위에 서 있고
+  사람이 그린 의자와도 안 맞으면** 그건 배경이 아니라 이름을 틀린
+  손님 짐이다 (`가구오인`)
 * **이미 그 자리에 배정한 물건은 뺀다.**  이미 센 것을 '놓친 것'으로 다시
   세면, 멀쩡한 자리에도 딱지가 붙는다
 
@@ -47,6 +50,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 FLOOR_CONFIDENCE = 0.01
 
 LABEL_LOGIC = "로직"
+LABEL_MISLABEL = "가구오인"
 LABEL_BORDERLINE = "임계값경계"
 LABEL_BOX = "상자밖"
 LABEL_FINETUNE = "파인튜닝"
@@ -67,6 +71,17 @@ NEARBY_MARGIN = 0.25
 
 # 같은 물건으로 볼 겹침.  이미 이 자리에 배정된 물건은 "놓친 것"이 아니다.
 SAME_OBJECT_IOU = 0.5
+
+# 손님 짐을 가구로 잘못 부른 것으로 의심할 조건.  자리 넓이의 이만큼도
+# 안 되는 "의자"가 상판 위에 서 있고, 사람이 그린 어느 의자와도 안 맞으면
+# 그건 의자가 아니라 그 위에 놓인 물건이다.
+#
+# 이걸 안 보면 진단이 "chair, dining table 뿐 — 모델이 못 본다"로 끝나서,
+# 정작 **모델은 매번 정확히 봤고 이름만 틀렸다**는 사실이 묻힌다.
+# (angle1 30초 T5: 세워둔 노트북을 chair 0.196 으로 불렀다.)
+MISLABEL_MAX_AREA_FRACTION = 0.30
+MISLABEL_MIN_SHARE = 0.50
+MISLABEL_CHAIR_IOU = 0.30
 
 # 근거 글자가 가리키는 곳.  무엇을 놓쳤느냐에 따라 볼 영역이 다르다.
 EVIDENCE_REGION = {
@@ -253,13 +268,50 @@ def relevant_sightings(sightings: Sequence[Sighting], wanted: str) -> List[Sight
     return [item for item in sightings if item.name not in excluded]
 
 
+def furniture_mistaken_for_belongings(
+    sightings: Sequence[Sighting],
+    seat_box: Sequence[float],
+    drawn_chairs: Sequence[Sequence[float]],
+    threshold: float = 0.0,
+) -> List[Sighting]:
+    """가구 이름을 달고 있지만 실은 손님 짐인 것들.
+
+    탐지기가 세워둔 노트북을 ``chair`` 라고 부르면, 그 클래스가 제외
+    목록에 있어서 통째로 버려진다.  진단이 이걸 "배경"으로 넘기면
+    "모델이 못 본다"는 잘못된 결론이 나온다 — 실제로는 **매번 정확한
+    자리에서 봤고 이름만 틀렸다.**  고치는 방법이 완전히 다르다.
+    """
+    seat_area = box_area(seat_box)
+    if seat_area <= 0:
+        return []
+    # 상판 위에 "서 있는" 물건은 원근 때문에 그린 상자 위로 솟는다.
+    region = expand_region(seat_box)
+    suspects: List[Sighting] = []
+    for item in sightings:
+        if item.name not in _excluded_classes() or item.name == "person":
+            continue
+        if item.confidence < threshold:
+            # 임계값 아래의 가구는 탐지기의 잡음이다.  그걸 "봤는데 이름을
+            # 틀렸다"고 부르면, 정말 못 보는 것까지 이름 문제로 둔갑한다.
+            continue
+        if box_area(item.box) > MISLABEL_MAX_AREA_FRACTION * seat_area:
+            continue  # 진짜 가구는 자리만큼 크다.
+        if share_inside(item.box, region) < MISLABEL_MIN_SHARE:
+            continue  # 상판 위(또는 바로 그 위)에 있어야 한다.
+        if any(box_iou(item.box, chair) >= MISLABEL_CHAIR_IOU for chair in drawn_chairs):
+            continue  # 사람이 그린 의자와 맞으면 진짜 의자다.
+        suspects.append(item)
+    return sorted(suspects, key=lambda item: -item.confidence)
+
+
 def label_miss(
     sightings: Sequence[Sighting],
     threshold: float,
     wanted: str,
     nearby: Sequence[Sighting] = (),
+    mislabelled: Sequence[Sighting] = (),
 ) -> Tuple[str, str, Optional[float]]:
-    """네 딱지 중 하나를 붙인다 — 고치는 사람이 서로 다르다."""
+    """딱지 하나를 붙인다 — 고치는 사람이 서로 다르다."""
     relevant = relevant_sightings(sightings, wanted)
     best = max(relevant, key=lambda item: item.confidence) if relevant else None
 
@@ -294,6 +346,18 @@ def label_miss(
             f"(임계값 {threshold:.2f}, 겹침 {best.share * 100:.0f}%) "
             "— 전역 기본값을 내려볼 수 있는 범위다",
             best.confidence,
+        )
+
+    # 이름만 틀린 경우가 "안 보인다"보다 먼저다.  둘은 학습 데이터
+    # 요구사항이 완전히 다르다.
+    if wanted != "s" and mislabelled:
+        worst = mislabelled[0]
+        return (
+            LABEL_MISLABEL,
+            f"자리 위의 물건을 **{worst.name} {worst.confidence:.2f}** 로 불렀다 "
+            f"(겹침 {worst.share * 100:.0f}%) — 못 본 게 아니라 **이름을 틀렸다.** "
+            "그 클래스는 가구라 통째로 버려진다",
+            worst.confidence,
         )
 
     if best is not None:
@@ -442,16 +506,41 @@ def diagnose(
         wider = [(f"{name} 주변", expand_region(box)) for name, box in regions]
         seat_boxes = (seat_boxes_by_time or {}).get(timestamp, [])
         seat_name = str(miss.get("seat", "?"))
-        nearby = [
+        around = [
             item
             for item in collect_sightings(fresh, wider)
             if not any(
                 other.name == item.name and box_iou(other.box, item.box) >= SAME_OBJECT_IOU
                 for other in sightings
             )
-            and not claimed_by_another_seat(item.box, seat_name, seat_boxes)
         ]
-        label, why, best = label_miss(sightings, threshold, wanted, nearby)
+        # "상자밖"은 **소유권** 질문이라 옆자리가 더 많이 덮으면 그 자리 것이다.
+        # "가구오인"은 **이름** 질문이라 소유권과 무관하다 — 원근 때문에 옆
+        # 테이블 상자가 이 자리 상판 위를 덮는 일이 흔하고(angle1 T4/T5),
+        # 거기서 이름을 틀린 물건까지 놓치면 안 된다.
+        nearby = [
+            item
+            for item in around
+            if not claimed_by_another_seat(item.box, seat_name, seat_boxes)
+        ]
+        seat_box = [float(value) for value in (miss.get("seat_box") or [])]
+        drawn_chairs = [
+            [float(value) for value in (chair.get("box") or [])]
+            for chair in (miss.get("connected_chairs") or [])
+            if chair.get("box")
+        ]
+        # 상자 바로 밖도 같이 본다.  angle1 30초 T5 의 노트북은 상판 안쪽
+        # 끝에 서 있어서 그린 상자를 벗어나는데, 이름까지 틀린 경우다.
+        mislabelled = (
+            furniture_mistaken_for_belongings(
+                list(sightings) + list(around), seat_box, drawn_chairs, threshold
+            )
+            if seat_box
+            else []
+        )
+        label, why, best = label_miss(
+            sightings, threshold, wanted, nearby, mislabelled
+        )
         results.append(
             Diagnosis(
                 timestamp=timestamp,
@@ -486,14 +575,15 @@ def render_report(diagnoses: Sequence[Diagnosis], threshold: float) -> str:
         (LABEL_LOGIC, "**코드** — 규칙이 이미 있는 것을 버렸다"),
         (LABEL_BOX, "**설치 검수** — 자리 상자를 다시 그린다"),
         (LABEL_BORDERLINE, "**코드** — 전역 임계값을 내려보고 전체 점수로 판단"),
-        (LABEL_FINETUNE, "**모델** — 코드로는 못 푼다"),
+        (LABEL_MISLABEL, "**모델** — 봤는데 **이름을 틀렸다.** 가구로 불러서 버려진다"),
+        (LABEL_FINETUNE, "**모델** — 아예 못 본다"),
         (LABEL_UNSCORED, "판단 보류"),
     ):
         if counts.get(label):
             lines.append(f"| {label} | {counts[label]} | {who} |")
     lines.append("")
 
-    for label in (LABEL_LOGIC, LABEL_BOX, LABEL_BORDERLINE, LABEL_FINETUNE, LABEL_UNSCORED):
+    for label in (LABEL_LOGIC, LABEL_BOX, LABEL_BORDERLINE, LABEL_MISLABEL, LABEL_FINETUNE, LABEL_UNSCORED):
         rows = [item for item in diagnoses if item.label == label]
         if not rows:
             continue

@@ -3,76 +3,23 @@
   "log": "results\\angle1_layout\\log.jsonl",
   "summary": {
     "total": 72,
-    "오답": 3,
+    "오답": 2,
     "유지": 0,
     "지연": 3,
-    "가림모름": 8,
+    "가림모름": 9,
     "맞음": 58,
     "화각밖": 0,
     "정답없음": 0,
     "scored": 72,
-    "accepted": 69,
-    "fixable": 3,
+    "accepted": 70,
+    "fixable": 2,
     "evidence_missed": 10,
-    "evidence_imagined": 2,
+    "evidence_imagined": 1,
     "directions": {
-      "헛것": 1,
       "놓침": 2
     }
   },
   "misses": [
-    {
-      "timestamp": 15.0,
-      "seat": "T3",
-      "truth": "empty",
-      "app_state": "unknown",
-      "evidence_state": "occupied",
-      "category": "오답",
-      "direction": "헛것",
-      "reason": "awaiting_confirmation:occupied_chairs:1;chair_objects:suitcase",
-      "note": "",
-      "truth_evidence": "",
-      "our_evidence": "c",
-      "missed_evidence": "",
-      "imagined_evidence": "c",
-      "objects": [],
-      "chair_objects": [
-        {
-          "class": "suitcase",
-          "confidence": 0.1865
-        }
-      ],
-      "seat_box": [
-        880.0,
-        368.0,
-        1000.0,
-        418.0
-      ],
-      "connected_chairs": [
-        {
-          "class": "chair",
-          "box": [
-            901.1,
-            390.58,
-            944.52,
-            471.65
-          ],
-          "confidence": 1.0,
-          "occupied": false
-        },
-        {
-          "class": "chair",
-          "box": [
-            939.0,
-            309.0,
-            1067.0,
-            391.0
-          ],
-          "confidence": 1.0,
-          "occupied": true
-        }
-      ]
-    },
     {
       "timestamp": 30.0,
       "seat": "T5",
@@ -452,17 +399,6 @@
             390.58,
             944.52,
             471.65
-          ],
-          "confidence": 1.0,
-          "occupied": false
-        },
-        {
-          "class": "chair",
-          "box": [
-            939.0,
-            309.0,
-            1067.0,
-            391.0
           ],
           "confidence": 1.0,
           "occupied": false

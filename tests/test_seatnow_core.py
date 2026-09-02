@@ -1078,6 +1078,34 @@ class ChairObjectTests(unittest.TestCase):
         assigned = [obj for values in assignments.values() for obj in values]
         self.assertEqual(assigned.count(bag), 1)
 
+    def test_a_thing_filling_most_of_the_chair_is_the_furniture_itself(self):
+        """angle1 15초 T3: 창가 회색 벤치를 suitcase 로 본 실제 좌표.
+
+        같은 벤치를 프레임마다 tv / chair / suitcase 로 다르게 부르는데,
+        suitcase 만 제외 목록에 없어서 '의자 위의 짐'이 되어 빈 자리를
+        사용중으로 만들었다.  의자 상자의 63% 를 채우는 '가방'은 가방이
+        아니다 — 테이블에 이미 있는 규칙과 같은 이유다.
+        """
+        chair = Detection("chair", (939.0, 309.0, 1067.0, 391.0), 1.0)
+        bench = Detection("suitcase", (972.0, 335.0, 1037.0, 437.0), 0.1865)
+
+        assignments = associate_objects_to_chairs([chair], [bench])
+
+        self.assertEqual(assignments[0], [])
+
+    def test_a_real_bag_on_a_chair_still_fits_under_the_cap(self):
+        """angle1 15초 T1 의자3 위의 실제 handbag — 의자의 29% 를 채운다.
+
+        진짜 짐은 실측 12건 전부 44% 이하였고 유령은 63% 였다.  경계는
+        그 사이의 빈 구간에 있다.
+        """
+        chair = Detection("chair", (1020.0, 405.0, 1149.0, 481.0), 1.0)
+        bag = Detection("handbag", (1040.55, 414.94, 1106.76, 458.03), 0.2354)
+
+        assignments = associate_objects_to_chairs([chair], [bag])
+
+        self.assertEqual(assignments[0], [bag])
+
 
 class BarSeatNeedsAPersonTests(unittest.TestCase):
     """A bar stool with only belongings on it stays available.

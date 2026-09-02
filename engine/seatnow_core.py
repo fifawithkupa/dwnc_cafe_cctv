@@ -858,7 +858,17 @@ def filter_carried_objects(
 def associate_objects_to_chairs(
     chairs: Sequence[Detection], objects: Sequence[Detection]
 ) -> Dict[int, List[Detection]]:
-    """Assign belongings resting on a chair to at most one chair."""
+    """Assign belongings resting on a chair to at most one chair.
+
+    The same size cap as a tabletop applies here, and for the same reason: a
+    "bag" that fills most of the seat is the furniture, seen wrong.  A window
+    bench came through as ``suitcase`` on some frames, ``tv`` or ``chair`` on
+    others, and only ``suitcase`` is absent from EXCLUDED_OBJECT_CLASSES — so
+    an empty seat read as taken.  The cap was measured, not guessed: across
+    angle1's six ticks every genuine chair belonging filled at most 44% of
+    its chair and the bench filled 63%, so the boundary lies in the gap
+    between them, where the tabletop rule's 0.50 already sits.
+    """
     assignments: Dict[int, List[Detection]] = {
         index: [] for index in range(len(chairs))
     }
@@ -869,7 +879,10 @@ def associate_objects_to_chairs(
         best_score, best_index = 0.0, -1
         for index, chair in enumerate(chairs):
             chair_area = box_area(chair.box)
-            if chair_area <= 0 or object_area > 0.9 * chair_area:
+            if (
+                chair_area <= 0
+                or object_area > MAXIMUM_OBJECT_SEAT_AREA_FRACTION * chair_area
+            ):
                 continue
             score = intersection_area(obj.box, chair.box) / object_area
             if score > best_score:
@@ -3636,8 +3649,15 @@ def track_to_dict(track: Track) -> Dict[str, object]:
             for chair in observation.connected_chairs
         ],
         "occupied_chairs": len(observation.occupied_chairs),
+        # 의자 짐에도 상자를 남긴다.  없으면 "이 가방이 진짜 가방인가"를
+        # 로그만으로 따질 수 없어서, 유령 하나를 쫓는 데 영상을 다시 돌려야
+        # 한다.  책상 위 물건에는 이미 box 가 있다.
         "chair_objects": [
-            {"class": obj.name, "confidence": round(obj.confidence, 4)}
+            {
+                "class": obj.name,
+                "confidence": round(obj.confidence, 4),
+                "box": [round(value, 2) for value in obj.box],
+            }
             for obj in observation.chair_objects
         ],
         "chair_seated_people": len(observation.chair_seated_people),

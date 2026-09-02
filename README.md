@@ -62,7 +62,7 @@ Codex 정답지는 다시 만들려면 Codex를 또 돌려야 하기 때문이�
 | `checks/judge_schema.json` | Codex가 답해야 하는 JSON 모양 |
 | `tests/` | 유닛 테스트 546개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
-| `plan.md` | 코드 작업 플랜 (T1~T12) |
+| `plan.md` | 작업 플랜 — **§1에 지금 하던 일**, §2에 결정 기록 |
 
 ## 환경 설정 (팀원용)
 

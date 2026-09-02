@@ -1,0 +1,1204 @@
+{
+  "threshold": 0.15,
+  "floor": 0.01,
+  "diagnoses": [
+    {
+      "timestamp": 15.0,
+      "seat": "T3",
+      "category": "오답",
+      "direction": "헛것",
+      "looking_for": "헛본 근거 c",
+      "label": "로직",
+      "why": "없는 것을 봤다 — 우리가 쓴 것: suitcase 0.19",
+      "best_confidence": null,
+      "sightings": []
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "T5",
+      "category": "오답",
+      "direction": "놓침",
+      "looking_for": "t (책상에 짐)",
+      "label": "파인튜닝",
+      "why": "신뢰도 0.01에서도 짐이 안 보인다 (보이는 것은 chair, dining table 뿐)",
+      "best_confidence": null,
+      "sightings": [
+        {
+          "class": "chair",
+          "confidence": 0.7617,
+          "share": 0.16,
+          "where": "자리(제외클래스)",
+          "box": [
+            1227.5,
+            536.4,
+            1388.7,
+            776.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5914,
+          "share": 0.249,
+          "where": "자리(제외클래스)",
+          "box": [
+            1308.8,
+            480.4,
+            1432.0,
+            646.4
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.5247,
+          "share": 0.589,
+          "where": "자리(제외클래스)",
+          "box": [
+            1371.0,
+            536.0,
+            1657.0,
+            852.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1964,
+          "share": 0.118,
+          "where": "자리(제외클래스)",
+          "box": [
+            1427.4,
+            528.4,
+            1529.8,
+            585.6
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1851,
+          "share": 0.239,
+          "where": "자리(제외클래스)",
+          "box": [
+            1252.4,
+            628.3,
+            1392.0,
+            780.2
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1039,
+          "share": 0.353,
+          "where": "자리(제외클래스)",
+          "box": [
+            1307.4,
+            525.9,
+            1432.5,
+            652.1
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 45.0,
+      "seat": "T5",
+      "category": "오답",
+      "direction": "놓침",
+      "looking_for": "t (책상에 짐)",
+      "label": "파인튜닝",
+      "why": "cup 가 0.013 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.01286622416228056,
+      "sightings": [
+        {
+          "class": "chair",
+          "confidence": 0.6952,
+          "share": 0.194,
+          "where": "자리(제외클래스)",
+          "box": [
+            1356.6,
+            450.2,
+            1469.5,
+            595.8
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5518,
+          "share": 0.241,
+          "where": "자리(제외클래스)",
+          "box": [
+            1294.4,
+            496.7,
+            1408.0,
+            662.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5405,
+          "share": 0.238,
+          "where": "자리(제외클래스)",
+          "box": [
+            1235.5,
+            528.7,
+            1410.1,
+            799.7
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.2123,
+          "share": 0.616,
+          "where": "자리(제외클래스)",
+          "box": [
+            1360.4,
+            516.4,
+            1646.5,
+            885.8
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1958,
+          "share": 0.119,
+          "where": "자리(제외클래스)",
+          "box": [
+            1219.1,
+            638.5,
+            1380.6,
+            800.6
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1636,
+          "share": 0.662,
+          "where": "자리(제외클래스)",
+          "box": [
+            1412.3,
+            546.6,
+            1514.0,
+            605.2
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 60.0,
+      "seat": "T1",
+      "category": "유지",
+      "direction": "놓침",
+      "looking_for": "t (책상에 짐)",
+      "label": "로직",
+      "why": "임계값(0.15) 위에서 이미 backpack 0.25 (겹침 27%)를 잡고 있었다 — 규칙이 버렸다",
+      "best_confidence": 0.2511676847934723,
+      "sightings": [
+        {
+          "class": "person",
+          "confidence": 0.8501,
+          "share": 0.153,
+          "where": "자리(제외클래스)",
+          "box": [
+            930.2,
+            288.6,
+            1057.1,
+            539.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7763,
+          "share": 0.998,
+          "where": "자리(제외클래스)",
+          "box": [
+            1116.8,
+            392.3,
+            1219.6,
+            539.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7459,
+          "share": 0.506,
+          "where": "자리(제외클래스)",
+          "box": [
+            1191.8,
+            382.7,
+            1269.4,
+            512.8
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.6305,
+          "share": 0.776,
+          "where": "자리(제외클래스)",
+          "box": [
+            1053.0,
+            353.2,
+            1232.7,
+            528.9
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5025,
+          "share": 1.0,
+          "where": "자리(제외클래스)",
+          "box": [
+            1049.8,
+            414.2,
+            1105.9,
+            548.8
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.4421,
+          "share": 0.123,
+          "where": "자리(제외클래스)",
+          "box": [
+            930.6,
+            288.1,
+            1062.8,
+            715.6
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 75.0,
+      "seat": "T5",
+      "category": "오답",
+      "direction": "놓침",
+      "looking_for": "t (책상에 짐)",
+      "label": "파인튜닝",
+      "why": "bowl 가 0.030 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.030155543237924576,
+      "sightings": [
+        {
+          "class": "chair",
+          "confidence": 0.7397,
+          "share": 0.511,
+          "where": "자리(제외클래스)",
+          "box": [
+            1323.1,
+            499.2,
+            1433.5,
+            675.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7103,
+          "share": 0.634,
+          "where": "자리(제외클래스)",
+          "box": [
+            1382.1,
+            450.7,
+            1500.9,
+            602.9
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6109,
+          "share": 0.15,
+          "where": "자리(제외클래스)",
+          "box": [
+            1257.9,
+            553.1,
+            1396.5,
+            785.0
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6036,
+          "share": 0.166,
+          "where": "자리(제외클래스)",
+          "box": [
+            1424.0,
+            427.0,
+            1510.3,
+            522.2
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.2201,
+          "share": 0.119,
+          "where": "자리(제외클래스)",
+          "box": [
+            1228.6,
+            702.1,
+            1686.1,
+            1072.8
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.2082,
+          "share": 0.482,
+          "where": "자리(제외클래스)",
+          "box": [
+            1489.0,
+            457.7,
+            1689.7,
+            571.3
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 0.0,
+      "seat": "T6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "상자밖",
+      "why": "handbag 0.25 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
+      "best_confidence": 0.25031304359436035,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.7945,
+          "share": 0.315,
+          "where": "의자2(제외클래스)",
+          "box": [
+            672.7,
+            593.2,
+            1031.6,
+            978.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7763,
+          "share": 0.717,
+          "where": "의자4(제외클래스)",
+          "box": [
+            932.2,
+            534.5,
+            1045.3,
+            782.9
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.6994,
+          "share": 0.217,
+          "where": "의자5(제외클래스)",
+          "box": [
+            995.8,
+            434.0,
+            1224.5,
+            610.8
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6598,
+          "share": 0.755,
+          "where": "의자1(제외클래스)",
+          "box": [
+            671.7,
+            631.6,
+            787.4,
+            889.6
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6098,
+          "share": 0.577,
+          "where": "의자4(제외클래스)",
+          "box": [
+            924.4,
+            674.9,
+            1026.3,
+            844.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5054,
+          "share": 0.194,
+          "where": "의자1(제외클래스)",
+          "box": [
+            783.0,
+            586.0,
+            848.6,
+            645.8
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 15.0,
+      "seat": "T6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "상자밖",
+      "why": "backpack 0.24 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
+      "best_confidence": 0.2359226495027542,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.7818,
+          "share": 0.309,
+          "where": "의자2(제외클래스)",
+          "box": [
+            654.6,
+            570.5,
+            1015.6,
+            960.9
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.7511,
+          "share": 0.207,
+          "where": "의자5(제외클래스)",
+          "box": [
+            979.9,
+            407.0,
+            1210.7,
+            585.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6236,
+          "share": 0.694,
+          "where": "의자4(제외클래스)",
+          "box": [
+            908.6,
+            646.2,
+            1013.4,
+            827.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6055,
+          "share": 0.579,
+          "where": "의자5(제외클래스)",
+          "box": [
+            938.7,
+            510.5,
+            1032.9,
+            720.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.449,
+          "share": 0.838,
+          "where": "의자1(제외클래스)",
+          "box": [
+            664.0,
+            608.6,
+            748.5,
+            678.4
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.4015,
+          "share": 0.122,
+          "where": "의자2(제외클래스)",
+          "box": [
+            919.7,
+            789.3,
+            1122.6,
+            1076.4
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 15.0,
+      "seat": "BAR7-4",
+      "category": "가림모름",
+      "direction": "과잉모름",
+      "looking_for": "헛본 근거 s",
+      "label": "로직",
+      "why": "없는 것을 봤다 — 우리가 쓴 것: 기록 없음",
+      "best_confidence": null,
+      "sightings": []
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "T3",
+      "category": "가림모름",
+      "direction": "과잉모름",
+      "looking_for": "s (사람이 앉음)",
+      "label": "로직",
+      "why": "임계값(0.15) 위에서 이미 person 0.49 (겹침 56%)를 잡고 있었다 — 규칙이 버렸다",
+      "best_confidence": 0.48891785740852356,
+      "sightings": [
+        {
+          "class": "chair",
+          "confidence": 0.5983,
+          "share": 0.76,
+          "where": "의자2(제외클래스)",
+          "box": [
+            1011.6,
+            317.1,
+            1070.2,
+            427.2
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.4889,
+          "share": 0.557,
+          "where": "의자2(제외클래스)",
+          "box": [
+            985.7,
+            263.7,
+            1044.8,
+            428.5
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.402,
+          "share": 0.36,
+          "where": "자리(제외클래스)",
+          "box": [
+            876.3,
+            321.6,
+            1010.7,
+            467.9
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.2897,
+          "share": 0.396,
+          "where": "의자2(제외클래스)",
+          "box": [
+            931.6,
+            265.7,
+            1044.5,
+            430.2
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.189,
+          "share": 0.425,
+          "where": "의자2(제외클래스)",
+          "box": [
+            989.3,
+            262.0,
+            1046.0,
+            348.8
+          ]
+        },
+        {
+          "class": "laptop",
+          "confidence": 0.1652,
+          "share": 0.308,
+          "where": "의자2",
+          "box": [
+            928.2,
+            297.3,
+            997.5,
+            338.4
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "T6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "상자밖",
+      "why": "backpack 0.41 를 자리 **바로 밖**에서 잡고 있다 (의자5 주변) — 상자를 다시 그릴 일이다",
+      "best_confidence": 0.410109281539917,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.7849,
+          "share": 0.31,
+          "where": "의자2(제외클래스)",
+          "box": [
+            690.9,
+            545.9,
+            1054.4,
+            931.0
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6705,
+          "share": 0.869,
+          "where": "의자1(제외클래스)",
+          "box": [
+            690.4,
+            585.3,
+            805.8,
+            839.8
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.6258,
+          "share": 0.878,
+          "where": "의자5(제외클래스)",
+          "box": [
+            960.8,
+            486.3,
+            1065.2,
+            715.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5811,
+          "share": 0.921,
+          "where": "의자4(제외클래스)",
+          "box": [
+            942.0,
+            623.5,
+            1048.1,
+            802.9
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.518,
+          "share": 0.816,
+          "where": "의자1(제외클래스)",
+          "box": [
+            700.7,
+            585.5,
+            782.2,
+            654.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.4303,
+          "share": 1.0,
+          "where": "의자3(제외클래스)",
+          "box": [
+            799.0,
+            539.5,
+            866.4,
+            599.9
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "BAR7-6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "파인튜닝",
+      "why": "신뢰도 0.01에서도 짐이 안 보인다 (보이는 것은 chair, dining table, person 뿐)",
+      "best_confidence": null,
+      "sightings": [
+        {
+          "class": "person",
+          "confidence": 0.7409,
+          "share": 0.16,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1651.3,
+            387.4,
+            1851.4,
+            601.2
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.266,
+          "share": 0.991,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1583.9,
+            388.8,
+            1694.9,
+            526.6
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.1996,
+          "share": 0.352,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1474.6,
+            441.2,
+            1674.8,
+            553.4
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1803,
+          "share": 0.983,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1584.9,
+            378.6,
+            1685.8,
+            459.9
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1248,
+          "share": 1.0,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1583.6,
+            405.0,
+            1687.2,
+            456.5
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.0912,
+          "share": 1.0,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1605.4,
+            380.3,
+            1683.2,
+            425.7
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 45.0,
+      "seat": "BAR7-6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "파인튜닝",
+      "why": "bowl 가 0.026 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.025803040713071823,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.2176,
+          "share": 0.199,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1459.7,
+            459.7,
+            1646.9,
+            575.9
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1851,
+          "share": 0.834,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1563.0,
+            427.3,
+            1670.7,
+            479.6
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1181,
+          "share": 0.848,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1564.5,
+            399.1,
+            1672.3,
+            479.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.0304,
+          "share": 0.129,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1349.4,
+            406.7,
+            1646.0,
+            608.4
+          ]
+        },
+        {
+          "class": "bowl",
+          "confidence": 0.0258,
+          "share": 0.851,
+          "where": "의자1",
+          "box": [
+            1564.4,
+            401.9,
+            1675.0,
+            480.3
+          ]
+        },
+        {
+          "class": "handbag",
+          "confidence": 0.0207,
+          "share": 0.851,
+          "where": "의자1",
+          "box": [
+            1565.1,
+            399.8,
+            1671.2,
+            480.4
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 60.0,
+      "seat": "BAR7-6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "파인튜닝",
+      "why": "handbag 가 0.012 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.011665472760796547,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.3619,
+          "share": 0.13,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1401.1,
+            392.6,
+            1671.1,
+            733.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1045,
+          "share": 0.481,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1569.0,
+            343.9,
+            1670.7,
+            423.1
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.0697,
+          "share": 0.364,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1437.7,
+            405.0,
+            1662.7,
+            519.8
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.06,
+          "share": 0.293,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1400.1,
+            382.3,
+            1664.3,
+            536.7
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.041,
+          "share": 0.426,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1465.5,
+            374.6,
+            1672.3,
+            519.1
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.0351,
+          "share": 0.174,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1401.8,
+            359.7,
+            1672.3,
+            642.0
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 75.0,
+      "seat": "T1",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "임계값경계",
+      "why": "laptop 를 0.12 로만 봤다 (임계값 0.15, 겹침 100%) — 전역 기본값을 내려볼 수 있는 범위다",
+      "best_confidence": 0.12469211220741272,
+      "sightings": [
+        {
+          "class": "person",
+          "confidence": 0.8462,
+          "share": 0.237,
+          "where": "의자3(제외클래스)",
+          "box": [
+            972.6,
+            342.8,
+            1088.8,
+            532.5
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.8275,
+          "share": 0.235,
+          "where": "의자3(제외클래스)",
+          "box": [
+            1026.1,
+            443.1,
+            1129.4,
+            604.1
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.8019,
+          "share": 0.778,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1142.4,
+            446.4,
+            1240.7,
+            589.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7599,
+          "share": 0.683,
+          "where": "의자2(제외클래스)",
+          "box": [
+            1214.9,
+            430.5,
+            1294.3,
+            566.5
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.5815,
+          "share": 0.413,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1053.2,
+            405.1,
+            1254.9,
+            585.0
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5808,
+          "share": 0.123,
+          "where": "의자3(제외클래스)",
+          "box": [
+            1102.7,
+            342.0,
+            1156.8,
+            415.6
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 75.0,
+      "seat": "T6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "t (책상에 짐)",
+      "label": "상자밖",
+      "why": "backpack 0.25 를 자리 **바로 밖**에서 잡고 있다 (자리 주변) — 상자를 다시 그릴 일이다",
+      "best_confidence": 0.2478233426809311,
+      "sightings": [
+        {
+          "class": "chair",
+          "confidence": 0.8275,
+          "share": 0.105,
+          "where": "자리(제외클래스)",
+          "box": [
+            1026.1,
+            443.1,
+            1129.4,
+            604.1
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.7977,
+          "share": 0.136,
+          "where": "자리(제외클래스)",
+          "box": [
+            983.0,
+            778.4,
+            1235.3,
+            1075.5
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.7508,
+          "share": 0.85,
+          "where": "자리(제외클래스)",
+          "box": [
+            751.5,
+            555.5,
+            1096.8,
+            933.2
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.5415,
+          "share": 0.649,
+          "where": "자리(제외클래스)",
+          "box": [
+            993.1,
+            639.2,
+            1086.8,
+            800.7
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.4736,
+          "share": 1.0,
+          "where": "자리(제외클래스)",
+          "box": [
+            751.7,
+            592.6,
+            875.2,
+            839.6
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.28,
+          "share": 0.974,
+          "where": "자리(제외클래스)",
+          "box": [
+            847.3,
+            673.7,
+            1014.0,
+            928.6
+          ]
+        }
+      ]
+    },
+    {
+      "timestamp": 75.0,
+      "seat": "BAR7-6",
+      "category": "맞음",
+      "direction": null,
+      "looking_for": "c (의자에 짐)",
+      "label": "파인튜닝",
+      "why": "bowl 가 0.017 로 스쳤을 뿐이다 (임계값 0.15의 1/3에도 못 미친다) — 여기까지 내리면 모든 자리에 유령이 쏟아진다",
+      "best_confidence": 0.016510358080267906,
+      "sightings": [
+        {
+          "class": "dining table",
+          "confidence": 0.2082,
+          "share": 0.323,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1489.0,
+            457.7,
+            1689.7,
+            571.3
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.1882,
+          "share": 0.966,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1597.9,
+            395.7,
+            1704.6,
+            472.9
+          ]
+        },
+        {
+          "class": "dining table",
+          "confidence": 0.0698,
+          "share": 0.112,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1477.8,
+            455.8,
+            1701.9,
+            787.4
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.0588,
+          "share": 0.13,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1386.3,
+            418.9,
+            1636.8,
+            602.1
+          ]
+        },
+        {
+          "class": "chair",
+          "confidence": 0.0518,
+          "share": 1.0,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1597.9,
+            420.3,
+            1630.7,
+            463.7
+          ]
+        },
+        {
+          "class": "person",
+          "confidence": 0.0481,
+          "share": 0.985,
+          "where": "의자1(제외클래스)",
+          "box": [
+            1598.5,
+            395.6,
+            1702.5,
+            471.4
+          ]
+        }
+      ]
+    }
+  ]
+}

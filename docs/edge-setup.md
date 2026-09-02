@@ -3,6 +3,11 @@
 > 작성: 2026-08-31
 > 관련: `docs/superpowers/specs/2026-08-31-edge-decode-bench-design.md`, `plan.md` T6·T9
 
+> ⚠️ **엣지 박스 첫 실행이라면 `docs/edge-first-run.md` 를 먼저 본다.**
+> 이 문서는 "어떤 카메라를 살 수 있나"까지 가는 긴 절차라 첫날 순서와 다르다.
+> 지금 박스는 **OptiPlex 7040 Micro / i3-6100T / RAM 4GB / Linux** 이고,
+> 그 문서가 이 장비에 맞춰 다시 쓰여 있다.
+
 ## 이 문서로 하는 일
 
 새로 산 미니PC를 켜서 **"이 박스로 어떤 카메라를 살 수 있나"를 재는 데까지** 간다.

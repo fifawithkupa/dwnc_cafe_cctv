@@ -38,6 +38,7 @@ from engine.seatnow_core import (
     is_scene_change,
     object_seat_share,
     occupancy_evidence_code,
+    seat_person_coverage,
     occupancy_state_from_evidence,
     track_to_dict,
 )
@@ -1548,3 +1549,86 @@ class MinimumSeatOverlapTests(unittest.TestCase):
         )
 
         self.assertEqual(assignments[0], [bag])
+
+
+class SeatHiddenByPersonTests(unittest.TestCase):
+    """사람이 자리를 가리면 빈자리라고 말하지 않고 판단을 미룬다.
+
+    지나가는 사람이 테이블을 가리면 짐이 안 보인다.  그것을 "근거 없음
+    = 빈자리"로 처리하면, 짐을 두고 잠깐 자리를 비운 손님의 자리가
+    빈자리로 발표된다.  보이지 않는 것과 없는 것은 다르다.
+
+    사람이 비키면 그 판단에서 사용중인지 빈자리인지 정한다.
+    """
+
+    def test_a_person_covering_the_seat_makes_it_unknown_not_empty(self):
+        self.assertEqual(
+            occupancy_state_from_evidence([], [], [], [], occluded=True),
+            OccupancyState.UNKNOWN,
+        )
+
+    def test_without_a_person_in_the_way_it_is_still_empty(self):
+        self.assertEqual(
+            occupancy_state_from_evidence([], [], [], [], occluded=False),
+            OccupancyState.EMPTY,
+        )
+
+    def test_real_evidence_still_wins_over_being_hidden(self):
+        cup = Detection("cup", (10.0, 10.0, 20.0, 20.0), 0.8)
+        self.assertEqual(
+            occupancy_state_from_evidence([cup], [], [], [], occluded=True),
+            OccupancyState.OCCUPIED,
+        )
+
+    def test_a_bar_seat_hidden_by_a_person_is_also_unknown(self):
+        """바는 짐만으로 안 세지만, 안 보이는 것은 바에서도 모름이다."""
+        self.assertEqual(
+            occupancy_state_from_evidence(
+                [], [], [], [], require_person=True, occluded=True
+            ),
+            OccupancyState.UNKNOWN,
+        )
+
+    def test_coverage_is_measured_against_the_seat(self):
+        seat = (100.0, 100.0, 200.0, 200.0)
+        across = pose_observation(PoseState.STANDING, box=(100.0, 100.0, 200.0, 160.0))
+        beside = pose_observation(PoseState.STANDING, box=(0.0, 0.0, 40.0, 300.0))
+
+        self.assertAlmostEqual(seat_person_coverage(seat, [across]), 0.60, places=2)
+        self.assertAlmostEqual(seat_person_coverage(seat, [beside]), 0.0, places=2)
+        self.assertAlmostEqual(seat_person_coverage(seat, []), 0.0, places=2)
+
+
+class OcclusionPausesTheDecisionTests(unittest.TestCase):
+    """가려진 동안은 판단을 지우지 않고 멈춘다.
+
+    예전에는 모름 관측이 오면 쌓아둔 확정 횟수를 0 으로 지웠다.  사람이
+    잠깐 지나갔다는 이유로 근거를 처음부터 다시 모아야 했다.
+    """
+
+    FRAME_SHAPE = (1080, 1920)
+
+    def test_evidence_survives_a_tick_where_the_seat_was_hidden(self):
+        tracker = TableTracker(occupy_confirmations=2, empty_confirmations=3)
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+        hidden = table_observation(OccupancyState.UNKNOWN, reason="occluded_by_person")
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+
+        seen = tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        self.assertEqual(seen.visible_tracks[0].stable_state, OccupancyState.UNKNOWN)
+        self.assertEqual(seen.visible_tracks[0].pending_count, 1)
+
+        blocked = tracker.update([hidden], 30.0, self.FRAME_SHAPE)
+        self.assertEqual(blocked.visible_tracks[0].stable_state, OccupancyState.UNKNOWN)
+        self.assertEqual(
+            blocked.visible_tracks[0].pending_count,
+            1,
+            "사람이 지나갔다고 쌓아둔 근거를 지우면 안 된다",
+        )
+
+        cleared = tracker.update([occupied], 45.0, self.FRAME_SHAPE)
+        self.assertEqual(
+            cleared.visible_tracks[0].stable_state, OccupancyState.OCCUPIED
+        )

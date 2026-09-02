@@ -958,12 +958,35 @@ def associate_seated_people_to_chairs(
     return assignments
 
 
+# 사람이 자리를 이만큼 덮으면 "가려서 안 보인다"로 본다.  안 보이는 것과
+# 없는 것은 다르다 — 짐을 두고 잠깐 비운 손님의 자리를 빈자리로 발표하면
+# 다른 손님을 그 자리로 보내게 된다.
+#
+# 0.50 도 실측에서 왔다 (angle1 6틱, 테이블 자리): 가림으로 볼 만한 장면은
+# 55% 이상, 스쳐 지나가는 정도는 38% 이하였고 그 사이가 비어 있다.
+MINIMUM_SEAT_OCCLUSION = 0.50
+
+
+def seat_person_coverage(
+    seat_box: Box, poses: Sequence[PoseObservation]
+) -> float:
+    """가장 많이 가린 사람 하나가 자리의 몇 %를 덮는가."""
+    area = box_area(seat_box)
+    if area <= 0:
+        return 0.0
+    return max(
+        (intersection_area(person.box, seat_box) / area for person in poses),
+        default=0.0,
+    )
+
+
 def occupancy_state_from_evidence(
     objects: Sequence[Detection],
     direct_seated_people: Sequence[PoseObservation],
     unknown_people: Sequence[PoseObservation],
     occupied_chairs: Sequence[Detection],
     require_person: bool = False,
+    occluded: bool = False,
 ) -> OccupancyState:
     """Apply SeatNow's table OR rule to already-associated evidence.
 
@@ -986,12 +1009,12 @@ def occupancy_state_from_evidence(
     if require_person:
         if has_person:
             return OccupancyState.OCCUPIED
-        if unknown_people:
+        if unknown_people or occluded:
             return OccupancyState.UNKNOWN
         return OccupancyState.EMPTY
     if objects or has_person or occupied_chairs:
         return OccupancyState.OCCUPIED
-    if unknown_people:
+    if unknown_people or occluded:
         return OccupancyState.UNKNOWN
     return OccupancyState.EMPTY
 
@@ -1753,12 +1776,17 @@ class SeatNowAnalyzer:
                 and index < len(layout_units)
                 and layout_units[index].kind == COUNTED_ZONE_KIND
             )
+            # 사람이 자리를 덮고 있으면 짐이 안 보이는 것이 당연하다.
+            # 그것을 "근거 없음 = 빈자리"로 처리하면 안 된다.
+            seat_coverage = seat_person_coverage(table.box, poses)
+            seat_hidden = seat_coverage >= MINIMUM_SEAT_OCCLUSION
             evidence_state = occupancy_state_from_evidence(
                 assigned_objects,
                 assigned_people,
                 assigned_unknown_people,
                 occupied_chairs,
                 require_person=seat_requires_person,
+                occluded=seat_hidden,
             )
             # A manually drawn zone at the frame edge is intentional; the
             # border-sliver rule only guards auto-detected partial tables.
@@ -1821,24 +1849,31 @@ class SeatNowAnalyzer:
                 )
             elif evidence_state == OccupancyState.UNKNOWN:
                 state = OccupancyState.UNKNOWN
-                score = max(person.confidence for person in assigned_unknown_people)
-                # Keep the pose-level cause.  Collapsing every case into one
-                # string is why the UNKNOWN rate could not be attacked: the
-                # log said "someone nearby is unreadable" but never why.
-                cause = next(
-                    (
-                        person.reason
-                        for person in assigned_unknown_people
-                        if person.reason
-                    ),
-                    "",
-                )
-                reason = (
-                    f"nearby_person_pose_unknown:{cause}"
-                    if cause
-                    else "nearby_person_pose_unknown"
-                )
                 provisional = False
+                if assigned_unknown_people:
+                    score = max(
+                        person.confidence for person in assigned_unknown_people
+                    )
+                    # Keep the pose-level cause.  Collapsing every case into
+                    # one string is why the UNKNOWN rate could not be attacked:
+                    # the log said "someone nearby is unreadable" but never why.
+                    cause = next(
+                        (
+                            person.reason
+                            for person in assigned_unknown_people
+                            if person.reason
+                        ),
+                        "",
+                    )
+                    reason = (
+                        f"nearby_person_pose_unknown:{cause}"
+                        if cause
+                        else "nearby_person_pose_unknown"
+                    )
+                else:
+                    # 가려서 안 보인다.  사람이 비키면 그 판단에서 정한다.
+                    score = table.confidence
+                    reason = f"occluded_by_person:{seat_coverage:.2f}"
             else:
                 state = OccupancyState.EMPTY
                 score = table.confidence
@@ -2515,8 +2550,8 @@ class TableTracker:
         raw = observation.raw_state
         previous = track.stable_state
         if raw in (OccupancyState.UNKNOWN, OccupancyState.IGNORE):
-            track.pending_state = None
-            track.pending_count = 0
+            # 판단을 멈추기만 한다.  사람이 잠깐 지나갔다는 이유로 쌓아둔
+            # 근거를 지우면, 비킨 뒤 처음부터 다시 모아야 한다.
             return None
         was_unresolved = previous in (OccupancyState.UNKNOWN, OccupancyState.IGNORE)
         if was_unresolved:

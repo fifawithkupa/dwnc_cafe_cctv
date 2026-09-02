@@ -72,6 +72,7 @@ REASON_KOREAN = {
     "no_customer_evidence": "아무 근거 없음",
     "belongings_only": "짐만 있음 (바 자리라 안 셈)",
     "spans_multiple_seats": "한 사람이 두 칸에 걸침",
+    "occluded_by_person": "사람이 가려서 안 보임 — 비키면 판단한다",
     "border_cropped": "화면 끝에 잘림",
 }
 

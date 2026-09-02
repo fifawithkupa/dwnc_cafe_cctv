@@ -35,6 +35,8 @@ class ReasonCode(str, Enum):
     # time -- fixed by waiting; nothing to do
     TRACK_PREDICTED = "track_predicted"
     PENDING_CONFIRMATION = "pending_confirmation"
+    # 사람이 자리를 가려서 안 보인다.  비키면 풀린다.
+    OCCLUDED_BY_PERSON = "occluded_by_person"
 
     # settled judgements
     PERSON_SEATED = "person_seated"
@@ -55,7 +57,11 @@ REASON_GROUPS: Dict[str, Tuple[ReasonCode, ...]] = {
         ReasonCode.SPANS_MULTIPLE_SEATS,
     ),
     "model": (ReasonCode.POSE_LOW_KEYPOINTS, ReasonCode.TABLE_NOT_DETECTED),
-    "time": (ReasonCode.TRACK_PREDICTED, ReasonCode.PENDING_CONFIRMATION),
+    "time": (
+        ReasonCode.TRACK_PREDICTED,
+        ReasonCode.PENDING_CONFIRMATION,
+        ReasonCode.OCCLUDED_BY_PERSON,
+    ),
     "settled": (
         ReasonCode.PERSON_SEATED,
         ReasonCode.BELONGINGS,
@@ -102,6 +108,8 @@ def classify_reason(raw_state: str, reason: str, predicted: bool) -> ReasonCode:
         return ReasonCode.BORDER_CROPPED
     if text.startswith("scene_change"):
         return ReasonCode.SCENE_CHANGE
+    if text.startswith("occluded_by_person"):
+        return ReasonCode.OCCLUDED_BY_PERSON
     if text.startswith("nearby_person_pose_unknown"):
         return ReasonCode.AMBIGUOUS_ASSOCIATION
     if text.startswith("belongings_only"):

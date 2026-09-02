@@ -754,7 +754,19 @@ class FrameLogTests(unittest.TestCase):
         self.assertEqual(record["tables"][0]["state"], "occupied")
         self.assertEqual(record["tables"][0]["raw_state"], "occupied")
         self.assertEqual(record["tables"][0]["confidence"], 0.9877)
-        self.assertEqual(record["tables"][0]["objects"], [{"class": "cup", "confidence": 0.8765}])
+        # share = 이 물건의 몇 %가 이 자리 안에 있나. 배정 근거를 로그만
+        # 보고 확인할 수 있어야 한다.
+        self.assertEqual(
+            record["tables"][0]["objects"],
+            [
+                {
+                    "class": "cup",
+                    "confidence": 0.8765,
+                    "box": [10.0, 10.0, 20.0, 20.0],
+                    "share": 1.0,
+                }
+            ],
+        )
         self.assertEqual(record["tables"][0]["seated_people"], 1)
         self.assertEqual(record["tables"][0]["occupied_chairs"], 1)
         self.assertEqual(record["tables"][0]["chair_seated_people"], 1)
@@ -1397,3 +1409,52 @@ class DrawnLayoutObjectAssignmentTests(unittest.TestCase):
         )
 
         self.assertEqual(assignments[0], [])
+
+
+class OneObjectBelongsToOneSeatTests(unittest.TestCase):
+    """한 물건은 그것을 가장 많이 덮는 자리 하나에만 속한다.
+
+    점수식은 물건의 절반만 덮어도 만점이 된다(``min(1.0, ratio*2.0)``).
+    그래서 100% 덮는 자리와 50% 덮는 자리가 동점이 될 수 있고, 그때
+    승자는 근거 없이 자리 목록의 순서로 정해졌다.  짐 하나가 두 자리에
+    걸쳐 보일 때 사람이 쓰는 기준은 "어느 쪽에 더 많이 있나"다.
+    """
+
+    def test_tie_on_score_goes_to_the_seat_covering_more(self):
+        left = Detection("dining table", (0.0, 0.0, 100.0, 100.0), 1.0)
+        right = Detection("dining table", (60.0, 0.0, 300.0, 100.0), 1.0)
+        bag = Detection("backpack", (30.0, 40.0, 90.0, 80.0), 0.5)
+
+        assignments = associate_objects(
+            [left, right], [bag], surfaces=[left.box, right.box]
+        )
+
+        # 왼쪽이 100%, 오른쪽이 50% 를 덮는다.
+        self.assertEqual(assignments[0], [bag])
+        self.assertEqual(assignments[1], [])
+
+    def test_seat_order_does_not_decide(self):
+        """자리 목록의 순서를 뒤집어도 같은 자리가 가져가야 한다."""
+        left = Detection("dining table", (0.0, 0.0, 100.0, 100.0), 1.0)
+        right = Detection("dining table", (60.0, 0.0, 300.0, 100.0), 1.0)
+        bag = Detection("backpack", (30.0, 40.0, 90.0, 80.0), 0.5)
+
+        flipped = associate_objects(
+            [right, left], [bag], surfaces=[right.box, left.box]
+        )
+
+        self.assertEqual(flipped[1], [bag])
+        self.assertEqual(flipped[0], [])
+
+    def test_an_object_still_reaches_at_most_one_seat(self):
+        left = Detection("dining table", (0.0, 0.0, 100.0, 100.0), 1.0)
+        right = Detection("dining table", (60.0, 0.0, 300.0, 100.0), 1.0)
+        bag = Detection("backpack", (30.0, 40.0, 90.0, 80.0), 0.5)
+
+        assignments = associate_objects(
+            [left, right], [bag], surfaces=[left.box, right.box]
+        )
+
+        self.assertEqual(
+            sum(len(objects) for objects in assignments.values()), 1
+        )

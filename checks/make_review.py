@@ -282,6 +282,23 @@ def render_verdict(frame: np.ndarray, tick: Tick) -> np.ndarray:
     return output
 
 
+def object_basis(table: Dict[str, object]) -> str:
+    """어떤 물건이 이 자리를 몇 % 덮어서 붙었는지.
+
+    한 물건은 그것을 가장 많이 덮는 자리 하나에만 속한다.  그 근거를
+    적어두지 않으면 "왜 저 짐이 옆 테이블 것이 아니라 이 테이블 것인가"를
+    사람이 확인할 방법이 없다.
+    """
+    named = []
+    for obj in table.get("objects") or []:  # type: ignore[union-attr]
+        share = obj.get("share")
+        if share is None:
+            named.append(str(obj.get("class", "?")))
+        else:
+            named.append(f"{obj.get('class', '?')} {float(share) * 100:.0f}%")
+    return f" — {', '.join(named)}" if named else ""
+
+
 def explain_seat(table: Dict[str, object]) -> str:
     """`00_읽는법.md` 의 "왜 그렇게 봤나" 칸."""
     state = str(table.get("state", "unknown"))
@@ -292,7 +309,7 @@ def explain_seat(table: Dict[str, object]) -> str:
         code = evidence_code_from_log(table)
         parts = [EVIDENCE_KOREAN[letter] for letter in code if letter in EVIDENCE_KOREAN]
         if parts:
-            return " + ".join(parts) + f" ({code})"
+            return " + ".join(parts) + f" ({code})" + object_basis(table)
         # 근거가 이번 tick 에는 안 보이는데 사용중을 유지하는 경우.  성급히
         # 자리를 놔주지 않으려는 규칙이 일한 것이지 버그가 아니다.
         return "이번엔 근거가 안 보였지만 사용중 유지 (연속 3번이 아직 안 됨)"

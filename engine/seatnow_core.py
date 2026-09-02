@@ -548,6 +548,18 @@ def _object_table_score(
     return 0.65 * min(1.0, intersection_ratio * 2.0) + 0.35 * proximity
 
 
+def object_seat_share(obj: Detection, seat_box: Box) -> float:
+    """How much of the object lies inside the seat, as a fraction of itself.
+
+    This is the tie-break a person uses when one bag straddles two seats:
+    it belongs to the seat it is mostly on.
+    """
+    area = box_area(obj.box)
+    if area <= 0:
+        return 0.0
+    return intersection_area(obj.box, seat_box) / area
+
+
 def associate_objects(
     tables: Sequence[Detection],
     objects: Sequence[Detection],
@@ -564,20 +576,29 @@ def associate_objects(
     """
     assignments: Dict[int, List[Detection]] = {index: [] for index in range(len(tables))}
     for obj in objects:
-        scores = [
-            (
-                _object_table_score(
-                    obj,
-                    table,
-                    surfaces[index] if surfaces is not None else None,
-                ),
-                index,
+        eligible = []
+        for index, table in enumerate(tables):
+            # 점수와 덮는 비율은 반드시 같은 영역을 봐야 한다.  다르면
+            # "자격은 상판 띠로, 승자는 원래 상자로" 처럼 설명할 수 없는
+            # 배정이 나온다.
+            surface = (
+                surfaces[index]
+                if surfaces is not None
+                else table_surface_box(table.box)
             )
-            for index, table in enumerate(tables)
-        ]
-        score, table_index = max(scores, default=(0.0, -1))
-        if table_index >= 0 and score >= 0.22:
-            assignments[table_index].append(obj)
+            score = _object_table_score(obj, table, surface)
+            if score < 0.22:
+                continue
+            eligible.append((object_seat_share(obj, surface), score, index))
+        if not eligible:
+            continue
+        # 한 물건은 한 자리에만 속한다.  두 자리가 다 자격을 갖추면 물건을
+        # 더 많이 덮는 쪽이 가져간다 — 짐 하나가 두 자리에 걸쳐 보일 때
+        # 사람이 쓰는 기준이 그것이다.  점수는 물건의 절반만 덮어도 만점이
+        # 되므로, 점수만으로는 100% 덮는 자리와 50% 덮는 자리가 동점이 되고
+        # 승자가 자리 목록의 순서로 정해졌다.
+        _, _, table_index = max(eligible)
+        assignments[table_index].append(obj)
     return assignments
 
 
@@ -3482,8 +3503,15 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "table_confidence": round(observation.table_confidence, 4),
         "reason": logged_reason(track),
         "provisional": observation.provisional,
+        # share = 이 물건의 몇 %가 이 자리 안에 있나.  "왜 저 짐이 이
+        # 자리 것인가"를 로그만 보고 답할 수 있어야 한다.
         "objects": [
-            {"class": obj.name, "confidence": round(obj.confidence, 4)}
+            {
+                "class": obj.name,
+                "confidence": round(obj.confidence, 4),
+                "box": [round(value, 2) for value in obj.box],
+                "share": round(object_seat_share(obj, observation.box), 4),
+            }
             for obj in observation.objects
         ],
         "seated_people": len(observation.seated_people),

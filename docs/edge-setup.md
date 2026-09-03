@@ -37,15 +37,20 @@
 끝나는지**를 본다. 순서가 중요하다 — 위가 틀린 채로 아래를 재면 그 숫자는
 버려야 한다.
 
+> **1~5번은 설치 직후 바로 볼 수 있다. 6~8번은 아니다** — 6번은
+> `edge.export` 를 한 번 돌린 뒤에, 7·8번은 영상을 한 번 실행한 뒤에 생기는
+> 것을 본다 (`docs/edge-first-run.md` 4·5단계). 명령의 `results/edge_angle1`
+> 은 그때 만들어지는 폴더 이름이다.
+
 | | 확인 | 명령 | 나와야 하는 값 | 아니면 |
 |---|---|---|---|---|
-| 1 | 파이썬 | `python3 --version` | **3.11.x** | 노트북과 같은 버전이라야 판정 비교가 성립한다 |
+| 1 | 파이썬 | `python3 --version` | **3.10 / 3.11 / 3.12 아무거나** | 박스에 깔려 온 것을 그대로 쓴다 (22.04는 3.10, 24.04는 3.12). 셋 다 설치되는 것을 확인했다. **우분투에 3.11을 따로 넣으려 하지 말 것** — 22.04 저장소의 `python3.11` 은 정식판이 아니라 rc 다 |
 | 2 | 그래픽 권한 | `groups` | 목록에 **`render`** | `sudo usermod -aG render,video $USER` 후 **재로그인**. 이게 없으면 드라이버를 깔아도 하드웨어 디코딩이 안 켜진다 |
 | 3 | 영상 디코딩 | `vainfo` | `VAProfileH264...` 줄들 | `intel-media-va-driver-**non-free**` 를 깔았는지 확인 (2-B의 2번) |
 | 4 | torch 종류 | `./venv/bin/python -c "import torch; print(torch.__version__)"` | **`2.2.2+cpu`** | `+cpu` 가 없으면 엔비디아용을 받은 것이다. `requirements-edge.txt` 로 다시 깐다 |
 | 5 | **OpenVINO가 내장 그래픽을 보는가** | `./venv/bin/python -c "import openvino as ov; print(ov.Core().available_devices)"` | **`['CPU', 'GPU']`** | ⬅️ **오늘 가장 중요한 줄.** 아래 설명 |
-| 6 | 익스포트가 크기에 안 묶였는가 | `grep -A3 "^args:" yolov8n_openvino_model/metadata.yaml` | **`dynamic: True`** | `False` 면 크기를 박은 모델이다. `python -m edge.export --precision fp32 --imgsz 1280` 을 기본값으로 다시 |
-| 7 | 판정이 노트북과 같은가 | `python -m checks.score_answers <실행폴더> --answers .../angle_answer.md` | **`accepted=70 wrong=2`** | 속도를 논하기 전에 이것부터. 보통 라이브러리 버전 문제다 |
+| 6 | 익스포트가 크기에 안 묶였는가 | `grep -A7 "^args:" yolov8n_openvino_model/metadata.yaml` | **`dynamic: true`** | `false` 면 크기를 박은 모델이다. `./venv/bin/python -m edge.export --precision fp32 --imgsz 1280` 로 다시 뽑는다 |
+| 7 | 판정이 노트북과 같은가 | `./venv/bin/python -m checks.score_answers results/edge_angle1 --answers results/angle1_layout/angle_answer.md` | **`accepted=70 wrong=2`** | 속도를 논하기 전에 이것부터. 보통 라이브러리 버전 문제다 |
 | 8 | 판단 한 번에 몇 초인가 | 실행 로그의 `inference=` (**두 번째 줄부터**) | **7500ms 이하** | `docs/edge-first-run.md` 5단계의 카드 |
 
 ### 5번이 왜 가장 중요한가
@@ -62,31 +67,36 @@
 | ⚠️ OpenVINO, **CPU만 + 코어 2개** | 9.5 ~ 11.0초 |
 | (참고) 파이토치, 코어 2개 | 12.2 ~ 13.9초 |
 
-### `['CPU']` 만 나올 때 — 원인은 십중팔구 드라이버다 (2026-09-03 확인)
+### `['CPU']` 만 나올 때 — 드라이버가 두 종류라서 그렇다 (2026-09-03 확인)
 
 **HD 530이 낡아서가 아니다.** OpenVINO의 GPU 지원 범위는 Gen9~Gen12이고
-HD 530(Skylake, Gen9)은 그 안에 든다. 문제는 **드라이버가 두 종류라는 것**이다.
+HD 530(Skylake, Gen9)은 그 안에 든다. 문제는 **드라이버가 두 종류**인데
+예전 설치 목록에 한쪽만 있었다는 것이다.
 
-| 드라이버 | 하는 일 | 우리 설치 목록에 |
+| 드라이버 | 하는 일 | 확인 |
 |---|---|---|
-| `intel-media-va-driver-non-free` | **영상을 푼다** (디코딩) | 있었다 |
-| **OpenCL 계산 드라이버** | **AI 연산을 시킨다** | ⬅️ **없었다** |
+| `intel-media-va-driver-non-free` | **영상을 푼다** (디코딩) | `vainfo` |
+| `intel-opencl-icd` | **내장 그래픽에 AI 연산을 시킨다** | `clinfo` |
 
-즉 지금까지의 절차로는 **디코딩만 되고 추론은 CPU로 떨어지는 것이 정상**이었다.
-이 드라이버는 OpenVINO 패키지 안에 들어 있지 않다.
+둘 다 2-B의 설치 목록에 들어 있다. 이 계산용 드라이버는 **OpenVINO 패키지
+안에 없다** — 그래서 pip 로 openvino 를 깔아도 `GPU` 가 안 보일 수 있다.
 
-게다가 인텔이 **Gen8·Gen9·Gen11용 계산 드라이버를 `legacy1` 이라는 별도
-패키지로 분리**했다. 그래서 최신 칩용인 `intel-opencl-icd` 를 깔면 HD 530은
-여전히 안 잡힌다. 순서대로 시도한다:
+`clinfo` 에 HD Graphics 530 이 안 보이면 **우분투 버전을 본다.**
+인텔이 `24.35.30872.22` 부터 **Gen8·Gen9·Gen11을 별도 패키지로 분리**했기
+때문이다.
 
-```bash
-apt search intel-opencl-icd                            # 어떤 이름으로 있는지 먼저 본다
-sudo apt install -y intel-opencl-icd-legacy1 clinfo    # 없으면 -legacy, 그것도 없으면 intel-opencl-icd
-clinfo | grep -i "Device Name"                         # HD Graphics 530 이 보여야 한다
-```
+| 우분투 | `intel-opencl-icd` 버전 | HD 530(Gen9) |
+|---|---|---|
+| 22.04 LTS | 22.14 | ✅ 된다 |
+| 24.04 LTS | 23.43 | ✅ 된다 |
+| 25.10 이상 | 25.31 이상 | ❌ **`sudo apt install intel-opencl-icd-legacy`** 를 대신 깐다 |
 
-배포판에 legacy 패키지가 아예 없으면 인텔이 직접 올리는 `.deb` 를 받는다
-(<https://github.com/intel/compute-runtime/releases> 의 legacy1 릴리스).
+> ⚠️ 인텔이 배포하는 `.deb` 파일 이름은 `intel-opencl-icd-**legacy1**` 인데,
+> **우분투 패키지 이름에는 `1` 이 없다** (`intel-opencl-icd-legacy`).
+> 없는 이름을 넣으면 `apt install` 이 통째로 실패해서 같은 줄의 다른 것도
+> 안 깔린다. 헷갈리면 `apt search intel-opencl-icd` 로 먼저 확인한다.
+> 배포판에 아예 없으면 <https://github.com/intel/compute-runtime/releases>
+> 의 legacy1 릴리스에서 `.deb` 를 받는다.
 
 그렇게 해도 `GPU` 가 안 보이면 **CPU만으로 가야 한다.** 위 표의 아래쪽이고
 박스 코어는 노트북보다 2배쯤 느리므로, `docs/edge-first-run.md` 5단계의
@@ -111,6 +121,9 @@ clinfo | grep -i "Device Name"                         # HD Graphics 530 이 보
 ---
 
 ## 1. OS를 무엇으로 할 것인가
+
+> **지금 박스는 이미 리눅스로 깔았다.** 그러니 2-A(Windows)는 건너뛰고
+> **2-B로 간다.** 아래는 왜 그렇게 정했는지의 기록이다.
 
 **결론: 측정할 때는 박스에 깔려 온 OS 그대로 쓰고, 실제 매장에 놓을 때 리눅스로 바꾼다.**
 
@@ -170,7 +183,7 @@ CPU를 **3~6배** 더 쓴다.
 
 ```
 cd C:\
-git clone <저장소 주소> seatnow
+git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
 cd seatnow
 python -m venv venv
 venv\Scripts\python.exe -m pip install --upgrade pip
@@ -203,17 +216,19 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 sudo apt update
 sudo apt install -y python3-venv python3-pip git ffmpeg \
     intel-media-va-driver-non-free vainfo \
-    intel-opencl-icd-legacy1 clinfo
+    intel-opencl-icd clinfo
 ```
+
+> 우분투 **25.10 이상**이라면 마지막 줄을 `intel-opencl-icd-legacy clinfo` 로
+> 바꾼다. 그 버전부터 기본 패키지가 HD 530(Gen9)을 빼고 나오기 때문이다
+> (§0의 표). 22.04·24.04 는 위 그대로면 된다.
 
 `intel-media-va-driver-non-free` 가 Quick Sync를 켜는 드라이버다. **`-non-free`가
 붙은 쪽을 설치해야 한다** — 이름만 비슷한 `intel-media-va-driver`는 기능이 빠져 있다.
 
 **드라이버는 두 종류이고 둘 다 필요하다.** 앞의 것은 **영상을 푸는** 드라이버고,
-`intel-opencl-icd-legacy1` 은 **내장 그래픽에 AI 연산을 시키는** 드라이버다.
-후자가 없으면 추론이 전부 CPU로 떨어져 5~6배 느려진다 (§0의 5번).
-`legacy1` 이 붙은 쪽인 이유는 인텔이 Gen8·Gen9·Gen11용을 따로 뺐기 때문이다 —
-HD 530은 Gen9다. 그런 이름이 없다고 나오면 `apt search intel-opencl-icd` 로 확인한다.
+`intel-opencl-icd` 는 **내장 그래픽에 AI 연산을 시키는** 드라이버다.
+후자가 없으면 추론이 전부 CPU로 떨어져 **5~6배** 느려진다 (§0의 5번).
 
 `/dev/dri` 에 들어갈 권한도 필요하다. **이 명령 뒤에는 로그아웃했다가 다시
 로그인해야 적용된다.**
@@ -232,7 +247,7 @@ clinfo | grep -i "Device Name"  # HD Graphics 530 = AI 연산 OK
 
 ```bash
 cd ~
-git clone <저장소 주소> seatnow
+git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
 cd seatnow
 python3 -m venv venv
 ./venv/bin/python -m pip install --upgrade pip
@@ -252,14 +267,16 @@ python3 -m venv venv
 
 ## 3. 검수와 측정 — 세 줄
 
-Windows는 `venv\Scripts\python.exe`, Linux는 `./venv/bin/python` 으로 바꿔 읽는다.
-아래는 Windows 기준이다.
+리눅스 박스(지금 우리 것) 기준이다.
 
+```bash
+./venv/bin/python -m edge.check_edge
+./venv/bin/python -m edge.bench --frames sample_raw/cafe_sample_angle1.mov --label edge-box
+./venv/bin/python -m edge.bench_decode --source sample_raw/cafe_sample_angle1.mov
 ```
-venv\Scripts\python.exe -m edge.check_edge
-venv\Scripts\python.exe -m edge.bench --frames sample_raw\cafe_sample_angle1.mov --label edge-box
-venv\Scripts\python.exe -m edge.bench_decode --source sample_raw\cafe_sample_angle1.mov
-```
+
+Windows에서 돌린다면 `./venv/bin/python` 을 `venv\Scripts\python.exe` 로,
+경로의 `/` 를 `\` 로 바꾼다.
 
 **순서가 중요하다.** `edge/bench.py`를 먼저 돌려야 `edge/bench_decode.py`가 추론까지 합친
 표를 낼 수 있다.
@@ -287,6 +304,9 @@ venv\Scripts\python.exe -m edge.bench_decode --source sample_raw\cafe_sample_ang
 `--backends pt` 만 나오고 `ov-fp32`·`ov-int8` 이 `skip` 이면 아직 익스포트를 안 한
 것이다. `python -m edge.export` 를 먼저 돌리면 OpenVINO 백엔드까지 잰다 — **실제 배포는
 OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
+
+`p95` 가 몇 초로 크게 나오는 줄이 있어도 놀라지 않는다 — **OpenVINO의 첫
+추론은 모델 컴파일이라 원래 오래 걸린다.** 판단은 `median` 으로 한다.
 
 `skip ... (고정 크기 N 로 익스포트된 모델이다)` 가 뜨면 `--static` 으로 뽑은
 모델이라 그 크기 말고는 잴 수 없다는 뜻이다. 크기를 박아둔 모델은 **다른
@@ -324,6 +344,8 @@ OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
 ### 합산 표
 
 디코딩과 추론을 더한 것이다. **최종 구매 근거는 이 표다.**
+**`백엔드` 칸을 반드시 본다** — 실제 배포는 `ov-fp32`(OpenVINO)로 하므로
+`pt` 줄이 FAIL 이어도 그것만으로 카메라를 탈락시키지 않는다.
 
 ⚠️ **이 표는 근사치다.** 추론이 도는 동안 코어를 전부 쓴다고 가정했다. 카메라를
 탈락시키는 근거로는 충분하지만, 3% 차이를 다투는 데는 못 쓴다.
@@ -350,6 +372,9 @@ OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
 | `edge/bench.py` 가 전부 `skip` | 모델 파일이 없다. `python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8n-pose.pt')"` 로 받는다 |
 | 8MP 클립 만들 때 메모리가 모자란다 | `--clips 2mp_h264 2mp_h265 4mp_h264 4mp_h265` 로 8MP를 뺀다. 4MP까지만 봐도 대부분의 결정은 난다 |
 | 테스트가 깨진다 | `python -m unittest discover tests` 로 확인. numpy가 2.x로 올라갔을 가능성이 크다 (`pip install "numpy<2"`) |
+| `apt: Unable to locate package intel-opencl-icd-legacy1` | 우분투에는 그 이름이 없다 (`1` 없는 `intel-opencl-icd-legacy` 이고, 그것도 25.10부터다). §0의 표대로 고른다. **한 이름만 틀려도 그 apt 줄 전체가 실패해서 ffmpeg 도 안 깔린다** |
+| `clinfo` 가 장치를 하나도 못 찾는다 | ① `groups` 에 `render` 가 있는지 (재로그인했는지) ② 우분투 25.10 이상이면 `intel-opencl-icd-legacy` 로 바꿔 깐다 |
+| `ModuleNotFoundError: openvino` | `requirements-edge.txt` 로 안 깔았을 때 난다. `pip install -r requirements-edge.txt` |
 | OpenVINO 를 켰더니 빨라졌는데 채점이 70이 아니다 | 크기를 박은 모델로 뽑힌 것이다. §0의 6번을 확인하고 `python -m edge.export --precision fp32 --imgsz 1280` 로 다시 뽑는다 |
 | `available_devices` 에 `GPU` 가 없다 | HD 530이 이 OpenVINO 버전에서 빠진 것일 수 있다. §0의 "5번이 왜 가장 중요한가" 참고 |
 | 첫 판단이 1분 넘게 걸린다 | 모델 컴파일이다. 두 번째 줄부터 본다 (§0) |

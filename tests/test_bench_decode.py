@@ -12,6 +12,7 @@ from edge.bench_decode import (
     build_clip_command,
     build_decode_command,
     combined_rows,
+    format_combined_table,
     cores_used,
     format_decode_table,
     grade_decode,
@@ -164,6 +165,15 @@ class CombinedRowTests(unittest.TestCase):
         )
         heavy = [r for r in rows if r["profile"] == "accuracy_default"][0]
         self.assertEqual(heavy["grade"], "FAIL")
+
+    def test_rendered_table_says_which_backend_each_row_is(self):
+        """pt 줄과 ov 줄이 같은 모양이면 구매 판단에 쓸 수 없다."""
+        rows = combined_rows(
+            [measurement("4mp_h265", "qsv", 0.72)], self.BENCH_REPORT, total_cores=4
+        )
+        table = format_combined_table(rows)
+        for backend in {row["backend"] for row in rows}:
+            self.assertIn(str(backend), table)
 
     def test_no_bench_report_yields_no_rows(self):
         self.assertEqual(combined_rows([measurement("2mp_h264", "qsv", 0.1)], None, 4), [])

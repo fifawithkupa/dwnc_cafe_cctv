@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 
+from edge import tolerant_stdout
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 MIN_PYTHON = (3, 9)
@@ -127,7 +129,8 @@ def format_report(checks: Sequence[Check]) -> str:
         lines.append(f"{len(failed)}개 불합격. 위의 → 줄대로 처리하고 다시 돌린다.")
     else:
         lines.append(
-            "전부 합격. `python bench.py` 와 `python bench_decode.py` 를 돌린다."
+            "전부 합격. `python -m edge.bench` 와 `python -m edge.bench_decode` 를 "
+            "돌린다 (저장소 폴더에서)."
         )
     return "\n".join(lines)
 
@@ -228,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    tolerant_stdout()
     args = build_parser().parse_args(argv)
     print(f"장비: {platform.node()}  ({platform.platform()})")
     print(f"CPU: {platform.processor() or '알 수 없음'}")

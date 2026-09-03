@@ -30,6 +30,8 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 
 
+from edge import tolerant_stdout
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_SUFFIXES = {
     "pt": "",
@@ -338,6 +340,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    tolerant_stdout()
     args = build_parser().parse_args(argv)
     print(f"Machine: {args.label}  ({platform.platform()}, {platform.processor()})")
     print(f"Frames: {args.frames or 'synthetic noise'}  device={args.device}\n")

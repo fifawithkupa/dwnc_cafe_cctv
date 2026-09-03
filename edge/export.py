@@ -39,6 +39,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+from edge import tolerant_stdout
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MODELS = (("yolov8n.pt", "detect"), ("yolov8n-pose.pt", "pose"))
 
@@ -197,6 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    tolerant_stdout()
     args = build_parser().parse_args(argv)
 
     if args.dynamic and len(args.imgsz) > 1:

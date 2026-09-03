@@ -32,6 +32,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from engine.seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwaccel
 
 
+from edge import tolerant_stdout
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 CLIP_DIR = PROJECT_DIR / "results" / "edge" / "clips"
 
@@ -254,18 +256,21 @@ def format_combined_table(rows: Sequence[Dict[str, object]]) -> str:
     if not rows:
         return (
             "\n합산 판정: results/edge/bench_report.json 이 없어 건너뛴다. "
-            "`python bench.py` 를 먼저 돌리면 추론까지 합친 표가 나온다."
+            "`python -m edge.bench` 를 먼저 돌리면 추론까지 합친 표가 나온다."
         )
     lines = [
         "",
         "## 합산 판정 (디코딩 + 추론)",
         "",
-        "| 클립 | 디코딩 방식 | 프로파일 | 디코딩 | 추론 | 합계 | 판정 |",
-        "|---|---|---|---:|---:|---:|:---:|",
+        # 배포는 OpenVINO로 하므로 어느 백엔드의 줄인지가 판정을 바꾼다.
+        # 이 칸이 없으면 pt 줄과 ov 줄이 똑같이 생겨서 표를 읽을 수 없다.
+        "| 클립 | 디코딩 방식 | 프로파일 | 백엔드 | 디코딩 | 추론 | 합계 | 판정 |",
+        "|---|---|---|---|---:|---:|---:|:---:|",
     ]
     for row in rows:
         lines.append(
             f"| {row['clip']} | {row['hwaccel']} | {row['profile']} | "
+            f"{row.get('backend') or '?'} | "
             f"{float(row['decode_share']) * 100:.0f}% | "
             f"{float(row['inference_share']) * 100:.0f}% | "
             f"{float(row['total_share']) * 100:.0f}% | {row['grade']} |"
@@ -392,6 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    tolerant_stdout()
     args = build_parser().parse_args(argv)
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:

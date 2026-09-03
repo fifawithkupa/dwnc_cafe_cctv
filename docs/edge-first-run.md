@@ -51,7 +51,7 @@ python3 --version
 | 항목 | 필요 | 안 되면 |
 |---|---|---|
 | 디스크 여유 | **10GB 이상** | 정리한다. 모델·라이브러리로 2GB 넘게 쓴다 |
-| `python3 --version` | **3.11** | 노트북과 같은 버전이라 이 조합만 실제로 검증됐다. 3.12(우분투 24.04)에도 필요한 파일은 다 있는 것을 확인했지만 돌려본 적은 없다. 판정이 노트북과 다르게 나오면 이걸 먼저 의심한다 |
+| `python3 --version` | **3.10 / 3.11 / 3.12** | 깔려 온 것을 그대로 쓴다 (22.04는 3.10, 24.04는 3.12). 셋 다 설치되는 것을 확인했다. **우분투에 3.11을 따로 넣지 말 것** — 22.04 저장소의 `python3.11` 은 정식판이 아니라 rc 다. 노트북은 3.11.9 라, 판정이 다르게 나오면 그때 이 차이를 의심한다 |
 
 ---
 
@@ -61,8 +61,12 @@ python3 --version
 sudo apt update
 sudo apt install -y python3-venv python3-pip git ffmpeg \
     intel-media-va-driver-non-free vainfo \
-    intel-opencl-icd-legacy1 clinfo
+    intel-opencl-icd clinfo
 ```
+
+> 우분투 **25.10 이상**이면 마지막 줄을 `intel-opencl-icd-legacy clinfo` 로
+> 바꾼다 (그 버전부터 기본 패키지가 HD 530을 빼고 나온다). 22.04·24.04 는
+> 위 그대로. **없는 이름을 넣으면 apt 가 통째로 실패해서 ffmpeg 도 안 깔린다.**
 
 > ⚠️ **`-non-free` 가 붙은 쪽이어야 한다.** 이름만 비슷한
 > `intel-media-va-driver` 는 기능이 빠져 있다. 이게 HD 530의 하드웨어
@@ -70,12 +74,10 @@ sudo apt install -y python3-venv python3-pip git ffmpeg \
 > 3~6배 더 쓴다.** 연산 코어가 2개뿐인 박스에서는 치명적이다.
 
 > ⚠️ **드라이버가 두 종류라는 것에 주의한다.** 위의 것은 **영상을 푸는**
-> 드라이버이고, `intel-opencl-icd-legacy1` 은 **내장 그래픽에게 AI 연산을
-> 시키는** 드라이버다. 후자가 없으면 판정이 전부 CPU로 떨어져 **5~6배**
-> 느려진다 (5단계 ②-2). `legacy1` 이 붙은 쪽인 이유는 인텔이 Gen8·Gen9·
-> Gen11용을 따로 뺐기 때문이다 — HD 530은 Gen9다. 그런 이름이 없다고 나오면
-> `apt search intel-opencl-icd` 로 확인한다. 설치 확인은 `clinfo | grep -i "Device Name"`
-> 에 **HD Graphics 530** 이 보이는 것이다.
+> 드라이버이고, `intel-opencl-icd` 는 **내장 그래픽에게 AI 연산을 시키는**
+> 드라이버다. 후자가 없으면 판정이 전부 CPU로 떨어져 **5~6배** 느려진다
+> (5단계 ②-2). 설치 확인은 두 줄이다 — `vainfo` 에 `VAProfileH264...`,
+> 그리고 `clinfo | grep -i "Device Name"` 에 **HD Graphics 530**.
 
 **드라이버를 깔았어도 권한이 없으면 안 켜진다.** 리눅스에서 내장 그래픽은
 `/dev/dri` 라는 장치 파일로 접근하는데, 여기에 들어갈 수 있는 사람은
@@ -142,8 +144,10 @@ USB로 옮겨도 된다. AI 모델(13MB)은 **처음 실행할 때 자동으로 
 
 ## 3단계 — 검수
 
-**영상을 넣은 뒤에 해야 한다.** `--sample` 을 빠뜨리면 이 박스에서 가장
-중요한 항목인 하드웨어 디코딩을 확인하지 못한다.
+**영상을 넣은 뒤에 해야 한다.** 하드웨어 디코딩 확인은 실제로 한 프레임을
+풀어보는 방식이라, 영상이 없으면 그 항목이 불합격으로 나온다.
+(`--sample` 없이 돌려도 같은 영상을 기본값으로 찾는다. 파일 이름이 다를 때만
+`--sample` 로 지정한다.)
 
 ```bash
 ./venv/bin/python -m edge.check_edge --sample sample_raw/cafe_sample_angle1.mov
@@ -250,9 +254,10 @@ cp results/angle1_layout/angle_answer.md results/edge_angle1/
 돌기만 한다.** 그리고 **놀고 있는 내장 그래픽(HD 530)까지 같이 쓴다.**
 
 ```bash
-./venv/bin/python -m pip install openvino
 ./venv/bin/python -m edge.export --precision fp32 --imgsz 1280
 ```
+
+(`openvino` 는 1단계의 `requirements-edge.txt` 에 이미 들어 있다. 따로 안 깔아도 된다.)
 
 `yolov8n_openvino_model/` 과 `yolov8n-pose_openvino_model/` 폴더가 생긴다.
 실행할 때 모델만 바꿔 끼운다:
@@ -313,7 +318,7 @@ cp results/angle1_layout/angle_answer.md results/edge_angle1/
 | 나온 값 | 뜻 |
 |---|---|
 | `['CPU', 'GPU']` | ✅ 내장 그래픽을 쓴다. 표의 위쪽으로 간다 |
-| `['CPU']` | ⚠️ **AI 연산용 드라이버가 없는 것이다** (1단계의 `intel-opencl-icd-legacy1`). HD 530이 낡아서가 아니다 — OpenVINO는 Gen9부터 지원하고 HD 530이 Gen9다. `clinfo` 에 HD Graphics 530 이 보이는지부터 확인한다. 드라이버를 깔아도 안 잡히면 CPU만으로 가야 하므로 ①·④ 카드를 같이 쓴다 |
+| `['CPU']` | ⚠️ **AI 연산용 드라이버 문제다** (1단계의 `intel-opencl-icd`). HD 530이 낡아서가 아니다 — OpenVINO는 Gen9부터 지원하고 HD 530이 Gen9다. `clinfo` 에 HD Graphics 530 이 보이는지부터 확인하고, 우분투 25.10 이상이면 `intel-opencl-icd-legacy` 로 바꿔 깐다 (`docs/edge-setup.md` §0). 그래도 안 잡히면 CPU만으로 가야 하므로 ①·④ 카드를 같이 쓴다 |
 
 ### ②-3. 첫 판단은 원래 오래 걸린다 — 고장이 아니다
 

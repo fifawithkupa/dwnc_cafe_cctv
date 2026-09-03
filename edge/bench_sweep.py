@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 
+from edge import tolerant_stdout
+
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -287,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    tolerant_stdout()
     args = build_parser().parse_args(argv)
     from checks.verify_seatnow import discover_expectations
 

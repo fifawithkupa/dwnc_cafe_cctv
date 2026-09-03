@@ -1,7 +1,14 @@
-# 검증된 조합 (Python 3.9, macOS Intel 기준 — 2026-07-12)
-# 주의: numpy 2.x는 PyTorch와 충돌하므로 반드시 <2 유지
+# 개발용 (노트북에서 판정 루프를 돌릴 때)
+#
+# 엣지 박스는 이 파일이 아니라 **requirements-edge.txt** 를 쓴다.
+# 그쪽은 지금 노트북에 깔린 것을 전부 버전까지 고정한 목록이고, 리눅스에서
+# torch 가 CUDA(엔비디아 GPU) 판으로 받아지는 것도 막아둔다.
+#
+# 실제로 정답지 70/72 를 낸 환경 (2026-09-03): Python 3.11.9, 아래 버전들.
+# numpy 2.x 는 이 torch 와 충돌하므로 <2 를 유지한다.
+
 ultralytics==8.4.82
-# opencv 4.11+ 은 numpy>=2 를 요구하므로 numpy<2 와 호환되는 마지막 계열(4.10) 고정
-opencv-python==4.10.0.84
+opencv-python==4.11.0.86
 numpy<2
 torch==2.2.2
+torchvision==0.17.2

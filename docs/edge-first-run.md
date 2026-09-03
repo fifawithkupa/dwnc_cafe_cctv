@@ -51,7 +51,7 @@ python3 --version
 | 항목 | 필요 | 안 되면 |
 |---|---|---|
 | 디스크 여유 | **10GB 이상** | 정리한다. 모델·라이브러리로 2GB 넘게 쓴다 |
-| `python3 --version` | **3.10 또는 3.11** | 3.12(우분투 24.04)면 아마 되지만 검증된 조합이 아니다. 문제 생기면 이걸 의심한다 |
+| `python3 --version` | **3.11** | 노트북과 같은 버전이라 이 조합만 실제로 검증됐다. 3.12(우분투 24.04)에도 필요한 파일은 다 있는 것을 확인했지만 돌려본 적은 없다. 판정이 노트북과 다르게 나오면 이걸 먼저 의심한다 |
 
 ---
 
@@ -68,6 +68,18 @@ sudo apt install -y python3-venv python3-pip git ffmpeg \
 > 디코딩(Quick Sync)을 켜는 드라이버이고, **없으면 영상 푸는 데만 CPU를
 > 3~6배 더 쓴다.** 연산 코어가 2개뿐인 박스에서는 치명적이다.
 
+**드라이버를 깔았어도 권한이 없으면 안 켜진다.** 리눅스에서 내장 그래픽은
+`/dev/dri` 라는 장치 파일로 접근하는데, 여기에 들어갈 수 있는 사람은
+`render`·`video` 그룹에 속한 계정뿐이다. 아니면 `vainfo` 도 ffmpeg 도 조용히
+실패하고 소프트웨어 디코딩으로 떨어진다 — **드라이버 탓으로 착각하기 딱 좋다.**
+
+```bash
+sudo usermod -aG render,video $USER
+```
+
+⚠️ **이 명령 뒤에는 로그아웃했다가 다시 로그인해야 적용된다.** (`groups` 로
+`render` 가 보이면 된 것이다.)
+
 확인 — `VAProfileH264...` 같은 줄이 나와야 한다:
 ```bash
 vainfo
@@ -80,7 +92,21 @@ git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
 cd seatnow
 python3 -m venv venv
 ./venv/bin/python -m pip install --upgrade pip
-./venv/bin/python -m pip install -r requirements.txt
+./venv/bin/python -m pip install -r requirements-edge.txt
+```
+
+> ⚠️ **`requirements.txt` 가 아니라 `requirements-edge.txt` 다.** 두 가지가 다르다.
+> ① **노트북과 똑같은 버전**을 깐다. 4단계에서 "엣지도 70칸인가"를 볼 건데,
+> 라이브러리가 다르면 답이 달라도 그게 박스 때문인지 버전 때문인지 모른다
+> ② **torch 를 CPU 판으로 받는다.** 그냥 받으면 리눅스에서는 엔비디아 GPU용
+> (CUDA) 판이 내려와서, 이 박스에서 한 번도 안 쓰이는 파일로 디스크를
+> 2~3GB 더 먹는다
+
+설치가 끝나면 CPU 판이 맞는지 확인한다 — **끝에 `+cpu` 가 붙어야 한다**:
+
+```bash
+./venv/bin/python -c "import torch; print(torch.__version__)"
+# 2.2.2+cpu
 ```
 
 ---
@@ -216,10 +242,11 @@ cp results/angle1_layout/angle_answer.md results/edge_angle1/
 
 ```bash
 ./venv/bin/python -m pip install openvino
-./venv/bin/python -m edge.export --precision fp32
+./venv/bin/python -m edge.export --precision fp32 --imgsz 1280
 ```
 
-`yolov8n_openvino_model/` 폴더가 생긴다. 실행할 때 모델만 바꿔 끼운다:
+`yolov8n_openvino_model/` 과 `yolov8n-pose_openvino_model/` 폴더가 생긴다.
+실행할 때 모델만 바꿔 끼운다:
 
 ```bash
 ./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_angle1.mov \
@@ -232,6 +259,19 @@ cp results/angle1_layout/angle_answer.md results/edge_angle1/
 
 보통 2~4배 빨라진다고 알려져 있지만 **6세대 Skylake + HD 530에서 얼마가
 나올지는 이 명령이 알려준다.**
+
+> **왜 `--imgsz 1280` 하나만 뽑나 (2026-09-03 수정)**
+> 판단 한 번에 검출 모델이 **두 가지 크기로** 불린다 — 화면 전체는 1280,
+> 테이블 크롭은 960. 그래서 크기를 하나로 못 박은 모델은 애초에 한 틱을
+> 감당하지 못한다. 지금 `edge.export` 는 **어떤 크기든 받는 모델**을 뽑는다
+> (`--dynamic` 이 기본값).
+>
+> 이게 왜 중요하냐면, **크기를 박아둔 모델은 틀린 크기로 요청받아도 오류를
+> 안 내고 자기 크기로 그냥 돈다.** 예전 기본값대로 640짜리가 나왔다면
+> "OpenVINO 켜니 3배 빨라졌다"가 실은 "1280 대신 640으로 봤다"였을 것이다.
+> **빠른데 틀린 결과**가 나오고 원인은 OpenVINO처럼 보인다.
+> 그래서 이 카드를 켠 뒤에도 **반드시 4단계의 채점을 다시 돌려서
+> `accepted=70` 을 확인한다.**
 
 **①과 합치면 13~20초 추정치가 2~6초가 된다.** 여기서 끝날 가능성이 크다.
 
@@ -285,7 +325,9 @@ DDR4 SODIMM 한 개면 되고 슬롯이 2개다. **이 로드맵에서 가장 �
 | 증상 | 해결 |
 |---|---|
 | `ffmpeg를 찾지 못했다` | `which ffmpeg` 로 확인. 없으면 1단계의 apt를 다시 |
-| 하드웨어 디코딩이 계속 "꺼짐" | `vainfo` 가 뭐라고 하는지 본다. `-non-free` 드라이버를 깔았는지 확인. **가상머신 안에서는 원래 안 된다** |
+| 하드웨어 디코딩이 계속 "꺼짐" | ① `groups` 에 `render` 가 있는지 (1단계의 `usermod` + **재로그인**) ② `vainfo` 가 뭐라고 하는지 ③ `-non-free` 드라이버를 깔았는지. **가상머신 안에서는 원래 안 된다** |
+| OpenVINO 를 켰더니 빨라졌는데 채점이 70이 아니다 | 모델이 고정 크기로 뽑혔을 때 나는 증상이다. `edge.export` 를 `--imgsz 1280` 으로 (기본값 그대로) 다시 돌린다. 5단계 ② 참고 |
+| `pip install` 이 1GB 넘게 받는다 | `requirements.txt` 로 깔고 있는 것이다. **`requirements-edge.txt`** 로 다시 (1단계) |
 | `edge.bench` 가 전부 `skip` | 모델이 없다. 4단계를 한 번 돌리면 자동으로 받아진다 |
 | 테스트가 깨진다 | `./venv/bin/python -m unittest discover tests`. numpy가 2.x로 올라갔을 가능성이 크다 (`pip install "numpy<2"`) |
 | 틱 시간이 들쭉날쭉 | 스왑이다. `free -h` 로 확인 → 5단계 ③ |

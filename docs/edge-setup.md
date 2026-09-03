@@ -138,8 +138,13 @@ git clone <저장소 주소> seatnow
 cd seatnow
 python3 -m venv venv
 ./venv/bin/python -m pip install --upgrade pip
-./venv/bin/python -m pip install -r requirements.txt
+./venv/bin/python -m pip install -r requirements-edge.txt
 ```
+
+> 리눅스 박스에서는 `requirements.txt` 가 아니라 **`requirements-edge.txt`** 를
+> 쓴다. 노트북과 같은 버전을 고정하고(판정이 같은지 비교할 수 있어야 한다),
+> torch 를 CPU 판으로 받는다 — 그냥 받으면 GPU가 없는 박스에 엔비디아용
+> 파일로 2~3GB를 더 쓴다. `docs/edge-first-run.md` 1단계 참고.
 
 ### 4) 샘플 영상 넣기
 
@@ -184,6 +189,12 @@ venv\Scripts\python.exe -m edge.bench_decode --source sample_raw\cafe_sample_ang
 `--backends pt` 만 나오고 `ov-fp32`·`ov-int8` 이 `skip` 이면 아직 익스포트를 안 한
 것이다. `python -m edge.export` 를 먼저 돌리면 OpenVINO 백엔드까지 잰다 — **실제 배포는
 OpenVINO로 하므로 이 숫자가 진짜 숫자다.**
+
+`skip ... (고정 크기 N 로 익스포트된 모델이다)` 가 뜨면 `--static` 으로 뽑은
+모델이라 그 크기 말고는 잴 수 없다는 뜻이다. 크기를 박아둔 모델은 **다른
+크기로 요청받아도 오류 없이 자기 크기로 돌기 때문에**, 그대로 재면 표가
+실제보다 빠른 쪽으로 거짓말을 한다. `python -m edge.export` 를 기본값(어떤
+크기든 받는 모델)으로 다시 돌린다.
 
 ### `edge/bench_decode.py` — 어떤 카메라를 살 수 있는가
 

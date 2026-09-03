@@ -6,7 +6,12 @@ import unittest
 from pathlib import Path
 
 from edge import bench
-from edge.bench import Measurement, resolve_model, tick_budget
+from edge.bench import (
+    Measurement,
+    exported_input_size,
+    resolve_model,
+    tick_budget,
+)
 from engine.seatnow_core import model_backend
 
 
@@ -173,6 +178,46 @@ class RtspPublisherCommandTests(unittest.TestCase):
         self.assertEqual(command[-1], self.URL)
         self.assertEqual(command[command.index("-f") + 1], "rtsp")
         self.assertEqual(command[command.index("-rtsp_transport") + 1], "tcp")
+
+
+class ExportedInputSizeTests(unittest.TestCase):
+    """A fixed-size export must not be measured at a size it cannot run.
+
+    ultralytics replaces the requested size with the exported one for a static
+    model, so the row would carry the requested size's label and the exported
+    size's cost.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _export_dir(self, metadata: str) -> Path:
+        directory = self.root / "yolov8n_openvino_model"
+        directory.mkdir(exist_ok=True)
+        (directory / "metadata.yaml").write_text(metadata, encoding="utf-8")
+        return directory
+
+    def test_checkpoint_takes_any_size(self):
+        weights = self.root / "yolov8n.pt"
+        weights.write_bytes(b"stub")
+        self.assertIsNone(exported_input_size(weights))
+
+    def test_dynamic_export_takes_any_size(self):
+        directory = self._export_dir("imgsz:\n- 1280\n- 1280\nargs:\n  dynamic: true\n")
+        self.assertIsNone(exported_input_size(directory))
+
+    def test_static_export_reports_the_size_it_was_baked_at(self):
+        directory = self._export_dir("imgsz:\n- 640\n- 640\nargs:\n  dynamic: false\n")
+        self.assertEqual(exported_input_size(directory), 640)
+
+    def test_export_without_metadata_is_not_guessed_at(self):
+        directory = self.root / "yolov8n_int8_openvino_model"
+        directory.mkdir()
+        self.assertIsNone(exported_input_size(directory))
 
 
 if __name__ == "__main__":

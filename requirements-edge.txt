@@ -1,0 +1,65 @@
+# 엣지 박스 전용 설치 목록 — 리눅스 · GPU 없음
+#
+# 왜 따로 있나
+#   문서 4단계는 "엣지에서도 accepted=70 이 나오는가"로 합격을 판정한다.
+#   그러려면 노트북과 **같은 라이브러리**가 깔려야 한다. requirements.txt 는
+#   큰 것 네 개만 고정하기 때문에, 나머지는 설치하는 날짜에 따라 달라지고
+#   그러면 70칸이 나와도 우연인지 확인인지 알 수 없다.
+#   이 파일은 70칸을 낸 노트북(2026-09-03, Python 3.11.9)의 실제 설치 목록이다.
+#
+# 파이썬 버전
+#   3.11 을 쓴다. 노트북과 같은 버전이라 이 조합이 실제로 검증된 것이기
+#   때문이다. 3.12 에도 아래 휠들이 존재하는 것은 확인했지만(torch·torchvision
+#   ·opencv 전부 있다) 우리가 돌려본 적은 없다.
+#
+# torch 는 반드시 CPU 판이어야 한다
+#   그냥 pip install 하면 리눅스에서는 **엔비디아 GPU용(CUDA) 판**이 받아진다.
+#   이 박스에는 GPU가 없어서 한 번도 안 쓰이는데 디스크만 2~3GB 더 먹는다
+#   (문서가 요구하는 여유가 10GB다). 아래 --index-url 두 줄이 그걸 막는다.
+#
+# 설치
+#   ./venv/bin/python -m pip install -r requirements-edge.txt
+#
+# 확인 — torch 버전 끝에 +cpu 가 붙어 있어야 한다
+#   ./venv/bin/python -c "import torch; print(torch.__version__)"
+#   → 2.2.2+cpu
+
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+torch==2.2.2
+torchvision==0.17.2
+
+ultralytics==8.4.82
+ultralytics-thop==2.1.6
+opencv-python==4.11.0.86
+numpy==1.26.4
+
+certifi==2026.7.22
+charset-normalizer==3.5.1
+contourpy==1.3.3
+cycler==0.12.1
+filelock==3.32.4
+fonttools==4.63.0
+fsspec==2026.7.0
+idna==3.19
+Jinja2==3.1.6
+kiwisolver==1.5.1
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mpmath==1.3.0
+networkx==3.6.1
+nvidia-ml-py==13.610.43
+packaging==26.3
+pillow==12.3.0
+polars==1.44.1
+polars-runtime-32==1.44.1
+psutil==7.2.2
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+requests==2.34.2
+six==1.17.0
+sympy==1.14.0
+typing_extensions==4.16.0
+urllib3==2.7.0

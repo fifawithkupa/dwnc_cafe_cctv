@@ -58,6 +58,34 @@ def resolve_model(stem_weights: Path, backend: str) -> Optional[Path]:
     return candidate if candidate.exists() else None
 
 
+def exported_input_size(model_path: Path) -> Optional[int]:
+    """The one size a fixed-shape export can answer, or None if it takes any.
+
+    A static OpenVINO export silently replaces the size it is asked for with
+    the size it was exported at (ultralytics ``predictor.py``).  Measuring it
+    at another size would print that size's label above this size's cost -- a
+    table that lies in the optimistic direction, which is how a box gets
+    declared fast enough on numbers it never produced.
+    """
+    if not model_path.is_dir():
+        return None
+    metadata = model_path / "metadata.yaml"
+    if not metadata.exists():
+        return None
+
+    import yaml
+
+    data = yaml.safe_load(metadata.read_text(encoding="utf-8")) or {}
+    if (data.get("args") or {}).get("dynamic"):
+        return None
+    imgsz = data.get("imgsz")
+    if isinstance(imgsz, (list, tuple)) and imgsz:
+        return int(max(imgsz))
+    if isinstance(imgsz, int):
+        return imgsz
+    return None
+
+
 def load_frames(source: Optional[Path], count: int) -> List[np.ndarray]:
     """Take frames from a video/image, or fall back to synthetic noise.
 
@@ -136,7 +164,16 @@ def run_grid(args: argparse.Namespace) -> List[Measurement]:
                 print(f"  skip {task:6s} {backend:8s} (not exported)")
                 continue
             model = load_model(path, task)
+            fixed = exported_input_size(path)
             for imgsz in args.imgsz:
+                if fixed is not None and imgsz != fixed:
+                    print(
+                        f"  skip {task:6s} {backend:8s} @{imgsz:<5d} "
+                        f"(고정 크기 {fixed} 로 익스포트된 모델이다. "
+                        f"{imgsz} 로 요청해도 {fixed} 로 돌기 때문에 이 줄은 "
+                        f"거짓말이 된다 — python -m edge.export 로 다시 뽑는다)"
+                    )
+                    continue
                 samples = measure(
                     model, frames, imgsz, args.device, args.warmup, args.iterations
                 )

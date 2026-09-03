@@ -44,7 +44,7 @@
 
 | | 확인 | 명령 | 나와야 하는 값 | 아니면 |
 |---|---|---|---|---|
-| 1 | 파이썬 | `python3 --version` | **3.10 / 3.11 / 3.12 아무거나** | 박스에 깔려 온 것을 그대로 쓴다 (22.04는 3.10, 24.04는 3.12). 셋 다 설치되는 것을 확인했다. **우분투에 3.11을 따로 넣으려 하지 말 것** — 22.04 저장소의 `python3.11` 은 정식판이 아니라 rc 다 |
+| 1 | 파이썬 | `python3 --version` | **3.12** (24.04 기본) | 24.04 라면 그대로 진행한다 — 고정한 34개가 전부 설치되는 것을 확인했다. **22.04(3.10)라면 이 목록 그대로는 안 된다** (`contourpy`·`matplotlib` 에 3.10용 파일이 없어 소스 빌드로 넘어가고 컴파일러가 없어 멈춘다). 우분투에 3.11을 따로 넣지는 말 것 — 22.04 저장소의 것은 rc 다 |
 | 2 | 그래픽 권한 | `groups` | 목록에 **`render`** | `sudo usermod -aG render,video $USER` 후 **재로그인**. 이게 없으면 드라이버를 깔아도 하드웨어 디코딩이 안 켜진다 |
 | 3 | 영상 디코딩 | `vainfo` | `VAProfileH264...` 줄들 | `intel-media-va-driver-**non-free**` 를 깔았는지 확인 (2-B의 2번) |
 | 4 | torch 종류 | `./venv/bin/python -c "import torch; print(torch.__version__)"` | **`2.2.2+cpu`** | `+cpu` 가 없으면 엔비디아용을 받은 것이다. `requirements-edge.txt` 로 다시 깐다 |
@@ -219,6 +219,12 @@ sudo apt install -y python3-venv python3-pip git ffmpeg \
     intel-opencl-icd clinfo
 ```
 
+> **우분투 24.04 기준으로 여덟 개 전부 있는 것을 확인했다** (2026-09-03).
+> `intel-media-va-driver-non-free` 24.1.0 은 multiverse, `intel-opencl-icd`
+> 23.43 과 `clinfo` 는 universe 에 있고, 우분투 기본 설치는 두 저장소를 다
+> 켜 둔다. `Unable to locate package` 가 뜨면 저장소가 꺼진 것이니
+> `sudo add-apt-repository multiverse universe && sudo apt update` 후 다시.
+>
 > 우분투 **25.10 이상**이라면 마지막 줄을 `intel-opencl-icd-legacy clinfo` 로
 > 바꾼다. 그 버전부터 기본 패키지가 HD 530(Gen9)을 빼고 나오기 때문이다
 > (§0의 표). 22.04·24.04 는 위 그대로면 된다.

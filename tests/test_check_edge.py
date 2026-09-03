@@ -43,6 +43,18 @@ class MemoryCheckTests(unittest.TestCase):
     def test_four_gigabytes_pass(self):
         self.assertTrue(check_memory_gb(4.0).ok)
 
+    def test_reported_3_7_is_a_4gb_box_and_passes_with_warning(self):
+        # OptiPlex 7040 with 4GB fitted reported 3.7GB (2026-09-03).
+        check = check_memory_gb(3.7)
+        self.assertTrue(check.ok)
+        self.assertIn("빠듯", check.detail)
+
+    def test_eight_gigabytes_has_no_warning(self):
+        self.assertNotIn("빠듯", check_memory_gb(8.0).detail)
+
+    def test_three_gigabytes_fail(self):
+        self.assertFalse(check_memory_gb(3.0).ok)
+
     def test_two_gigabytes_fail(self):
         self.assertFalse(check_memory_gb(2.0).ok)
 

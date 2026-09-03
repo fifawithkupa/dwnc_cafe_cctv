@@ -28,6 +28,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 MIN_PYTHON = (3, 9)
 MIN_CORES = 4
 MIN_MEMORY_GB = 4.0
+# 4GB 를 꽂아도 운영체제가 보고하는 값은 3.6~3.8GB 다 (커널·내장 그래픽이
+# 일부를 먼저 가져간다). 정확히 4.0 으로 자르면 목표 박스(OptiPlex 7040,
+# 4GB)가 불합격으로 나온다 — 2026-09-03 실제로 3.7GB 가 찍혔다.
+MEMORY_REPORT_SLACK_GB = 0.5
 MIN_DISK_GB = 10.0
 REQUIRED_PACKAGES = ("numpy", "cv2", "torch", "ultralytics")
 PIP_NAMES = {"cv2": "opencv-python"}
@@ -66,11 +70,21 @@ def check_cores(count: int) -> Check:
 
 
 def check_memory_gb(gigabytes: float) -> Check:
-    ok = gigabytes >= MIN_MEMORY_GB
+    ok = gigabytes >= MIN_MEMORY_GB - MEMORY_REPORT_SLACK_GB
+    if not gigabytes:
+        detail = "알 수 없음"
+    elif ok and gigabytes < MIN_MEMORY_GB + 0.5:
+        # 4GB 장착. 돌긴 하지만 파이썬+모델이 1.5~2.5GB 를 쓰므로 빠듯하다.
+        detail = (
+            f"{gigabytes:.1f}GB — 4GB 장착으로 본다. 빠듯하다: 틱 시간이 "
+            "들쭉날쭉하면(4초↔20초) 메모리 부족이니 8GB로 늘린다"
+        )
+    else:
+        detail = f"{gigabytes:.1f}GB"
     return Check(
         name="메모리",
         ok=ok,
-        detail=f"{gigabytes:.1f}GB" if gigabytes else "알 수 없음",
+        detail=detail,
         fix="" if ok else f"RAM을 {MIN_MEMORY_GB:.0f}GB 이상으로 늘린다.",
     )
 

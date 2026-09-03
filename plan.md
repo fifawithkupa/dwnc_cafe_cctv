@@ -36,7 +36,7 @@
 ### ✅ `['CPU', 'GPU']` — 내장 그래픽을 쓴다
 
 노트북 실측 기준 **틱 1.1~1.6초**가 기대된다. 합격선(7.5초)에 여유가 크다.
-바로 `docs/edge-first-run.md` 4단계로 간다.
+**박스에서 칠 순서는 `docs/edge-setup.md` 1~8단계**에 그대로 있다 (막혔을 때도 단계별로).
 
 ```bash
 # 1. 설치 (requirements-edge.txt — openvino 포함, torch 는 CPU 판)
@@ -50,8 +50,13 @@
 ./venv/bin/python -m checks.score_answers results/edge_ov   --answers results/angle1_layout/angle_answer.md
 ```
 
-**얻을 숫자 셋**: ① 두 번째 틱부터의 `inference=` ② `Completed 6 samples in Xs`
-를 6으로 나눈 값(디코딩 포함 진짜 틱 시간) ③ `accepted=70 wrong=2`.
+**얻을 숫자 셋**: ① 두 번째 틱부터의 `inference=` ② 디코딩까지 포함한 진짜 틱
+시간 = **`(Completed ... in Xs 의 X − 첫 틱 inference) ÷ 5`** ③ `accepted=70 wrong=2`.
+
+> ⚠️ ②를 그냥 `X ÷ 6` 으로 하면 안 된다 (2026-09-03 실측으로 정정). X 안에는
+> 모델 컴파일이 들어간 첫 틱이 통째로 있다. 노트북에서 `20.1s / 6 = 3.35초`
+> 였지만 진짜 값은 `(20.1 − 14.75) / 5 = 1.07초`였다. 자세한 것은
+> `docs/edge-setup.md` §0 "시간을 잴 때 주의할 것".
 
 그다음은 **카메라 선정**(`edge.bench` → `edge.bench_decode` 합산 표)이다.
 

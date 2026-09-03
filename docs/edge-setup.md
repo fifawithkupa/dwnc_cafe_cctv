@@ -48,7 +48,7 @@
 | 2 | 그래픽 권한 | `groups` | 목록에 **`render`** | `sudo usermod -aG render,video $USER` 후 **재로그인**. 이게 없으면 드라이버를 깔아도 하드웨어 디코딩이 안 켜진다 |
 | 3 | 영상 디코딩 | `vainfo` | `VAProfileH264...` 줄들 | `intel-media-va-driver-**non-free**` 를 깔았는지 확인 (2-B의 2번) |
 | 4 | torch 종류 | `./venv/bin/python -c "import torch; print(torch.__version__)"` | **`2.2.2+cpu`** | `+cpu` 가 없으면 엔비디아용을 받은 것이다. `requirements-edge.txt` 로 다시 깐다 |
-| 5 | **OpenVINO가 내장 그래픽을 보는가** | `./venv/bin/python -c "import openvino as ov; print(ov.Core().available_devices)"` | **`['CPU', 'GPU']`** | ⬅️ **오늘 가장 중요한 줄.** 아래 설명 |
+| 5 | **OpenVINO가 내장 그래픽을 보는가** (저장소 없이 먼저 볼 수 있다 → `docs/clinfo.md`) | `./venv/bin/python -c "import openvino as ov; print(ov.Core().available_devices)"` | **`['CPU', 'GPU']`** | ⬅️ **오늘 가장 중요한 줄.** 아래 설명 |
 | 6 | 익스포트가 크기에 안 묶였는가 | `grep -A7 "^args:" yolov8n_openvino_model/metadata.yaml` | **`dynamic: true`** | `false` 면 크기를 박은 모델이다. `./venv/bin/python -m edge.export --precision fp32 --imgsz 1280` 로 다시 뽑는다 |
 | 7 | 판정이 노트북과 같은가 | `./venv/bin/python -m checks.score_answers results/edge_angle1 --answers results/angle1_layout/angle_answer.md` | **`accepted=70 wrong=2`** | 속도를 논하기 전에 이것부터. 보통 라이브러리 버전 문제다 |
 | 8 | 판단 한 번에 몇 초인가 | 실행 로그의 `inference=` (**두 번째 줄부터**) | **7500ms 이하** | `docs/edge-first-run.md` 5단계의 카드 |

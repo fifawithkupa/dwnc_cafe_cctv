@@ -60,13 +60,22 @@ python3 --version
 ```bash
 sudo apt update
 sudo apt install -y python3-venv python3-pip git ffmpeg \
-    intel-media-va-driver-non-free vainfo
+    intel-media-va-driver-non-free vainfo \
+    intel-opencl-icd-legacy1 clinfo
 ```
 
 > ⚠️ **`-non-free` 가 붙은 쪽이어야 한다.** 이름만 비슷한
 > `intel-media-va-driver` 는 기능이 빠져 있다. 이게 HD 530의 하드웨어
 > 디코딩(Quick Sync)을 켜는 드라이버이고, **없으면 영상 푸는 데만 CPU를
 > 3~6배 더 쓴다.** 연산 코어가 2개뿐인 박스에서는 치명적이다.
+
+> ⚠️ **드라이버가 두 종류라는 것에 주의한다.** 위의 것은 **영상을 푸는**
+> 드라이버이고, `intel-opencl-icd-legacy1` 은 **내장 그래픽에게 AI 연산을
+> 시키는** 드라이버다. 후자가 없으면 판정이 전부 CPU로 떨어져 **5~6배**
+> 느려진다 (5단계 ②-2). `legacy1` 이 붙은 쪽인 이유는 인텔이 Gen8·Gen9·
+> Gen11용을 따로 뺐기 때문이다 — HD 530은 Gen9다. 그런 이름이 없다고 나오면
+> `apt search intel-opencl-icd` 로 확인한다. 설치 확인은 `clinfo | grep -i "Device Name"`
+> 에 **HD Graphics 530** 이 보이는 것이다.
 
 **드라이버를 깔았어도 권한이 없으면 안 켜진다.** 리눅스에서 내장 그래픽은
 `/dev/dri` 라는 장치 파일로 접근하는데, 여기에 들어갈 수 있는 사람은
@@ -304,7 +313,7 @@ cp results/angle1_layout/angle_answer.md results/edge_angle1/
 | 나온 값 | 뜻 |
 |---|---|
 | `['CPU', 'GPU']` | ✅ 내장 그래픽을 쓴다. 표의 위쪽으로 간다 |
-| `['CPU']` | ⚠️ HD 530(2015년 칩)이 이 버전에서 안 잡히는 것이다. 최신 OpenVINO가 옛 내장 그래픽을 뺐을 수 있다 — `pip install "openvino==2024.6.0"` 처럼 **구버전을 시도해본다.** 그래도 안 잡히면 CPU만으로 가야 하므로 ①·④ 카드를 같이 쓴다 |
+| `['CPU']` | ⚠️ **AI 연산용 드라이버가 없는 것이다** (1단계의 `intel-opencl-icd-legacy1`). HD 530이 낡아서가 아니다 — OpenVINO는 Gen9부터 지원하고 HD 530이 Gen9다. `clinfo` 에 HD Graphics 530 이 보이는지부터 확인한다. 드라이버를 깔아도 안 잡히면 CPU만으로 가야 하므로 ①·④ 카드를 같이 쓴다 |
 
 ### ②-3. 첫 판단은 원래 오래 걸린다 — 고장이 아니다
 

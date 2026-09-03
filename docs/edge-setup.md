@@ -62,14 +62,35 @@
 | ⚠️ OpenVINO, **CPU만 + 코어 2개** | 9.5 ~ 11.0초 |
 | (참고) 파이토치, 코어 2개 | 12.2 ~ 13.9초 |
 
-박스의 HD 530은 **2015년 칩**이라 최신 OpenVINO에서 빠졌을 수 있다.
-`['CPU']` 만 나오면:
+### `['CPU']` 만 나올 때 — 원인은 십중팔구 드라이버다 (2026-09-03 확인)
 
-1. **구버전을 시도한다** — `./venv/bin/python -m pip install "openvino==2024.6.0"`
-   → 다시 5번을 확인한다
-2. 그래도 `GPU` 가 안 보이면 **CPU만으로 가야 한다.** 위 표의 아래쪽이고
-   박스 코어는 노트북보다 2배쯤 느리므로, `docs/edge-first-run.md` 5단계의
-   ①(3프레임)·④(크롭 개수)를 같이 써야 7.5초에 든다
+**HD 530이 낡아서가 아니다.** OpenVINO의 GPU 지원 범위는 Gen9~Gen12이고
+HD 530(Skylake, Gen9)은 그 안에 든다. 문제는 **드라이버가 두 종류라는 것**이다.
+
+| 드라이버 | 하는 일 | 우리 설치 목록에 |
+|---|---|---|
+| `intel-media-va-driver-non-free` | **영상을 푼다** (디코딩) | 있었다 |
+| **OpenCL 계산 드라이버** | **AI 연산을 시킨다** | ⬅️ **없었다** |
+
+즉 지금까지의 절차로는 **디코딩만 되고 추론은 CPU로 떨어지는 것이 정상**이었다.
+이 드라이버는 OpenVINO 패키지 안에 들어 있지 않다.
+
+게다가 인텔이 **Gen8·Gen9·Gen11용 계산 드라이버를 `legacy1` 이라는 별도
+패키지로 분리**했다. 그래서 최신 칩용인 `intel-opencl-icd` 를 깔면 HD 530은
+여전히 안 잡힌다. 순서대로 시도한다:
+
+```bash
+apt search intel-opencl-icd                            # 어떤 이름으로 있는지 먼저 본다
+sudo apt install -y intel-opencl-icd-legacy1 clinfo    # 없으면 -legacy, 그것도 없으면 intel-opencl-icd
+clinfo | grep -i "Device Name"                         # HD Graphics 530 이 보여야 한다
+```
+
+배포판에 legacy 패키지가 아예 없으면 인텔이 직접 올리는 `.deb` 를 받는다
+(<https://github.com/intel/compute-runtime/releases> 의 legacy1 릴리스).
+
+그렇게 해도 `GPU` 가 안 보이면 **CPU만으로 가야 한다.** 위 표의 아래쪽이고
+박스 코어는 노트북보다 2배쯤 느리므로, `docs/edge-first-run.md` 5단계의
+①(3프레임)·④(크롭 개수)를 같이 써야 7.5초에 든다.
 
 ### 시간을 잴 때 주의할 것 두 가지
 
@@ -181,17 +202,31 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 ```bash
 sudo apt update
 sudo apt install -y python3-venv python3-pip git ffmpeg \
-    intel-media-va-driver-non-free vainfo
+    intel-media-va-driver-non-free vainfo \
+    intel-opencl-icd-legacy1 clinfo
 ```
 
 `intel-media-va-driver-non-free` 가 Quick Sync를 켜는 드라이버다. **`-non-free`가
 붙은 쪽을 설치해야 한다** — 이름만 비슷한 `intel-media-va-driver`는 기능이 빠져 있다.
 
+**드라이버는 두 종류이고 둘 다 필요하다.** 앞의 것은 **영상을 푸는** 드라이버고,
+`intel-opencl-icd-legacy1` 은 **내장 그래픽에 AI 연산을 시키는** 드라이버다.
+후자가 없으면 추론이 전부 CPU로 떨어져 5~6배 느려진다 (§0의 5번).
+`legacy1` 이 붙은 쪽인 이유는 인텔이 Gen8·Gen9·Gen11용을 따로 뺐기 때문이다 —
+HD 530은 Gen9다. 그런 이름이 없다고 나오면 `apt search intel-opencl-icd` 로 확인한다.
+
+`/dev/dri` 에 들어갈 권한도 필요하다. **이 명령 뒤에는 로그아웃했다가 다시
+로그인해야 적용된다.**
+
+```bash
+sudo usermod -aG render,video $USER
+```
+
 확인:
 ```bash
-vainfo
+vainfo                          # VAProfileH264... 줄들 = 영상 디코딩 OK
+clinfo | grep -i "Device Name"  # HD Graphics 530 = AI 연산 OK
 ```
-`VAProfileH264...` 같은 줄들이 나오면 된 것이다.
 
 ### 3) 저장소와 파이썬 환경
 

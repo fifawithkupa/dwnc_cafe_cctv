@@ -156,7 +156,7 @@ scp "C:\Users\jin06\orca\workspaces\dwnc_cafe_cctv\main\sample_raw\cafe_sample_a
 
 → 박스에서 `ls ~/seatnow/sample_raw/` 했을 때 파일이 보이면 된다.
 
-USB로 옮겨도 된다. **AI 모델은 안 옮겨도 된다** — 처음 실행할 때 자동으로 받아진다.
+USB로 옮겨도 된다. **AI 모델은 안 옮겨도 된다** — 5단계 ①에서 받는다.
 
 <details>
 <summary><b>막혔을 때</b></summary>
@@ -220,6 +220,19 @@ cd ~/seatnow
 
 ## 5단계 — 모델 변환
 
+**① AI 모델 파일을 먼저 받는다** (13MB짜리 2개, 1분).
+
+```bash
+./venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8n.pt'); YOLO('yolov8n-pose.pt')"
+```
+
+→ `yolov8n.pt` 와 `yolov8n-pose.pt` 두 파일이 생긴다.
+
+> 모델 파일은 용량 때문에 저장소에 안 들어 있다. 원래 7단계에서 자동으로
+> 받아지는데, **변환은 그보다 먼저라 여기서 직접 받아야 한다.**
+
+**② 변환한다.**
+
 ```bash
 ./venv/bin/python -m edge.export --precision fp32 --imgsz 1280
 ```
@@ -230,6 +243,8 @@ cd ~/seatnow
 <details>
 <summary><b>막혔을 때</b></summary>
 
+- **`FileNotFoundError: detect weights not found: .../yolov8n.pt`**
+  — ①을 안 한 것이다. 위 ①을 치고 ②를 다시. (2026-09-03 박스에서 겪음)
 - **`skip (exists)` 만 찍고 끝난다** — 같은 이름의 폴더가 이미 있으면
   건너뛴다. 다시 뽑으려면 `--overwrite` 를 붙인다.
 - **`--precision fp32` 를 빼면 안 되나** — 빼면 기본값이 int8 까지 뽑아서

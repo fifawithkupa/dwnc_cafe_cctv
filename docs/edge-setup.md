@@ -120,13 +120,18 @@ python3 -m venv venv
 
 ## 3단계 — 영상 옮기기 ⚠️ **이건 노트북에서 친다**
 
-**① 박스에서** 주소를 확인한다. 이 한 줄이 `사용자@IP` 를 통째로 뱉는다.
+**① 박스에서** 받을 폴더를 만들고 주소를 확인한다.
 
 ```bash
+mkdir -p ~/seatnow/sample_raw
 echo "$(whoami)@$(hostname -I | awk '{print $1}')"
 ```
 
 → 예: `seatnow@192.168.0.42` — 이걸 그대로 복사해서 ②에 붙인다.
+
+> ⚠️ **`mkdir` 을 건너뛰면 안 된다.** `sample_raw/` 는 용량·개인정보 때문에
+> 저장소에서 제외돼 있어서 `git clone` 해도 안 생긴다. 그리고 `scp` 는
+> **없는 폴더를 만들어주지 않는다.**
 
 **② 노트북에서** (윈도우면 PowerShell) 영상을 보낸다.
 
@@ -151,8 +156,12 @@ USB로 옮겨도 된다. **AI 모델은 안 옮겨도 된다** — 처음 실행
   그리고 노트북에서 `scp` 를 다시 친다.
 - **`hostname -I` 가 주소를 여러 개 뱉는다** — `192.168.` 이나 `10.` 으로
   시작하는 것을 쓴다 (같은 공유기 안 주소).
-- **`No such file or directory`** — 박스에 폴더가 없다. 박스에서
-  `mkdir -p ~/seatnow/sample_raw` 먼저.
+- **`dest open "seatnow/sample_raw/": Failure`** 또는
+  **`No such file or directory`** — 받을 폴더가 없다. ①의 `mkdir` 을
+  안 한 것이다. 박스에서 `mkdir -p ~/seatnow/sample_raw` 하고 다시.
+- **`mkdir` 을 했는데도 같은 오류** — `~` 를 못 풀고 있는 것이다.
+  전체 경로로 친다 (`seatnow` 자리에 박스 사용자 이름):
+  `... seatnow@192.168.0.42:/home/seatnow/seatnow/sample_raw/`
 - **아무리 해도 안 붙는다** — 노트북과 박스가 **같은 공유기**에 붙어 있는지
   본다. 그래도 안 되면 **USB로 옮긴다.** 결과는 똑같다.
 

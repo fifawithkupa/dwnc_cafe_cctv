@@ -64,7 +64,7 @@ sudo apt install -y python3-pip git ffmpeg intel-media-va-driver-non-free vainfo
 
 ```bash
 cd ~
-git clone -b JINOI/main https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
+git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git seatnow
 cd seatnow
 python3 -m venv venv
 ./venv/bin/python -m pip install --upgrade pip
@@ -79,26 +79,33 @@ python3 -m venv venv
 
 → **`2.2.2+cpu`** — 끝에 **`+cpu`** 가 붙어야 한다.
 
-> ⚠️ **`-b JINOI/main` 을 빼면 안 된다.** 그냥 `git clone` 하면 기본 브랜치
-> `main` 을 받는데, **그건 90커밋 뒤처져 있어서 2~8단계에 필요한 파일이 하나도
-> 없다** (`requirements-edge.txt`·`edge/export.py`·`checks/score_answers.py`·
-> `layouts/cafe_angle1.json`·정답지 전부). 2026-09-03에 실제로 여기서 막혔다.
+> ⚠️ **박스가 코드를 받아가는 곳은 `main` 브랜치다.**
+> 노트북에서 한 작업은 `JINOI/main` 에 쌓이므로, **박스에 반영하려면 노트북에서
+> 이걸 한 번 밀어야 한다:**
+>
+> ```bash
+> git push origin JINOI/main:main
+> ```
+>
+> 2026-09-03에 이걸 안 해서 박스가 90커밋 뒤처진 코드를 받았고,
+> `requirements-edge.txt` 부터 없어서 2단계에서 막혔다.
+> **박스로 뭔가 보내기 전에는 항상 이 줄을 먼저 친다.**
 
 <details>
 <summary><b>막혔을 때</b></summary>
 
 - **`Could not open requirements file: ... 'requirements-edge.txt'`**
-  — 옛날 브랜치(`main`)를 받은 것이다. **저장소를 지우고 다시 받을 필요 없다:**
+  — 박스가 옛날 코드를 받은 것이다. **노트북에서 `git push origin JINOI/main:main`
+  을 먼저 한 다음**, 박스에서 (저장소를 지우고 다시 받을 필요 없다):
   ```bash
   cd ~/seatnow
-  git fetch origin
-  git checkout JINOI/main
+  git pull
   ls requirements-edge.txt        # 보이면 된 것
   ```
   그다음 `./venv/bin/python -m pip install -r requirements-edge.txt` 로 이어서
   한다. venv 는 이미 만들었으니 다시 안 만들어도 된다.
-  같은 원인으로 4·5·7·8단계에서 `No module named ...` 가 날 수 있는데
-  해결은 똑같다.
+  같은 원인으로 4·5·7·8단계에서 `No module named ...` 나 `파일이 없다` 가 날 수
+  있는데 해결은 똑같다.
 - **`+cpu` 가 없다 / 1GB 넘게 받는다** — `requirements.txt` 로 깔고 있는
   것이다. 파일 이름이 **`requirements-edge.txt`** 인지 확인하고 다시.
   (그냥 받으면 리눅스에서는 엔비디아 GPU용이 내려와 2~3GB를 더 먹는다)

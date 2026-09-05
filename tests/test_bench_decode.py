@@ -9,12 +9,18 @@ from edge.bench_decode import (
     CLIP_SPECS,
     ClipSpec,
     DecodeMeasurement,
+    SkippedClip,
     build_clip_command,
     build_decode_command,
+    can_software_encode,
     combined_rows,
+    decision_rows,
+    encode_memory_gb,
+    format_decision_table,
     format_combined_table,
     cores_used,
     format_decode_table,
+    format_missing_clips,
     grade_decode,
     parse_benchmark,
 )
@@ -190,6 +196,106 @@ class CombinedRowTests(unittest.TestCase):
         pairs = {(r["clip"], r["hwaccel"], r["profile"]) for r in rows}
         self.assertIn(("4mp_h265", "qsv", "balanced"), pairs)
         self.assertIn(("4mp_h265", "none", "balanced"), pairs)
+
+
+class DecisionTableTests(unittest.TestCase):
+    """96 combined rows are not a purchase decision; the deployed profile is."""
+
+    def rows(self, *backends: str):
+        report = {
+            "tick_budgets": [
+                {"profile": profile, "backend": backend, "tick_utilization": 0.3}
+                for backend in backends
+                for profile in ("accuracy_default", "balanced", "fast", "minimum")
+            ]
+        }
+        return combined_rows(
+            [measurement("4mp_h265", "vaapi", 0.3), measurement("8mp_h265", "none", 2.4)],
+            report,
+            total_cores=4,
+        )
+
+    def test_keeps_only_the_deployed_profile_on_openvino(self):
+        picked = decision_rows(self.rows("pt", "ov-fp32"))
+        self.assertEqual(len(picked), 2)
+        self.assertTrue(all(r["profile"] == "accuracy_default" for r in picked))
+        self.assertTrue(all(r["backend"] == "ov-fp32" for r in picked))
+
+    def test_falls_back_to_pytorch_when_nothing_was_exported(self):
+        picked = decision_rows(self.rows("pt"))
+        self.assertEqual({r["backend"] for r in picked}, {"pt"})
+
+    def test_table_warns_when_it_had_to_use_pytorch(self):
+        """A pt-only table looks like a verdict but the box will not deploy pt."""
+        self.assertIn("ov-fp32", format_decision_table(decision_rows(self.rows("pt"))))
+        self.assertIn("5단계", format_decision_table(decision_rows(self.rows("pt"))))
+        self.assertNotIn("5단계", format_decision_table(decision_rows(self.rows("pt", "ov-fp32"))))
+
+    def test_empty_when_there_is_nothing_to_decide_from(self):
+        self.assertEqual(decision_rows([]), [])
+        self.assertIn("bench", format_decision_table([]))
+
+
+class SoftwareEncodeGuardTests(unittest.TestCase):
+    """The 4GB box must not attempt an encode that kills its own SSH session."""
+
+    BOX_GB = 3.7  # OptiPlex 7040 with 4GB installed reports this
+    LAPTOP_GB = 32.0
+
+    def spec(self, name: str) -> ClipSpec:
+        return [s for s in CLIP_SPECS if s.name == name][0]
+
+    def test_the_box_can_still_build_the_small_clips(self):
+        for name in ("2mp_h264", "2mp_h265", "4mp_h264", "4mp_h265"):
+            self.assertTrue(can_software_encode(self.spec(name), self.BOX_GB), name)
+
+    def test_the_box_can_build_4k_h264_because_it_actually_did(self):
+        self.assertTrue(can_software_encode(self.spec("8mp_h264"), self.BOX_GB))
+
+    def test_the_box_is_refused_4k_h265_because_it_actually_died(self):
+        self.assertFalse(can_software_encode(self.spec("8mp_h265"), self.BOX_GB))
+
+    def test_a_roomy_laptop_builds_everything(self):
+        for spec in CLIP_SPECS:
+            self.assertTrue(can_software_encode(spec, self.LAPTOP_GB), spec.name)
+
+    def test_unreadable_memory_does_not_block_the_build(self):
+        """A wrong 'no' would leave the user with no way to prepare clips."""
+        self.assertTrue(can_software_encode(self.spec("8mp_h265"), 0.0))
+
+    def test_small_clips_demand_nothing_in_particular(self):
+        self.assertEqual(encode_memory_gb(self.spec("2mp_h265")), 0.0)
+
+    def test_4k_h265_demands_more_than_4k_h264(self):
+        self.assertGreater(
+            encode_memory_gb(self.spec("8mp_h265")),
+            encode_memory_gb(self.spec("8mp_h264")),
+        )
+
+
+class MissingClipGuidanceTests(unittest.TestCase):
+    SKIPPED = (
+        SkippedClip("8mp_h265", "메모리 3.7GB 로는 못 만든다"),
+    )
+
+    def test_names_the_clip_and_why(self):
+        text = format_missing_clips(self.SKIPPED)
+        self.assertIn("8mp_h265", text)
+        self.assertIn("3.7GB", text)
+
+    def test_gives_the_build_only_command_for_the_laptop(self):
+        text = format_missing_clips(self.SKIPPED)
+        self.assertIn("--build-only", text)
+        self.assertIn("--clips 8mp_h265", text)
+
+    def test_makes_the_receiving_folder_before_scp(self):
+        """0dbee19: scp 가 실패한 진짜 원인은 받을 폴더가 없어서였다."""
+        text = format_missing_clips(self.SKIPPED)
+        self.assertIn("mkdir -p", text)
+        self.assertLess(text.index("mkdir -p"), text.index("scp "))
+
+    def test_tells_the_box_to_rerun_without_building(self):
+        self.assertIn("--no-build", format_missing_clips(self.SKIPPED))
 
 
 class DecodeTableTests(unittest.TestCase):

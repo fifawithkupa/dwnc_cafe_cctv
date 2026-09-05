@@ -11,7 +11,7 @@
 > 않고, 시간도 합격선 안이다.** 숫자는 §0-a.
 >
 > **다음: 카메라 선정** (`edge.bench` → `edge.bench_decode` 합산 표).
-> 박스에서 칠 순서는 `docs/edge-setup.md` 부록 C.
+> 박스에서 칠 순서는 `docs/edge-setup.md` 9단계.
 
 ---
 

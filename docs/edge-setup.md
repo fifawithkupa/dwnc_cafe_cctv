@@ -998,17 +998,11 @@ SEATNOW_LAYOUT=layouts/매장이름.json
 | 설치 직후 판정 시작 | 41초 만에 첫 틱 (모델 준비 시간), 이후 15초마다 |
 | 프로세스를 강제로 죽임 (`kill -9`) | 10초 뒤 systemd 가 다시 띄움, 기록은 같은 날짜 파일에 이어 씀 |
 | `systemctl --user stop` | 요약 파일 쓰고 깨끗이 종료 |
-| **박스 재부팅** | **아직 못 했다** — `sudo reboot` 에 비밀번호가 필요해서. 아래 ④ |
+| **박스 재부팅** (`sudo reboot`) | 꺼진 지 45초 만에 다시 올라오고, 판정 서비스와 가짜 카메라 둘 다 로그인 없이 자동으로 떴다. 부팅 27초 뒤 첫 틱 |
 
-### ④ 네가 한 번 해줄 것 — 재부팅 시험
+### ④ 재부팅 뒤 확인하는 법 (2026-09-06 통과)
 
-노트북에서 SSH 로 붙어 (맨 위 "먼저"):
-
-```bash
-sudo reboot
-```
-
-1~2분 뒤 다시 붙어서:
+박스를 껐다 켠 뒤(정전·이사·`sudo reboot`) 노트북에서 SSH 로 붙어 (맨 위 "먼저"):
 
 ```bash
 systemctl --user status seatnow seatnow-fake-camera | grep -E "Active|●"

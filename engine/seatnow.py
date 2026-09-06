@@ -39,6 +39,7 @@ from engine.seatnow_live import (
     FFmpegLiveReader,
     TickSchedule,
     is_live_source,
+    burst_period_frames,
     probe_live_hwaccel,
     probe_stream,
     process_rss_mb,
@@ -116,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
     parser.add_argument("--run-seconds", type=float, help="실시간(rtsp://) 입력일 때 이 시간이 지나면 멈춘다 (없으면 계속 돈다)")
+    parser.add_argument("--live-burst-seconds", type=float, default=5.0, help="실시간 입력에서 몇 초마다 프레임 묶음 하나를 변환할지 (0 = 모든 프레임 변환; 2코어 박스에서는 5초가 맞다)")
     parser.add_argument(
         "--hwaccel",
         default=HWACCEL_AUTO,
@@ -191,6 +193,8 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise ValueError("--run-seconds 는 실시간(rtsp://) 입력에만 쓴다")
         if args.run_seconds <= 0:
             raise ValueError("--run-seconds must be positive")
+    if getattr(args, "live_burst_seconds", 0.0) is not None and args.live_burst_seconds < 0:
+        raise ValueError("--live-burst-seconds cannot be negative")
     if args.sample_seconds <= 0:
         raise ValueError("--sample-seconds must be positive")
     if args.median_frames < 0:
@@ -747,9 +751,18 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         "tried": list(hwaccel.tried),
     }
     burst_frames = 2 * args.median_frames + 1
+    burst_period = burst_period_frames(info.fps, args.live_burst_seconds, burst_frames)
+    run_context["decode"]["burst_every_frames"] = burst_period
+    run_context["decode"]["burst_frames"] = burst_frames
     print(
         f"Analyzing every {args.sample_seconds:g}s "
-        f"(newest {burst_frames} frames majority vote, live)",
+        f"(newest {burst_frames} frames majority vote, live"
+        + (
+            f"; ffmpeg converts {burst_frames} frames every {burst_period} ({args.live_burst_seconds:g}s)"
+            if burst_period
+            else "; ffmpeg converts every frame"
+        )
+        + ")",
         flush=True,
     )
     new_tracker = _tracker_factory(args)
@@ -759,7 +772,10 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         info.height,
         hwaccel_args=hwaccel.args,
         buffer_frames=burst_frames + 3,
+        burst_every_frames=burst_period,
+        burst_frames=burst_frames,
     )
+    max_span_s = 1.0 if burst_period else None
     schedule = TickSchedule(args.sample_seconds)
     started = time.perf_counter()
     deadline = started + args.run_seconds if args.run_seconds else None
@@ -788,7 +804,9 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     break
                 late = schedule.late_seconds()
                 center_index, burst = reader.read_burst(
-                    args.median_frames, timeout=min(10.0, args.sample_seconds)
+                    args.median_frames,
+                    timeout=min(10.0, args.sample_seconds),
+                    max_span_s=max_span_s,
                 )
                 stats = reader.stats()
                 if stats["hwaccel_suspect"] and not warned_hwaccel:

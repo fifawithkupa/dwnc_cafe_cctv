@@ -66,6 +66,36 @@ def is_live_source(value: object) -> bool:
     return str(value).lower().startswith(LIVE_SCHEMES)
 
 
+def coherent_tail(frames: Sequence[Frame], wanted: int, max_span_s: Optional[float]) -> List[Frame]:
+    """The newest ``wanted`` frames, cut back so they come from one burst.
+
+    With burst selection ffmpeg emits a few consecutive frames every few
+    seconds.  A window that straddles two bursts would vote with frames
+    seconds apart, so when ``max_span_s`` is set the tail is trimmed to the
+    newest run whose timestamps fit inside that span.
+    """
+    tail = list(frames)[-wanted:] if wanted > 0 else []
+    if not tail or max_span_s is None:
+        return tail
+    newest = tail[-1][0]
+    start = len(tail) - 1
+    while start > 0 and newest - tail[start - 1][0] <= max_span_s:
+        start -= 1
+    return tail[start:]
+
+
+def burst_period_frames(fps: float, burst_seconds: float, burst_frames: int) -> int:
+    """How many stream frames apart the converted bursts should be.
+
+    0 means "convert every frame" (no selection).  Unknown fps assumes 30.
+    The period is never shorter than the burst itself.
+    """
+    if burst_seconds <= 0:
+        return 0
+    rate = fps if fps and fps > 0 else 30.0
+    return max(int(round(rate * burst_seconds)), max(1, int(burst_frames)))
+
+
 def _default_spawn(command: List[str], stderr_file) -> subprocess.Popen:
     return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr_file)
 
@@ -91,6 +121,8 @@ class FFmpegLiveReader:
         clock: Callable[[], float] = time.monotonic,
         sleep: Optional[Callable[[float], None]] = None,
         ffmpeg: Optional[str] = None,
+        burst_every_frames: int = 0,
+        burst_frames: int = 5,
     ) -> None:
         if width <= 0 or height <= 0:
             raise ValueError("width and height must be positive")
@@ -98,11 +130,15 @@ class FFmpegLiveReader:
             raise ValueError("buffer_frames must be at least 1")
         if not reconnect_delays:
             raise ValueError("reconnect_delays cannot be empty")
+        if burst_every_frames < 0 or burst_frames < 1:
+            raise ValueError("burst_every_frames must be >= 0 and burst_frames >= 1")
         self.url = str(url)
         self.width = int(width)
         self.height = int(height)
         self.hwaccel_args = tuple(hwaccel_args)
         self.rtsp_transport = rtsp_transport
+        self.burst_every_frames = int(burst_every_frames)
+        self.burst_frames = int(burst_frames)
         self.reconnect_delays = tuple(float(d) for d in reconnect_delays)
         self._spawn: Spawn = spawn or _default_spawn
         self._clock = clock
@@ -137,18 +173,19 @@ class FFmpegLiveReader:
                 "-timeout",
                 str(RTSP_SOCKET_TIMEOUT_US),
             ]
-        command += [
-            "-i",
-            self.url,
-            "-an",
-            "-sn",
-            "-dn",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "bgr24",
-            "pipe:1",
-        ]
+        command += ["-i", self.url, "-an", "-sn", "-dn"]
+        if self.burst_every_frames > 0:
+            # Decode everything (the stream cannot be skipped), but convert to
+            # BGR and ship down the pipe only ``burst_frames`` consecutive
+            # frames every ``burst_every_frames``.  On the 2-core box the
+            # conversion of 30 fps × 4 MP was costing more than the decode.
+            command += [
+                "-vf",
+                f"select=lt(mod(n\\,{self.burst_every_frames})\\,{self.burst_frames})",
+                "-fps_mode",
+                "passthrough",
+            ]
+        command += ["-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"]
         return command
 
     # --------------------------------------------------------------- lifecycle
@@ -189,24 +226,32 @@ class FFmpegLiveReader:
 
     # ------------------------------------------------------------------- reads
 
-    def read_burst(self, n: int, timeout: float = 5.0) -> Tuple[int, List[Frame]]:
+    def read_burst(
+        self, n: int, timeout: float = 5.0, max_span_s: Optional[float] = None
+    ) -> Tuple[int, List[Frame]]:
         """Newest ``2n+1`` frames, oldest first; the last one is the centre.
 
         Waits up to ``timeout`` for the buffer to hold that many.  If fewer
         arrived, returns what there is (still newest-last); if nothing has
         arrived, returns ``(-1, [])`` so the caller can skip the tick.
+        With ``max_span_s`` the window is additionally required to come
+        from one burst (see ``coherent_tail``); on timeout the newest
+        coherent run is returned instead of a mixed one.
         """
         if n < 0:
             raise ValueError("n cannot be negative")
         wanted = 2 * n + 1
         deadline = self._clock() + max(0.0, timeout)
         with self._condition:
-            while len(self._buffer) < wanted and not self._stop.is_set():
+            while not self._stop.is_set():
+                snapshot = coherent_tail(list(self._buffer), wanted, max_span_s)
+                if len(snapshot) >= wanted:
+                    break
                 remaining = deadline - self._clock()
                 if remaining <= 0:
                     break
                 self._condition.wait(min(remaining, 0.05))
-            snapshot = list(self._buffer)[-wanted:]
+            snapshot = coherent_tail(list(self._buffer), wanted, max_span_s)
         if not snapshot:
             return -1, []
         return len(snapshot) - 1, snapshot

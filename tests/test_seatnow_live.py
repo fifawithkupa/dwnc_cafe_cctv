@@ -23,6 +23,7 @@ from engine.seatnow_core import require_ffmpeg
 from engine.seatnow_live import (
     FFmpegLiveReader,
     HWACCEL_FAILURE_PATTERNS,
+    coherent_tail,
     is_live_source,
 )
 
@@ -36,16 +37,38 @@ def _frame_payload(value: int) -> bytes:
 
 
 class FakeStream:
-    """Yields ``payload`` then either reports EOF or blocks until closed."""
+    """Yields ``payload`` then either reports EOF or blocks until closed.
 
-    def __init__(self, payload: bytes, block_after: bool) -> None:
+    ``pause_after`` inserts one real pause of ``pause_s`` once that many bytes
+    have been read, to simulate the gap between two frame bursts.
+    """
+
+    def __init__(
+        self,
+        payload: bytes,
+        block_after: bool,
+        pause_after: Optional[int] = None,
+        pause_s: float = 0.0,
+    ) -> None:
         self._buffer = io.BytesIO(payload)
         self._block_after = block_after
         self._closed = threading.Event()
+        self._pause_after = pause_after
+        self._pause_s = pause_s
+        self._served = 0
+        self._paused = False
 
     def read(self, size: int) -> bytes:
+        if (
+            self._pause_after is not None
+            and not self._paused
+            and self._served >= self._pause_after
+        ):
+            self._paused = True
+            self._closed.wait(self._pause_s)
         chunk = self._buffer.read(size)
         if chunk:
+            self._served += len(chunk)
             return chunk
         if self._block_after:
             self._closed.wait()
@@ -136,6 +159,25 @@ class LiveReaderCommandTests(unittest.TestCase):
         reader = FFmpegLiveReader("rtsp://cam/stream", WIDTH, HEIGHT)
         self.assertNotIn("-hwaccel", reader.build_command("ffmpeg"))
 
+    def test_burst_selection_converts_only_a_few_frames_per_period(self) -> None:
+        reader = FFmpegLiveReader(
+            "rtsp://cam/stream", WIDTH, HEIGHT, burst_every_frames=150, burst_frames=5
+        )
+        command = reader.build_command("ffmpeg")
+        self.assertIn("-vf", command)
+        vf = command[command.index("-vf") + 1]
+        self.assertIn("select=", vf)
+        self.assertIn("150", vf)
+        self.assertIn("5", vf)
+        self.assertEqual(command[command.index("-fps_mode") + 1], "passthrough")
+        self.assertLess(command.index("-i"), command.index("-vf"))
+
+    def test_no_burst_selection_means_every_frame_is_converted(self) -> None:
+        reader = FFmpegLiveReader("rtsp://cam/stream", WIDTH, HEIGHT)
+        command = reader.build_command("ffmpeg")
+        self.assertNotIn("-vf", command)
+        self.assertNotIn("-fps_mode", command)
+
 
 class LiveReaderBurstTests(unittest.TestCase):
     def test_read_burst_returns_the_newest_frames_with_the_last_as_center(self) -> None:
@@ -201,6 +243,38 @@ class LiveReaderBurstTests(unittest.TestCase):
             reader.close()
         self.assertEqual(len(burst), 1)
         self.assertEqual(int(burst[0][1][0, 0, 0]), 1)
+
+
+class CoherentWindowTests(unittest.TestCase):
+    def test_full_window_within_span_is_returned(self) -> None:
+        frames = [(0.0, "a"), (0.03, "b"), (0.07, "c"), (5.0, "d"), (5.03, "e"), (5.07, "f")]
+        self.assertEqual(coherent_tail(frames, 3, 1.0), [(5.0, "d"), (5.03, "e"), (5.07, "f")])
+
+    def test_window_straddling_two_bursts_is_cut_to_the_newest_burst(self) -> None:
+        frames = [(0.0, "a"), (0.03, "b"), (0.07, "c"), (5.0, "d"), (5.03, "e")]
+        self.assertEqual(coherent_tail(frames, 5, 1.0), [(5.0, "d"), (5.03, "e")])
+
+    def test_no_span_limit_returns_the_newest_frames(self) -> None:
+        frames = [(0.0, "a"), (5.0, "b"), (9.0, "c")]
+        self.assertEqual(coherent_tail(frames, 2, None), [(5.0, "b"), (9.0, "c")])
+
+    def test_empty_input_is_empty(self) -> None:
+        self.assertEqual(coherent_tail([], 3, 1.0), [])
+
+    def test_read_burst_with_span_limit_waits_for_the_new_burst_to_complete(self) -> None:
+        old = b"".join(_frame_payload(i) for i in range(3))
+        new = b"".join(_frame_payload(i) for i in range(10, 15))
+        stream = FakeStream(old + new, True, pause_after=len(old), pause_s=0.5)
+        spawn = lambda command, stderr_file: FakeProcess(stream)  # noqa: E731
+        reader = FFmpegLiveReader("rtsp://cam/stream", WIDTH, HEIGHT, spawn=spawn)
+        reader.start()
+        try:
+            self.assertTrue(_wait_until(lambda: reader.stats()["frames_decoded"] >= 3))
+            center_index, burst = reader.read_burst(2, timeout=3.0, max_span_s=0.2)
+        finally:
+            reader.close()
+        self.assertEqual([int(f[0, 0, 0]) for _, f in burst], [10, 11, 12, 13, 14])
+        self.assertEqual(center_index, 4)
 
 
 class LiveReaderReconnectTests(unittest.TestCase):
@@ -391,6 +465,26 @@ class LiveReaderRealFfmpegTests(unittest.TestCase):
         self.assertGreaterEqual(stats["frames_decoded"], 10)
         self.assertFalse(stats["hwaccel_suspect"])
         self.assertFalse(reader.is_running())
+
+    def test_burst_selection_filter_is_accepted_by_real_ffmpeg(self) -> None:
+        # 10 source frames; 2 frames every 5 -> frames 0,1,5,6 = 4 per pass
+        reader = FFmpegLiveReader(
+            str(self.source), 160, 96, reconnect_delays=(0.05,),
+            burst_every_frames=5, burst_frames=2,
+        )
+        reader.start()
+        try:
+            self.assertTrue(
+                _wait_until(lambda: reader.stats()["reconnects"] >= 1, timeout=10.0)
+            )
+            stats = reader.stats()
+            _, burst = reader.read_burst(0, timeout=2.0, max_span_s=0.5)
+        finally:
+            reader.close()
+        self.assertGreater(stats["frames_decoded"], 0)
+        self.assertEqual(stats["frames_decoded"] % 4, 0, stats)
+        self.assertEqual(len(burst), 1)
+        self.assertEqual(stats["hwaccel_messages"], [])
 
 
 if __name__ == "__main__":

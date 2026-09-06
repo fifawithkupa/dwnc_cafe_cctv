@@ -12,6 +12,7 @@ from engine.seatnow_live import (
     TickSchedule,
     build_hwaccel_probe_command,
     build_probe_command,
+    burst_period_frames,
     process_rss_mb,
 )
 
@@ -38,6 +39,20 @@ class UrlInputTests(unittest.TestCase):
         args = build_parser().parse_args([__file__, "--run-seconds", "10"])
         with self.assertRaises(ValueError):
             _validate_args(args)
+
+    def test_live_burst_seconds_defaults_to_five_and_rejects_negative(self) -> None:
+        args = build_parser().parse_args(["rtsp://cam/stream"])
+        self.assertEqual(args.live_burst_seconds, 5.0)
+        args = build_parser().parse_args(["rtsp://cam/stream", "--live-burst-seconds", "-1"])
+        with self.assertRaises(ValueError):
+            _validate_args(args)
+
+    def test_burst_period_in_frames_follows_the_stream_fps(self) -> None:
+        self.assertEqual(burst_period_frames(29.97, 5.0, 5), 150)
+        self.assertEqual(burst_period_frames(20.0, 5.0, 5), 100)
+        self.assertEqual(burst_period_frames(0.0, 5.0, 5), 150)   # unknown fps: assume 30
+        self.assertEqual(burst_period_frames(30.0, 0.0, 5), 0)    # 0 = convert every frame
+        self.assertEqual(burst_period_frames(30.0, 0.1, 5), 5)    # never shorter than the burst
 
     def test_live_log_default_is_under_results_live(self) -> None:
         path = live_log_default("rtsp://192.168.0.5:554/Streaming/Channels/101")

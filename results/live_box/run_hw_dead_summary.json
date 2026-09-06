@@ -1,0 +1,54 @@
+{
+  "url": "rtsp://127.0.0.1:8554/seatnow",
+  "elapsed_s": 235.1,
+  "ticks": 16,
+  "no_frame_ticks": 0,
+  "skipped_slots": 0,
+  "interval_seconds": 15.0,
+  "tick_duration_s": {
+    "mean": 3.585,
+    "p95": 3.759,
+    "max": 5.932,
+    "first": 5.932
+  },
+  "inference_ms": {
+    "mean": 3546.6,
+    "max": 5930.8
+  },
+  "late_s": {
+    "mean": 0.0,
+    "max": 0.0
+  },
+  "rss_mb": {
+    "first": 628.0,
+    "last": 1272.1,
+    "max": 1273.2
+  },
+  "ffmpeg_rss_mb": {
+    "first": 269.7,
+    "last": 410.4,
+    "max": 410.4
+  },
+  "decode": {
+    "hwaccel": "vaapi",
+    "fallback_at_start": false,
+    "fallback_during_run": true,
+    "suspect_during_run": true,
+    "messages": [
+      "[AVHWDeviceContext @ 0x5f373fdb6c80] Failed to initialise VAAPI connection: -1 (unknown libva error).",
+      "No device available for decoder: device type vaapi needed for codec hevc.",
+      "[vist#0:0/hevc @ 0x5f373fdb6d80] Hardware device setup failed for decoder: Input/output error",
+      "[AVHWDeviceContext @ 0x5914d6a68c80] Failed to initialise VAAPI connection: -1 (unknown libva error).",
+      "[vist#0:0/hevc @ 0x5914d6a68d80] Hardware device setup failed for decoder: Input/output error",
+      "[AVHWDeviceContext @ 0x62b82dce0c80] Failed to initialise VAAPI connection: -1 (unknown libva error).",
+      "[vist#0:0/hevc @ 0x62b82dd45380] Hardware device setup failed for decoder: Input/output error",
+      "[AVHWDeviceContext @ 0x5f6f2826b780] Failed to initialise VAAPI connection: -1 (unknown libva error).",
+      "[vist#0:0/hevc @ 0x5f6f28270d80] Hardware device setup failed for decoder: Input/output error"
+    ],
+    "frames_decoded": 198,
+    "reconnects": 5,
+    "last_error": "[in#0/rtsp @ 0x56cd67ca2e80] Error during demuxing: Immediate exit requested"
+  },
+  "interrupted": false,
+  "log": "results/live/run_hw_dead.jsonl"
+}

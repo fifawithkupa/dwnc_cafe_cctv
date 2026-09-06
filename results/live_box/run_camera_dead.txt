@@ -1,0 +1,33 @@
+Loading detector: yolov8n_openvino_model [openvino]
+Loading pose model: yolov8n-pose_openvino_model [openvino]
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+스트림 확인 중: rtsp://127.0.0.1:8554/seatnow
+Live: rtsp://127.0.0.1:8554/seatnow — 2560x1440, 29.970 fps, codec=hevc
+하드웨어 디코딩 켜짐 (vaapi)
+Analyzing every 15s (newest 5 frames majority vote, live; ffmpeg converts 5 frames every 150 (5s))
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+Loading /home/hugo/seatnow/yolov8n-pose_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+[  6.9s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5914ms
+[ 11.9s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3454ms
+[ 27.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3420ms
+[ 41.9s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3459ms
+[ 56.9s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3153ms
+[ 61.2s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=595ms
+[ 100.0s] 프레임 없음 — 재연결 6회, 마지막 오류: Error opening input files: Connection refused
+[ 115.0s] 프레임 없음 — 재연결 7회, 마지막 오류: Error opening input files: Connection refused
+[ 130.0s] 프레임 없음 — 재연결 8회, 마지막 오류: Error opening input files: Connection refused
+[ 145.0s] 프레임 없음 — 재연결 9회, 마지막 오류: Error opening input files: Connection refused
+[ 160.0s] 프레임 없음 — 재연결 10회, 마지막 오류: Error opening input files: Connection refused
+[ 175.0s] 프레임 없음 — 재연결 11회, 마지막 오류: Error opening input files: Connection refused
+[ 190.0s] 프레임 없음 — 재연결 12회, 마지막 오류: Error opening input files: Connection refused
+[ 205.0s] 프레임 없음 — 재연결 13회, 마지막 오류: Error opening input files: Connection refused
+
+Completed 6 live ticks in 210.0s (프레임 없음 8, 건너뛴 슬롯 0, 재연결 13)
+틱 시간: 평균 3.37s · p95 5.92s · 최대 5.92s (첫 틱 5.92s) · 합격선 7.5s
+메모리(이 프로세스): 처음 625MB → 마지막 1240MB (최대 1240MB) · ffmpeg 283MB
+디코딩: vaapi
+JSONL log: results/live/run_camera_dead.jsonl
+Summary: results/live/run_camera_dead_summary.json

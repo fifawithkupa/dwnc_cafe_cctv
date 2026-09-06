@@ -1,0 +1,43 @@
+{
+  "url": "rtsp://127.0.0.1:8554/seatnow",
+  "elapsed_s": 245.1,
+  "ticks": 16,
+  "no_frame_ticks": 0,
+  "skipped_slots": 0,
+  "interval_seconds": 15.0,
+  "tick_duration_s": {
+    "mean": 3.838,
+    "p95": 3.879,
+    "max": 6.176,
+    "first": 6.176
+  },
+  "inference_ms": {
+    "mean": 3804.5,
+    "max": 6175.1
+  },
+  "late_s": {
+    "mean": 0.0,
+    "max": 0.002
+  },
+  "rss_mb": {
+    "first": 595.1,
+    "last": 1287.8,
+    "max": 1290.7
+  },
+  "ffmpeg_rss_mb": {
+    "first": 343.7,
+    "last": 362.2,
+    "max": 362.2
+  },
+  "decode": {
+    "hwaccel": "none",
+    "fallback_at_start": false,
+    "suspect_during_run": false,
+    "messages": [],
+    "frames_decoded": 239,
+    "reconnects": 0,
+    "last_error": "[hevc @ 0x61784afcc480] Could not find ref with POC 87"
+  },
+  "interrupted": false,
+  "log": "results/live/run_sw_4mp_h265.jsonl"
+}

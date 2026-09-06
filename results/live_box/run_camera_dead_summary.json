@@ -1,0 +1,44 @@
+{
+  "url": "rtsp://127.0.0.1:8554/seatnow",
+  "elapsed_s": 210.0,
+  "ticks": 6,
+  "no_frame_ticks": 8,
+  "skipped_slots": 0,
+  "interval_seconds": 15.0,
+  "tick_duration_s": {
+    "mean": 3.369,
+    "p95": 5.915,
+    "max": 5.915,
+    "first": 5.915
+  },
+  "inference_ms": {
+    "mean": 3332.3,
+    "max": 5913.6
+  },
+  "late_s": {
+    "mean": 0.0,
+    "max": 0.0
+  },
+  "rss_mb": {
+    "first": 624.8,
+    "last": 1239.5,
+    "max": 1239.5
+  },
+  "ffmpeg_rss_mb": {
+    "first": 269.6,
+    "last": 283.1,
+    "max": 283.1
+  },
+  "decode": {
+    "hwaccel": "vaapi",
+    "fallback_at_start": false,
+    "fallback_during_run": false,
+    "suspect_during_run": false,
+    "messages": [],
+    "frames_decoded": 60,
+    "reconnects": 13,
+    "last_error": "Error opening input files: Connection refused"
+  },
+  "interrupted": false,
+  "log": "results/live/run_camera_dead.jsonl"
+}

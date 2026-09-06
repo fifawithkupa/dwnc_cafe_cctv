@@ -1,0 +1,65 @@
+{
+  "summary": {
+    "ticks": 6,
+    "interval_seconds": 15.0,
+    "budget_s": 7.5,
+    "first_tick_s": 5.915,
+    "tick_s": {
+      "mean": 2.86,
+      "p95": 3.516,
+      "max": 3.516,
+      "min": 0.627,
+      "over_budget": 0
+    },
+    "inference_ms": {
+      "mean": 2816.026,
+      "p95": 3458.65,
+      "max": 3458.65,
+      "min": 594.98
+    },
+    "late_s": {
+      "mean": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "min": 0.0
+    },
+    "burst_age_s": {
+      "mean": 6.015,
+      "p95": 23.846,
+      "max": 23.846,
+      "min": 0.0
+    },
+    "skipped_slots": 0,
+    "reconnects": 5,
+    "hwaccel_suspect": false,
+    "decode_fps": {
+      "mean": 0.8,
+      "p95": 1.0,
+      "max": 1.0,
+      "min": 0.0
+    },
+    "rss_mb": {
+      "first": 1234.6,
+      "last": 1239.5,
+      "max": 1239.5,
+      "mb_per_hour": 224.727,
+      "points": 4
+    },
+    "rss_mb_all": {
+      "first": 624.8,
+      "last": 1239.5,
+      "max": 1239.5,
+      "mb_per_hour": 18507.877,
+      "points": 6
+    },
+    "ffmpeg_rss_mb": {
+      "first": 283.1,
+      "last": 283.1,
+      "max": 283.1,
+      "mb_per_hour": 0.0,
+      "points": 3
+    },
+    "elapsed_s": 85.0
+  },
+  "samples": null
+}

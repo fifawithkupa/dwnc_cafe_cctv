@@ -1,0 +1,35 @@
+Loading detector: yolov8n_openvino_model [openvino]
+Loading pose model: yolov8n-pose_openvino_model [openvino]
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+스트림 확인 중: rtsp://127.0.0.1:8554/seatnow
+Live: rtsp://127.0.0.1:8554/seatnow — 2560x1440, 29.970 fps, codec=hevc
+하드웨어 디코딩 꺼짐 (소프트웨어 디코딩을 직접 지정함)
+Analyzing every 15s (newest 5 frames majority vote, live; ffmpeg converts 5 frames every 150 (5s))
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+Loading /home/hugo/seatnow/yolov8n-pose_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+[  5.4s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6175ms
+[ 10.5s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3754ms
+[ 25.5s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3492ms
+[ 40.5s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3739ms
+[ 55.5s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3485ms
+[ 70.5s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3831ms
+[ 85.5s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3473ms
+[100.5s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3807ms
+[115.6s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3457ms
+[130.6s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3790ms
+[145.6s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3515ms
+[160.6s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3805ms
+[175.6s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3458ms
+[190.7s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3844ms
+[205.6s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3504ms
+[220.7s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3741ms
+
+Completed 16 live ticks in 245.1s (프레임 없음 0, 건너뛴 슬롯 0, 재연결 0)
+틱 시간: 평균 3.84s · p95 3.88s · 최대 6.18s (첫 틱 6.18s) · 합격선 7.5s
+메모리(이 프로세스): 처음 595MB → 마지막 1288MB (최대 1291MB) · ffmpeg 362MB
+디코딩: none
+JSONL log: results/live/run_sw_4mp_h265.jsonl
+Summary: results/live/run_sw_4mp_h265_summary.json

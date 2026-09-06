@@ -1,0 +1,37 @@
+Loading detector: yolov8n_openvino_model [openvino]
+Loading pose model: yolov8n-pose_openvino_model [openvino]
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+스트림 확인 중: rtsp://127.0.0.1:8554/seatnow
+Live: rtsp://127.0.0.1:8554/seatnow — 2560x1440, 29.970 fps, codec=hevc
+하드웨어 디코딩 켜짐 (vaapi)
+Analyzing every 15s (newest 5 frames majority vote, live; ffmpeg converts 5 frames every 150 (5s))
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+Loading /home/hugo/seatnow/yolov8n-pose_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+[  6.9s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5931ms
+[ 12.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=3665ms
+[ 26.9s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3559ms
+[ 41.9s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=3702ms
+⚠️  ffmpeg 가 하드웨어 디코딩에 실패해 소프트웨어로 떨어졌습니다: [AVHWDeviceContext @ 0x5f373fdb6c80] Failed to initialise VAAPI connection: -1 (unknown libva error). | No device available for decoder: device type vaapi needed for codec hevc.
+[ 57.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=3080ms
+⚠️  하드웨어 디코더가 죽어서 스트림이 끊겼습니다 — 소프트웨어 디코딩으로 갈아탑니다. 판정은 계속되지만 느려집니다 (docs/edge-setup.md 부록 B): [AVHWDeviceContext @ 0x5f373fdb6c80] Failed to initialise VAAPI connection: -1 (unknown libva error). | No device available for decoder: device type vaapi needed for codec hevc.
+[ 57.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=2974ms
+[ 95.5s] tables=10 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/4/0 inference=3654ms
+[100.5s] tables=10 occupied=2 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3493ms
+[115.5s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=1/0/0 inference=3296ms
+[130.5s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3372ms
+[145.5s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=1/0/0 inference=3331ms
+[160.6s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3340ms
+[175.6s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=1/0/0 inference=3334ms
+[190.6s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3370ms
+[205.7s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=1/0/0 inference=3292ms
+[220.6s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=3353ms
+
+Completed 16 live ticks in 235.1s (프레임 없음 0, 건너뛴 슬롯 0, 재연결 5)
+틱 시간: 평균 3.58s · p95 3.76s · 최대 5.93s (첫 틱 5.93s) · 합격선 7.5s
+메모리(이 프로세스): 처음 628MB → 마지막 1272MB (최대 1273MB) · ffmpeg 410MB
+디코딩: vaapi ⚠️ 실행 중 하드웨어가 죽어 소프트웨어로 갈아탐
+JSONL log: results/live/run_hw_dead.jsonl
+Summary: results/live/run_hw_dead_summary.json

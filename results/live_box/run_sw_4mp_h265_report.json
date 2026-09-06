@@ -1,0 +1,155 @@
+{
+  "summary": {
+    "ticks": 16,
+    "interval_seconds": 15.0,
+    "budget_s": 7.5,
+    "first_tick_s": 6.176,
+    "tick_s": {
+      "mean": 3.682,
+      "p95": 3.878,
+      "max": 3.879,
+      "min": 3.494,
+      "over_budget": 0
+    },
+    "inference_ms": {
+      "mean": 3646.449,
+      "p95": 3831.14,
+      "max": 3844.01,
+      "min": 3457.48
+    },
+    "late_s": {
+      "mean": 0.0,
+      "p95": 0.0,
+      "max": 0.002,
+      "min": 0.0
+    },
+    "burst_age_s": {
+      "mean": 4.161,
+      "p95": 4.519,
+      "max": 4.523,
+      "min": 0.0
+    },
+    "skipped_slots": 0,
+    "reconnects": 0,
+    "hwaccel_suspect": false,
+    "decode_fps": {
+      "mean": 1.0,
+      "p95": 1.0,
+      "max": 1.0,
+      "min": 1.0
+    },
+    "rss_mb": {
+      "first": 1277.3,
+      "last": 1287.8,
+      "max": 1290.7,
+      "mb_per_hour": 50.163,
+      "points": 14
+    },
+    "rss_mb_all": {
+      "first": 595.1,
+      "last": 1287.8,
+      "max": 1290.7,
+      "mb_per_hour": 3890.826,
+      "points": 16
+    },
+    "ffmpeg_rss_mb": {
+      "first": 351.5,
+      "last": 362.2,
+      "max": 362.2,
+      "mb_per_hour": 136.563,
+      "points": 14
+    },
+    "elapsed_s": 225.0
+  },
+  "samples": {
+    "samples": 31,
+    "cores": {
+      "total": {
+        "mean": 1.075,
+        "p95": 1.52,
+        "max": 2.29,
+        "min": 0.04
+      },
+      "py": {
+        "mean": 0.474,
+        "p95": 0.61,
+        "max": 1.33,
+        "min": 0.23
+      },
+      "dec": {
+        "mean": 0.85,
+        "p95": 0.91,
+        "max": 0.97,
+        "min": 0.79
+      },
+      "pub": {
+        "mean": 0.012,
+        "p95": 0.02,
+        "max": 0.02,
+        "min": 0.01
+      },
+      "mtx": {
+        "mean": 0.025,
+        "p95": 0.03,
+        "max": 0.04,
+        "min": 0.02
+      }
+    },
+    "mem_used_mb": {
+      "mean": 1706.323,
+      "p95": 2093.0,
+      "max": 2104.0,
+      "min": 549.0
+    },
+    "mem_avail_mb": {
+      "mean": 2090.677,
+      "p95": 3247.0,
+      "max": 3248.0,
+      "min": 1693.0
+    },
+    "swap_used_mb": {
+      "mean": 0.0,
+      "p95": 0.0,
+      "max": 0.0,
+      "min": 0.0
+    },
+    "temp_c": {
+      "mean": 28.0,
+      "p95": 28.0,
+      "max": 28.0,
+      "min": 28.0
+    },
+    "cpu_mhz": {
+      "mean": 2306.516,
+      "p95": 3200.0,
+      "max": 3201.0,
+      "min": 800.0
+    },
+    "rss_mb": {
+      "py": {
+        "mean": 1259.333,
+        "p95": 1291.0,
+        "max": 1294.0,
+        "min": 842.0
+      },
+      "dec": {
+        "mean": 360.708,
+        "p95": 373.0,
+        "max": 373.0,
+        "min": 351.0
+      },
+      "pub": {
+        "mean": 49.0,
+        "p95": 49.0,
+        "max": 49.0,
+        "min": 49.0
+      },
+      "mtx": {
+        "mean": 47.613,
+        "p95": 48.0,
+        "max": 49.0,
+        "min": 46.0
+      }
+    }
+  }
+}

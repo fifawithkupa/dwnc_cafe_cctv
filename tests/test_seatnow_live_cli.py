@@ -14,6 +14,7 @@ from engine.seatnow_live import (
     build_probe_command,
     burst_period_frames,
     process_rss_mb,
+    resolve_max_frame_age,
 )
 
 
@@ -53,6 +54,23 @@ class UrlInputTests(unittest.TestCase):
         self.assertEqual(burst_period_frames(0.0, 5.0, 5), 150)   # unknown fps: assume 30
         self.assertEqual(burst_period_frames(30.0, 0.0, 5), 0)    # 0 = convert every frame
         self.assertEqual(burst_period_frames(30.0, 0.1, 5), 5)    # never shorter than the burst
+
+    def test_max_frame_age_defaults_to_one_interval(self) -> None:
+        args = build_parser().parse_args(["rtsp://cam/stream"])
+        self.assertIsNone(args.max_frame_age_seconds)
+        self.assertEqual(resolve_max_frame_age(args.max_frame_age_seconds, 15.0), 15.0)
+        self.assertEqual(resolve_max_frame_age(None, 30.0), 30.0)
+
+    def test_max_frame_age_can_be_widened_or_switched_off(self) -> None:
+        self.assertEqual(resolve_max_frame_age(45.0, 15.0), 45.0)
+        self.assertIsNone(resolve_max_frame_age(0.0, 15.0))
+
+    def test_negative_max_frame_age_is_rejected(self) -> None:
+        args = build_parser().parse_args(
+            ["rtsp://cam/stream", "--max-frame-age-seconds", "-3"]
+        )
+        with self.assertRaises(ValueError):
+            _validate_args(args)
 
     def test_live_log_default_is_under_results_live(self) -> None:
         path = live_log_default("rtsp://192.168.0.5:554/Streaming/Channels/101")

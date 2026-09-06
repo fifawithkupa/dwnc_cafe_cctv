@@ -42,6 +42,7 @@ from engine.seatnow_live import (
     burst_period_frames,
     probe_live_hwaccel,
     redact_url,
+    resolve_max_frame_age,
     should_disable_hwaccel,
     probe_stream,
     process_rss_mb,
@@ -119,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
     parser.add_argument("--run-seconds", type=float, help="실시간(rtsp://) 입력일 때 이 시간이 지나면 멈춘다 (없으면 계속 돈다)")
+    parser.add_argument("--max-frame-age-seconds", type=float, default=None, help="실시간 입력에서 이보다 오래된 화면은 없는 것으로 친다 (기본: 판단 주기와 같음, 0 = 끔). 끊긴 카메라의 옛 화면으로 판정하지 않기 위한 것")
     parser.add_argument("--live-burst-seconds", type=float, default=5.0, help="실시간 입력에서 몇 초마다 프레임 묶음 하나를 변환할지 (0 = 모든 프레임 변환; 2코어 박스에서는 5초가 맞다)")
     parser.add_argument(
         "--hwaccel",
@@ -197,6 +199,8 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise ValueError("--run-seconds must be positive")
     if getattr(args, "live_burst_seconds", 0.0) is not None and args.live_burst_seconds < 0:
         raise ValueError("--live-burst-seconds cannot be negative")
+    if getattr(args, "max_frame_age_seconds", None) is not None and args.max_frame_age_seconds < 0:
+        raise ValueError("--max-frame-age-seconds cannot be negative")
     if args.sample_seconds <= 0:
         raise ValueError("--sample-seconds must be positive")
     if args.median_frames < 0:
@@ -780,8 +784,9 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     )
     max_span_s = 1.0 if burst_period else None
     # A camera that went quiet must not keep being judged from its last
-    # picture: frames older than two intervals count as "no frames".
-    max_age_s = 2.0 * args.sample_seconds
+    # picture: frames older than one interval count as "no frames".
+    max_age_s = resolve_max_frame_age(args.max_frame_age_seconds, args.sample_seconds)
+    run_context["decode"]["max_frame_age_s"] = max_age_s
     frames_at_last_tick = 0
     fallback_during_run = False
     schedule = TickSchedule(args.sample_seconds)

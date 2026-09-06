@@ -86,6 +86,21 @@ def redact_url(value: object) -> str:
     return text[: scheme_end + 3] + redacted + (text[authority_end:] if authority_end >= 0 else "")
 
 
+def resolve_max_frame_age(requested: Optional[float], sample_seconds: float) -> Optional[float]:
+    """How old the newest frame may be and still be judged.
+
+    Default is one whole judgement interval: a tick is supposed to describe
+    the present, and a picture older than the interval itself has nothing
+    new to say — better a visible gap than a stale "empty".  0 switches the
+    guard off (the old behaviour), for debugging only.
+    """
+    if requested is None:
+        return float(sample_seconds)
+    if requested <= 0:
+        return None
+    return float(requested)
+
+
 def should_disable_hwaccel(stats: dict, frames_at_last_tick: int) -> bool:
     """Switch to software decoding when the accelerator is what killed the stream.
 

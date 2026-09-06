@@ -35,6 +35,14 @@ from engine.seatnow_core import (
 from engine.frame_dump import save_frame_pair
 from engine.seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwaccel
 from engine.seatnow_layout import LayoutError, load_layout
+from engine.seatnow_live import (
+    FFmpegLiveReader,
+    TickSchedule,
+    is_live_source,
+    probe_live_hwaccel,
+    probe_stream,
+    process_rss_mb,
+)
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
@@ -51,12 +59,24 @@ def _model_path(value: str) -> Path:
     return candidate
 
 
+def _input_argument(value: str):
+    """Streams stay strings — ``Path`` would fold ``rtsp://`` into ``rtsp:/``."""
+    if is_live_source(value):
+        return value
+    return Path(value)
+
+
+def live_log_default(url: str) -> Path:
+    """Where a live run writes its JSONL when ``--log`` is not given."""
+    return PROJECT_DIR / "results" / "live" / "log.jsonl"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Detect per-table occupancy in an image or sampled video.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("input", type=Path, help="Input image or video")
+    parser.add_argument("input", type=_input_argument, help="Input image, video, or rtsp:// stream")
     parser.add_argument("--output", type=Path, help="Annotated JPG/MP4 output path")
     parser.add_argument("--log", type=Path, help="JSONL output path (video only)")
     parser.add_argument("--det-model", default="yolov8n.pt", help="Ultralytics detect weights")
@@ -95,6 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-detections", action="store_true", help="Add the detector's raw output and dropped-table rules to each JSONL record (diagnoses model miss vs. code rejection)")
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
+    parser.add_argument("--run-seconds", type=float, help="실시간(rtsp://) 입력일 때 이 시간이 지나면 멈춘다 (없으면 계속 돈다)")
     parser.add_argument(
         "--hwaccel",
         default=HWACCEL_AUTO,
@@ -162,8 +183,14 @@ def _sha256(path: Path) -> str:
 
 
 def _validate_args(args: argparse.Namespace) -> None:
-    if not args.input.exists():
+    live = is_live_source(args.input)
+    if not live and not args.input.exists():
         raise FileNotFoundError(f"Input not found: {args.input}")
+    if args.run_seconds is not None:
+        if not live:
+            raise ValueError("--run-seconds 는 실시간(rtsp://) 입력에만 쓴다")
+        if args.run_seconds <= 0:
+            raise ValueError("--run-seconds must be positive")
     if args.sample_seconds <= 0:
         raise ValueError("--sample-seconds must be positive")
     if args.median_frames < 0:
@@ -262,27 +289,138 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     return 0
 
 
-def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
-    info = probe_video(args.input)
-    if analyzer.layout is not None:
-        analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
-    output = args.output or _default_output(args.input, is_video=True)
-    log_path = args.log or output.with_suffix(".jsonl")
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    if not args.no_video:
-        output.parent.mkdir(parents=True, exist_ok=True)
+class _TickRunner:
+    """One judgement per burst of frames — the body shared by the file loop
+    and the live loop.  Holds the tracker, scene counter and the previous
+    centre frame so both loops behave identically after a scene cut."""
 
-    print(
-        f"Video: {info.width}x{info.height}, {info.fps:.3f} fps, "
-        f"{info.duration:.3f}s, codec={info.codec}",
-        flush=True,
-    )
-    hwaccel = resolve_hwaccel(args.hwaccel, args.input)
-    print(hwaccel.describe(), flush=True)
-    # --median-frames 0 reproduces the original single-frame pipeline exactly
-    # (streaming reader, no vote fields).
-    legacy_mode = args.median_frames == 0
-    run_context = {
+    def __init__(self, args, analyzer, new_tracker, run_context, log_file, writer):
+        self.args = args
+        self.analyzer = analyzer
+        self.new_tracker = new_tracker
+        self.run_context = run_context
+        self.log_file = log_file
+        self.writer = writer
+        self.tracker = new_tracker()
+        self.scene_id = 1
+        self.processed = 0
+        self.previous_center = None
+
+    def judge(self, burst, center_index: int, center_time: float, extra: Optional[dict] = None) -> dict:
+        args = self.args
+        analyzer = self.analyzer
+        tick_started = time.perf_counter()
+        center_frame = burst[center_index][1]
+        scene_changed = False
+        scene_metrics = {}
+        if self.previous_center is not None and not args.no_scene_reset:
+            scene_changed, scene_metrics = is_scene_change(
+                self.previous_center, center_frame
+            )
+        if scene_changed:
+            analyzer.reset_temporal()
+        # Side frames vote without committing temporal state; the
+        # center frame runs last so zone drift and pose history
+        # advance once per sample, against the previous sample.
+        frame_tables: list = [[] for _ in burst]
+        side_inference_ms = 0.0
+        for position, (frame_timestamp, side_frame) in enumerate(burst):
+            if position == center_index:
+                continue
+            side_analysis = analyzer.analyze(
+                side_frame,
+                frame_timestamp,
+                update_temporal=False,
+            )
+            frame_tables[position] = side_analysis.tables
+            side_inference_ms += side_analysis.inference_ms
+        analysis = analyzer.analyze(
+            center_frame,
+            center_time,
+            global_motion_fraction=(
+                scene_metrics.get("global_dx_fraction", 0.0),
+                scene_metrics.get("global_dy_fraction", 0.0),
+            ),
+        )
+        frame_tables[center_index] = analysis.tables
+        analysis.tables = aggregate_burst_observations(frame_tables, center_index)
+        analysis.inference_ms += side_inference_ms
+        analysis.scene_change = scene_changed
+        analysis.scene_metrics = scene_metrics
+        if scene_changed:
+            next_track_id = self.tracker.next_id
+            self.tracker = self.new_tracker()
+            self.tracker.next_id = next_track_id
+            self.scene_id += 1
+            for observation in analysis.tables:
+                observation.raw_state = OccupancyState.IGNORE
+                observation.reason = "scene_transition"
+        update = self.tracker.update(
+            analysis.tables, center_time, center_frame.shape[:2]
+        )
+        if scene_changed:
+            update.events.insert(
+                0,
+                {
+                    "type": "scene_change",
+                    "timestamp": center_time,
+                    "tracker_reset": True,
+                },
+            )
+        record = frame_log_record(
+            self.processed,
+            analysis,
+            update,
+            include_raw_detections=args.log_detections,
+        )
+        record["scene_id"] = self.scene_id
+        for table in record["tables"]:
+            table["scene_id"] = self.scene_id
+        for event in record["events"]:
+            event["scene_id"] = self.scene_id
+        record["cadence"] = {
+            "interval_seconds": args.sample_seconds,
+            "burst_frames": len(burst),
+        }
+        if extra:
+            if "tick" in extra:
+                extra["tick"]["duration_s"] = round(time.perf_counter() - tick_started, 3)
+            record.update(extra)
+        record["run"] = self.run_context
+        self.log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self.log_file.flush()
+        # Rendered once even when both outputs are on: drawing the
+        # same overlay twice would inflate the tick budget for no
+        # gain.
+        rendered = None
+        if self.writer is not None or args.frame_dir is not None:
+            rendered = render_frame(
+                center_frame,
+                analysis,
+                update,
+                debug=args.debug,
+            )
+        if self.writer is not None:
+            self.writer.write(rendered)
+        if args.frame_dir is not None:
+            save_frame_pair(args.frame_dir, center_time, center_frame, rendered)
+        self.processed += 1
+        self.previous_center = center_frame
+        summary = record["summary"]
+        print(
+            f"[{center_time:5.1f}s] tables={summary['visible']} "
+            f"occupied={summary['occupied']} empty={summary['empty']} "
+            f"ignore={summary['ignore']} poses(seated/standing/unknown)="
+            f"{summary['seated_poses']}/{summary['standing_poses']}/{summary['unknown_poses']} "
+            f"inference={analysis.inference_ms:.0f}ms",
+            flush=True,
+        )
+        return record
+
+
+def _build_run_context(args: argparse.Namespace, analyzer: SeatNowAnalyzer, input_info: dict) -> dict:
+    """Provenance written into every JSONL record (file and live runs)."""
+    return {
         "profile": (
             "accuracy_default"
             if (
@@ -306,15 +444,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             )
             else ("fast" if not args.table_crops and args.imgsz <= 960 else "custom")
         ),
-        "input": {
-            "path": str(args.input),
-            "sha256": _sha256(args.input),
-            "width": info.width,
-            "height": info.height,
-            "fps": info.fps,
-            "duration": info.duration,
-            "codec": info.codec,
-        },
+        "input": input_info,
         "models": {
             "detector": str(analyzer.det_model_path),
             "detector_sha256": _sha256(analyzer.det_model_path),
@@ -367,6 +497,41 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "layout_tracking": bool(args.layout) and not args.no_layout_track,
         },
     }
+
+
+def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
+    info = probe_video(args.input)
+    if analyzer.layout is not None:
+        analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
+    output = args.output or _default_output(args.input, is_video=True)
+    log_path = args.log or output.with_suffix(".jsonl")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if not args.no_video:
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"Video: {info.width}x{info.height}, {info.fps:.3f} fps, "
+        f"{info.duration:.3f}s, codec={info.codec}",
+        flush=True,
+    )
+    hwaccel = resolve_hwaccel(args.hwaccel, args.input)
+    print(hwaccel.describe(), flush=True)
+    # --median-frames 0 reproduces the original single-frame pipeline exactly
+    # (streaming reader, no vote fields).
+    legacy_mode = args.median_frames == 0
+    run_context = _build_run_context(
+        args,
+        analyzer,
+        input_info={
+            "path": str(args.input),
+            "sha256": _sha256(args.input),
+            "width": info.width,
+            "height": info.height,
+            "fps": info.fps,
+            "duration": info.duration,
+            "codec": info.codec,
+        },
+    )
     if legacy_mode:
         print(
             f"Analyzing every {args.sample_seconds:g}s "
@@ -380,17 +545,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             flush=True,
         )
 
-    def new_tracker() -> TableTracker:
-        return TableTracker(
-            occupy_confirmations=args.occupy_confirm,
-            empty_confirmations=args.empty_confirm,
-            max_missed=args.track_ttl,
-            layout_add_confirmations=args.table_layout_add_confirm,
-            layout_move_confirmations=args.table_layout_move_confirm,
-            layout_remove_confirmations=args.table_layout_remove_confirm,
-            layout_bbox_alpha=args.table_layout_bbox_alpha,
-        )
-
+    new_tracker = _tracker_factory(args)
     tracker = new_tracker()
     # Burst mode writes exactly one rendered frame per judgment, so the result
     # video plays one second per judgment regardless of the sample interval.
@@ -484,7 +639,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         break
             else:
                 reader = FFmpegBurstReader(args.input, info, hwaccel_args=hwaccel.args)
-                previous_center = None
+                runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer)
                 center_time = args.start_seconds
                 while info.duration <= 0 or center_time <= info.duration:
                     center_index, burst = reader.read_burst(
@@ -492,114 +647,12 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     )
                     if not burst:
                         break
-                    center_frame = burst[center_index][1]
-                    scene_changed = False
-                    scene_metrics = {}
-                    if previous_center is not None and not args.no_scene_reset:
-                        scene_changed, scene_metrics = is_scene_change(
-                            previous_center, center_frame
-                        )
-                    if scene_changed:
-                        analyzer.reset_temporal()
-                    # Side frames vote without committing temporal state; the
-                    # center frame runs last so zone drift and pose history
-                    # advance once per sample, against the previous sample.
-                    frame_tables: list = [[] for _ in burst]
-                    side_inference_ms = 0.0
-                    for position, (frame_timestamp, side_frame) in enumerate(burst):
-                        if position == center_index:
-                            continue
-                        side_analysis = analyzer.analyze(
-                            side_frame,
-                            frame_timestamp,
-                            update_temporal=False,
-                        )
-                        frame_tables[position] = side_analysis.tables
-                        side_inference_ms += side_analysis.inference_ms
-                    analysis = analyzer.analyze(
-                        center_frame,
-                        center_time,
-                        global_motion_fraction=(
-                            scene_metrics.get("global_dx_fraction", 0.0),
-                            scene_metrics.get("global_dy_fraction", 0.0),
-                        ),
-                    )
-                    frame_tables[center_index] = analysis.tables
-                    analysis.tables = aggregate_burst_observations(
-                        frame_tables, center_index
-                    )
-                    analysis.inference_ms += side_inference_ms
-                    analysis.scene_change = scene_changed
-                    analysis.scene_metrics = scene_metrics
-                    if scene_changed:
-                        next_track_id = tracker.next_id
-                        tracker = new_tracker()
-                        tracker.next_id = next_track_id
-                        scene_id += 1
-                        for observation in analysis.tables:
-                            observation.raw_state = OccupancyState.IGNORE
-                            observation.reason = "scene_transition"
-                    update = tracker.update(
-                        analysis.tables, center_time, center_frame.shape[:2]
-                    )
-                    if scene_changed:
-                        update.events.insert(
-                            0,
-                            {
-                                "type": "scene_change",
-                                "timestamp": center_time,
-                                "tracker_reset": True,
-                            },
-                        )
-                    record = frame_log_record(
-                        processed,
-                        analysis,
-                        update,
-                        include_raw_detections=args.log_detections,
-                    )
-                    record["scene_id"] = scene_id
-                    for table in record["tables"]:
-                        table["scene_id"] = scene_id
-                    for event in record["events"]:
-                        event["scene_id"] = scene_id
-                    record["cadence"] = {
-                        "interval_seconds": args.sample_seconds,
-                        "burst_frames": len(burst),
-                    }
-                    record["run"] = run_context
-                    log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    log_file.flush()
-                    # Rendered once even when both outputs are on: drawing the
-                    # same overlay twice would inflate the tick budget for no
-                    # gain.
-                    rendered = None
-                    if writer is not None or args.frame_dir is not None:
-                        rendered = render_frame(
-                            center_frame,
-                            analysis,
-                            update,
-                            debug=args.debug,
-                        )
-                    if writer is not None:
-                        writer.write(rendered)
-                    if args.frame_dir is not None:
-                        save_frame_pair(
-                            args.frame_dir, center_time, center_frame, rendered
-                        )
-                    processed += 1
-                    previous_center = center_frame
-                    summary = record["summary"]
-                    print(
-                        f"[{center_time:5.1f}s] tables={summary['visible']} "
-                        f"occupied={summary['occupied']} empty={summary['empty']} "
-                        f"ignore={summary['ignore']} poses(seated/standing/unknown)="
-                        f"{summary['seated_poses']}/{summary['standing_poses']}/{summary['unknown_poses']} "
-                        f"inference={analysis.inference_ms:.0f}ms",
-                        flush=True,
-                    )
-                    if args.max_samples is not None and processed >= args.max_samples:
+                    runner.judge(burst, center_index, center_time)
+                    if args.max_samples is not None and runner.processed >= args.max_samples:
                         break
                     center_time += args.sample_seconds
+                processed = runner.processed
+                scene_id = runner.scene_id
     except BaseException:
         if writer is not None:
             try:
@@ -624,11 +677,269 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     return 0
 
 
+def _tracker_factory(args: argparse.Namespace):
+    def new_tracker() -> TableTracker:
+        return TableTracker(
+            occupy_confirmations=args.occupy_confirm,
+            empty_confirmations=args.empty_confirm,
+            max_missed=args.track_ttl,
+            layout_add_confirmations=args.table_layout_add_confirm,
+            layout_move_confirmations=args.table_layout_move_confirm,
+            layout_remove_confirmations=args.table_layout_remove_confirm,
+            layout_bbox_alpha=args.table_layout_bbox_alpha,
+        )
+
+    return new_tracker
+
+
+def _percentile(values, fraction: float):
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round(fraction * (len(ordered) - 1)))))
+    return ordered[index]
+
+
+def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
+    """Judge a camera stream on a wall-clock schedule until told to stop.
+
+    This is the deployment loop.  It never writes video (plan.md T10), it
+    judges the newest frames on every tick even while the stream is
+    reconnecting, and every JSONL record carries what the 24/7 box is judged
+    on: how late the tick started, how long it took, memory, decoder health.
+    """
+    url = str(args.input)
+    print(f"스트림 확인 중: {url}", flush=True)
+    info = probe_stream(url)
+    if analyzer.layout is not None:
+        analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
+    log_path = args.log or live_log_default(url)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path = log_path.with_name(log_path.stem + "_summary.json")
+    print(
+        f"Live: {url} — {info.width}x{info.height}, {info.fps:.3f} fps, codec={info.codec}",
+        flush=True,
+    )
+    hwaccel = resolve_hwaccel(args.hwaccel, url, prober=probe_live_hwaccel)
+    print(hwaccel.describe(), flush=True)
+    if hwaccel.fallback:
+        print(
+            "⚠️  하드웨어 디코딩이 잡히지 않았습니다 — 소프트웨어로 돕니다. "
+            "24시간 운영에서 15초 주기를 못 맞출 수 있습니다 (docs/edge-setup.md 4단계 '막혔을 때').",
+            flush=True,
+        )
+    run_context = _build_run_context(
+        args,
+        analyzer,
+        input_info={
+            "url": url,
+            "live": True,
+            "width": info.width,
+            "height": info.height,
+            "fps": info.fps,
+            "codec": info.codec,
+        },
+    )
+    run_context["decode"] = {
+        "hwaccel": hwaccel.name,
+        "requested": hwaccel.requested,
+        "fallback": hwaccel.fallback,
+        "tried": list(hwaccel.tried),
+    }
+    burst_frames = 2 * args.median_frames + 1
+    print(
+        f"Analyzing every {args.sample_seconds:g}s "
+        f"(newest {burst_frames} frames majority vote, live)",
+        flush=True,
+    )
+    new_tracker = _tracker_factory(args)
+    reader = FFmpegLiveReader(
+        url,
+        info.width,
+        info.height,
+        hwaccel_args=hwaccel.args,
+        buffer_frames=burst_frames + 3,
+    )
+    schedule = TickSchedule(args.sample_seconds)
+    started = time.perf_counter()
+    deadline = started + args.run_seconds if args.run_seconds else None
+    no_frame_ticks = 0
+    tick_durations: list = []
+    inference_ms: list = []
+    late_seconds: list = []
+    rss_samples: list = []
+    ffmpeg_rss_samples: list = []
+    warned_hwaccel = False
+    interrupted = False
+    runner: Optional[_TickRunner] = None
+    reader.start()
+    try:
+        with log_path.open("w", encoding="utf-8") as log_file:
+            runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer=None)
+            while True:
+                if deadline is not None and time.perf_counter() >= deadline:
+                    break
+                wait = schedule.wait_seconds()
+                if deadline is not None:
+                    wait = min(wait, max(0.0, deadline - time.perf_counter()))
+                if wait > 0:
+                    time.sleep(wait)
+                if deadline is not None and time.perf_counter() >= deadline:
+                    break
+                late = schedule.late_seconds()
+                center_index, burst = reader.read_burst(
+                    args.median_frames, timeout=min(10.0, args.sample_seconds)
+                )
+                stats = reader.stats()
+                if stats["hwaccel_suspect"] and not warned_hwaccel:
+                    warned_hwaccel = True
+                    print(
+                        "⚠️  ffmpeg 가 하드웨어 디코딩에 실패해 소프트웨어로 떨어졌습니다: "
+                        + " | ".join(stats["hwaccel_messages"][:2]),
+                        flush=True,
+                    )
+                if not burst:
+                    no_frame_ticks += 1
+                    print(
+                        f"[{time.perf_counter() - started:6.1f}s] 프레임 없음 — "
+                        f"재연결 {stats['reconnects']}회, 마지막 오류: {stats['last_error']}",
+                        flush=True,
+                    )
+                    schedule.advance()
+                    continue
+                center_time = burst[center_index][0]
+                rss = process_rss_mb()
+                child = reader.child_pid()
+                ffmpeg_rss = process_rss_mb(child) if child else None
+                extra = {
+                    "wall_clock": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    "tick": {
+                        "scheduled_s": round(schedule.scheduled - schedule.t0, 3),
+                        "late_s": round(late, 3),
+                        "skipped_total": schedule.skipped,
+                        "no_frame_ticks": no_frame_ticks,
+                        "burst_age_s": round(stats["newest_age_s"] or 0.0, 3),
+                    },
+                    "live": {
+                        "hwaccel": hwaccel.name,
+                        "hwaccel_suspect": stats["hwaccel_suspect"],
+                        "frames_decoded": stats["frames_decoded"],
+                        "decode_fps": stats["decode_fps"],
+                        "reconnects": stats["reconnects"],
+                        "connected": stats["connected"],
+                        "last_error": stats["last_error"],
+                    },
+                    "process": {
+                        "rss_mb": round(rss, 1) if rss is not None else None,
+                        "ffmpeg_rss_mb": round(ffmpeg_rss, 1) if ffmpeg_rss is not None else None,
+                        "elapsed_s": round(time.perf_counter() - started, 1),
+                    },
+                }
+                record = runner.judge(burst, center_index, center_time, extra=extra)
+                tick_durations.append(record["tick"]["duration_s"])
+                inference_ms.append(record.get("inference_ms", 0.0))
+                late_seconds.append(late)
+                if rss is not None:
+                    rss_samples.append(rss)
+                if ffmpeg_rss is not None:
+                    ffmpeg_rss_samples.append(ffmpeg_rss)
+                schedule.advance()
+                if args.max_samples is not None and runner.processed >= args.max_samples:
+                    break
+    except KeyboardInterrupt:
+        interrupted = True
+        print("Interrupted — 요약을 쓰고 끝냅니다", file=sys.stderr, flush=True)
+    finally:
+        reader.close()
+
+    stats = reader.stats()
+    elapsed = time.perf_counter() - started
+    processed = runner.processed if runner is not None else 0
+    summary = {
+        "url": url,
+        "elapsed_s": round(elapsed, 1),
+        "ticks": processed,
+        "no_frame_ticks": no_frame_ticks,
+        "skipped_slots": schedule.skipped,
+        "interval_seconds": args.sample_seconds,
+        "tick_duration_s": {
+            "mean": round(sum(tick_durations) / len(tick_durations), 3) if tick_durations else None,
+            "p95": _percentile(tick_durations, 0.95),
+            "max": max(tick_durations) if tick_durations else None,
+            "first": tick_durations[0] if tick_durations else None,
+        },
+        "inference_ms": {
+            "mean": round(sum(inference_ms) / len(inference_ms), 1) if inference_ms else None,
+            "max": round(max(inference_ms), 1) if inference_ms else None,
+        },
+        "late_s": {
+            "mean": round(sum(late_seconds) / len(late_seconds), 3) if late_seconds else None,
+            "max": round(max(late_seconds), 3) if late_seconds else None,
+        },
+        "rss_mb": {
+            "first": round(rss_samples[0], 1) if rss_samples else None,
+            "last": round(rss_samples[-1], 1) if rss_samples else None,
+            "max": round(max(rss_samples), 1) if rss_samples else None,
+        },
+        "ffmpeg_rss_mb": {
+            "first": round(ffmpeg_rss_samples[0], 1) if ffmpeg_rss_samples else None,
+            "last": round(ffmpeg_rss_samples[-1], 1) if ffmpeg_rss_samples else None,
+            "max": round(max(ffmpeg_rss_samples), 1) if ffmpeg_rss_samples else None,
+        },
+        "decode": {
+            "hwaccel": hwaccel.name,
+            "fallback_at_start": hwaccel.fallback,
+            "suspect_during_run": stats["hwaccel_suspect"],
+            "messages": stats["hwaccel_messages"],
+            "frames_decoded": stats["frames_decoded"],
+            "reconnects": stats["reconnects"],
+            "last_error": stats["last_error"],
+        },
+        "interrupted": interrupted,
+        "log": str(log_path),
+    }
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    td = summary["tick_duration_s"]
+    print(
+        f"\nCompleted {processed} live ticks in {elapsed:.1f}s "
+        f"(프레임 없음 {no_frame_ticks}, 건너뛴 슬롯 {schedule.skipped}, 재연결 {stats['reconnects']})"
+    )
+    if td["mean"] is not None:
+        print(
+            f"틱 시간: 평균 {td['mean']:.2f}s · p95 {td['p95']:.2f}s · 최대 {td['max']:.2f}s "
+            f"(첫 틱 {td['first']:.2f}s) · 합격선 {args.sample_seconds / 2:.1f}s"
+        )
+    if summary["rss_mb"]["first"] is not None:
+        print(
+            f"메모리(이 프로세스): 처음 {summary['rss_mb']['first']:.0f}MB → "
+            f"마지막 {summary['rss_mb']['last']:.0f}MB (최대 {summary['rss_mb']['max']:.0f}MB)"
+            + (
+                f" · ffmpeg {summary['ffmpeg_rss_mb']['last']:.0f}MB"
+                if summary["ffmpeg_rss_mb"]["last"] is not None
+                else ""
+            )
+        )
+    print(
+        f"디코딩: {hwaccel.name}"
+        + (" ⚠️ 실행 중 소프트웨어로 떨어진 흔적 있음" if stats["hwaccel_suspect"] else "")
+    )
+    print(f"JSONL log: {log_path}")
+    print(f"Summary: {summary_path}")
+    if processed == 0 and not interrupted:
+        raise RuntimeError("실시간 스트림에서 판정한 틱이 하나도 없습니다 (프레임을 못 받았습니다)")
+    return 130 if interrupted else 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
         _validate_args(args)
+        if is_live_source(args.input):
+            layout = load_layout(args.layout) if args.layout else None
+            _require_complete_layout(layout)
+            analyzer = _make_analyzer(args, layout=layout)
+            return process_live(args, analyzer)
         suffix = args.input.suffix.lower()
         if suffix not in VIDEO_SUFFIXES | IMAGE_SUFFIXES:
             raise ValueError(f"Unsupported input extension: {suffix or '(none)'}")

@@ -18,3 +18,6 @@ results/edge/*.json
 *.onnx
 results/edge_box/
 results/live_box/*.jsonl
+# mediamtx 가 실행 폴더에 만드는 자체 인증서 (edge/fake_camera.sh)
+auto.crt
+auto.key

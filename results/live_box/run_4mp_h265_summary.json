@@ -1,0 +1,43 @@
+{
+  "url": "rtsp://127.0.0.1:8554/seatnow",
+  "elapsed_s": 3600.2,
+  "ticks": 240,
+  "no_frame_ticks": 0,
+  "skipped_slots": 0,
+  "interval_seconds": 15.0,
+  "tick_duration_s": {
+    "mean": 5.643,
+    "p95": 6.826,
+    "max": 10.028,
+    "first": 10.028
+  },
+  "inference_ms": {
+    "mean": 5581.4,
+    "max": 10022.9
+  },
+  "late_s": {
+    "mean": 0.001,
+    "max": 0.006
+  },
+  "rss_mb": {
+    "first": 582.5,
+    "last": 1285.2,
+    "max": 1351.0
+  },
+  "ffmpeg_rss_mb": {
+    "first": 266.7,
+    "last": 330.5,
+    "max": 330.5
+  },
+  "decode": {
+    "hwaccel": "vaapi",
+    "fallback_at_start": false,
+    "suspect_during_run": false,
+    "messages": [],
+    "frames_decoded": 107840,
+    "reconnects": 0,
+    "last_error": "[out#0/rawvideo @ 0x62a1d44f6340] Error closing file: Immediate exit requested"
+  },
+  "interrupted": false,
+  "log": "results/live/run_4mp_h265.jsonl"
+}

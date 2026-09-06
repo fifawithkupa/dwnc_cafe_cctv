@@ -1,0 +1,259 @@
+Loading detector: yolov8n_openvino_model [openvino]
+Loading pose model: yolov8n-pose_openvino_model [openvino]
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+스트림 확인 중: rtsp://127.0.0.1:8554/seatnow
+Live: rtsp://127.0.0.1:8554/seatnow — 2560x1440, 29.970 fps, codec=hevc
+하드웨어 디코딩 켜짐 (vaapi)
+Analyzing every 15s (newest 5 frames majority vote, live)
+Loading /home/hugo/seatnow/yolov8n_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+Loading /home/hugo/seatnow/yolov8n-pose_openvino_model for OpenVINO inference...
+Using OpenVINO LATENCY mode for batch=1 inference on (CPU)...
+[  1.9s] tables=12 occupied=4 empty=8 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=10023ms
+[ 15.0s] tables=12 occupied=4 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6132ms
+[ 30.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6076ms
+[ 44.9s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6153ms
+[ 60.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6075ms
+[ 75.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6037ms
+[ 90.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6234ms
+[105.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5878ms
+[120.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=5883ms
+[135.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5864ms
+[150.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6095ms
+[164.9s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6053ms
+[180.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4668ms
+[195.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4678ms
+[210.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4767ms
+[225.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4624ms
+[240.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4663ms
+[255.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4683ms
+[270.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4808ms
+[285.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4845ms
+[300.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4843ms
+[314.9s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4781ms
+[330.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4735ms
+[345.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4739ms
+[360.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4735ms
+[375.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4681ms
+[390.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4918ms
+[405.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4809ms
+[420.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4642ms
+[435.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4690ms
+[450.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4659ms
+[465.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4740ms
+[480.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4755ms
+[494.9s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4691ms
+[510.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=5104ms
+[525.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4774ms
+[540.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=4894ms
+[555.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4668ms
+[570.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=7879ms
+[585.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6071ms
+[600.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6260ms
+[615.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6228ms
+[630.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6690ms
+[645.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6112ms
+[660.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6255ms
+[675.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6285ms
+[690.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6292ms
+[705.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=7018ms
+[720.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=5396ms
+[735.0s] tables=12 occupied=5 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5471ms
+[750.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=5078ms
+[765.0s] tables=12 occupied=4 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5494ms
+[779.9s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=5244ms
+[795.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4983ms
+[810.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=8496ms
+[825.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6358ms
+[840.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6406ms
+[855.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6340ms
+[870.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=9470ms
+[885.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6372ms
+[900.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6266ms
+[915.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=9095ms
+[930.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6189ms
+[945.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6315ms
+[960.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6223ms
+[975.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6356ms
+[990.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=1/1/0 inference=6315ms
+[1005.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=6322ms
+[1020.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6522ms
+[1035.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5871ms
+[1050.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5292ms
+[1064.9s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5947ms
+[1080.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=4966ms
+[1095.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5757ms
+[1110.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4909ms
+[1125.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5891ms
+[1140.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4938ms
+[1155.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5587ms
+[1170.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5001ms
+[1185.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5758ms
+[1200.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4956ms
+[1215.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5282ms
+[1230.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5444ms
+[1245.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5224ms
+[1260.0s] tables=12 occupied=2 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5501ms
+[1275.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5128ms
+[1290.0s] tables=12 occupied=2 empty=10 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5545ms
+[1305.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5643ms
+[1320.0s] tables=12 occupied=2 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5480ms
+[1335.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5187ms
+[1350.0s] tables=12 occupied=2 empty=10 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5456ms
+[1365.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5834ms
+[1380.0s] tables=12 occupied=2 empty=10 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5540ms
+[1395.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5285ms
+[1410.0s] tables=12 occupied=2 empty=10 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5516ms
+[1425.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5432ms
+[1440.0s] tables=12 occupied=2 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5428ms
+[1455.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5378ms
+[1470.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5477ms
+[1485.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=4806ms
+[1500.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/1 inference=4886ms
+[1515.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=4827ms
+[1530.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/1 inference=4961ms
+[1545.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5004ms
+[1560.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/1 inference=5010ms
+[1575.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4929ms
+[1589.9s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4986ms
+[1604.9s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4917ms
+[1620.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/1 inference=7826ms
+[1635.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6443ms
+[1650.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6506ms
+[1665.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6334ms
+[1680.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6418ms
+[1695.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5090ms
+[1710.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4998ms
+[1725.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5029ms
+[1740.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5005ms
+[1755.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4994ms
+[1770.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5065ms
+[1785.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5082ms
+[1800.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5091ms
+[1815.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5061ms
+[1830.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5071ms
+[1845.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4988ms
+[1859.9s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5155ms
+[1875.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5135ms
+[1889.9s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5035ms
+[1905.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4979ms
+[1920.0s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=4961ms
+[1935.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5054ms
+[1950.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5047ms
+[1965.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5050ms
+[1980.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5040ms
+[1995.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5004ms
+[2010.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5107ms
+[2025.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4951ms
+[2040.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5456ms
+[2055.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5005ms
+[2070.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5028ms
+[2085.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5338ms
+[2100.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5446ms
+[2115.0s] tables=12 occupied=2 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4862ms
+[2130.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5057ms
+[2145.0s] tables=12 occupied=2 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4909ms
+[2160.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5414ms
+[2175.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4972ms
+[2190.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4977ms
+[2205.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5000ms
+[2220.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5118ms
+[2235.0s] tables=12 occupied=2 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5044ms
+[2249.9s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5035ms
+[2265.0s] tables=12 occupied=2 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4981ms
+[2280.0s] tables=12 occupied=2 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4992ms
+[2295.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5100ms
+[2310.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4998ms
+[2325.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4915ms
+[2340.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5011ms
+[2355.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5060ms
+[2370.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4915ms
+[2385.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4891ms
+[2400.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5786ms
+[2415.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4990ms
+[2430.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5040ms
+[2445.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5932ms
+[2460.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5842ms
+[2475.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5898ms
+[2490.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5735ms
+[2505.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5939ms
+[2520.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5228ms
+[2535.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6368ms
+[2549.9s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5155ms
+[2565.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5961ms
+[2580.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5173ms
+[2595.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5716ms
+[2610.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5158ms
+[2625.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5945ms
+[2640.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5216ms
+[2655.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5954ms
+[2670.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5280ms
+[2685.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5915ms
+[2700.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5379ms
+[2715.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=6765ms
+[2730.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5600ms
+[2745.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6931ms
+[2760.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5727ms
+[2775.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=7550ms
+[2790.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5555ms
+[2805.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6635ms
+[2820.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4965ms
+[2835.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6917ms
+[2850.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5474ms
+[2865.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6708ms
+[2880.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4928ms
+[2895.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6257ms
+[2910.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5409ms
+[2925.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5836ms
+[2940.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5425ms
+[2955.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4992ms
+[2970.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5594ms
+[2985.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5027ms
+[3000.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5016ms
+[3015.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4993ms
+[3030.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=7019ms
+[3045.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4934ms
+[3060.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=6453ms
+[3075.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5019ms
+[3090.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=6704ms
+[3105.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=4975ms
+[3120.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=6690ms
+[3135.0s] tables=12 occupied=3 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5044ms
+[3149.9s] tables=12 occupied=4 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6220ms
+[3165.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5432ms
+[3180.0s] tables=12 occupied=4 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6177ms
+[3195.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5506ms
+[3210.0s] tables=12 occupied=4 empty=6 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5997ms
+[3225.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5419ms
+[3240.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6625ms
+[3255.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5355ms
+[3270.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=7045ms
+[3285.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5412ms
+[3300.0s] tables=12 occupied=4 empty=7 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6716ms
+[3315.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5228ms
+[3330.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5989ms
+[3345.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5594ms
+[3360.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6660ms
+[3375.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5361ms
+[3390.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5585ms
+[3405.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5018ms
+[3420.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5277ms
+[3435.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5699ms
+[3450.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5816ms
+[3465.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/3/0 inference=5651ms
+[3480.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5386ms
+[3495.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/4/0 inference=5608ms
+[3510.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5686ms
+[3525.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/4/0 inference=5523ms
+[3540.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=5398ms
+[3554.9s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/4/0 inference=6581ms
+[3570.0s] tables=12 occupied=3 empty=8 ignore=0 poses(seated/standing/unknown)=0/2/0 inference=6471ms
+[3585.0s] tables=12 occupied=3 empty=6 ignore=0 poses(seated/standing/unknown)=0/4/0 inference=6435ms
+
+Completed 240 live ticks in 3600.2s (프레임 없음 0, 건너뛴 슬롯 0, 재연결 0)
+틱 시간: 평균 5.64s · p95 6.83s · 최대 10.03s (첫 틱 10.03s) · 합격선 7.5s
+메모리(이 프로세스): 처음 582MB → 마지막 1285MB (최대 1351MB) · ffmpeg 330MB
+디코딩: vaapi
+JSONL log: results/live/run_4mp_h265.jsonl
+Summary: results/live/run_4mp_h265_summary.json

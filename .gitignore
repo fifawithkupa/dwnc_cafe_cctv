@@ -17,3 +17,4 @@ results/edge/*.json
 *_openvino_model/
 *.onnx
 results/edge_box/
+results/live_box/*.jsonl

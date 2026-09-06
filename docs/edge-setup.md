@@ -7,7 +7,7 @@
 > 각 단계의 **`→`** 가 나와야 다음으로 간다.
 > **1~9 는 끝났다. 11단계(실시간 스트림 60분×2)도 끝났다 (2026-09-06).**
 > 카메라는 4MP·H.265·2.8mm 로 정해졌고, 사야 할 것은 10단계에 있다.
-> **다음은 카메라를 달고 11단계 ③의 주소만 바꿔 돌리는 것이다.**
+> **12단계(자동 실행)까지 설치됐다. 다음은 카메라를 달고 `deploy/seatnow.env` 의 주소만 바꾸는 것이다.**
 >
 > **막히면 "몇 번에서 이렇게 나왔다"고 말해줘.** 그 단계의
 > **"막혔을 때"** 칸에 해결 방법을 바로 여기 추가한다.
@@ -950,6 +950,86 @@ wc -l results/live/run_4mp_h265.jsonl      # 지금까지 틱 수
 공유기·랜선·카메라 인코더는 빠져 있다. 재연결 간격(1·2·4·8·15초)과 소켓
 타임아웃(10초)이 실제 카메라 재부팅 시간과 맞는지, 그리고 `프레임 없음`
 틱이 하루에 몇 번 찍히는지를 본다.
+
+---
+
+## 12단계 — 자동 실행 (박스가 꺼졌다 켜져도 알아서 돈다) ✅ **설치됨 (2026-09-06)**
+
+카메라를 단 날부터 필요한 것이라 미리 만들었다. **sudo 없이** 된다 — 박스
+사용자 소속의 systemd "사용자 서비스"로 돌리고, `loginctl enable-linger` 로
+로그인하지 않아도 부팅 때 뜨게 했다. 사용자 그룹(render·video)이 그대로
+따라오므로 하드웨어 디코딩도 된다.
+
+### ① 박스에서 — 설치 (한 번)
+
+```bash
+cd ~/seatnow && git pull
+./deploy/install_service.sh
+```
+
+처음 돌리면 `deploy/seatnow.env` 를 예시로 만들어 준다. **거기에 카메라
+주소와 레이아웃을 적는다** (비밀번호가 들어가므로 git 에 안 올라간다):
+
+```
+SEATNOW_URL=rtsp://admin:비밀번호@카메라IP:554/Streaming/Channels/101
+SEATNOW_LAYOUT=layouts/매장이름.json
+```
+
+고친 뒤 `systemctl --user restart seatnow`.
+
+지금은 시험대라 가짜 카메라(`rtsp://127.0.0.1:8554/seatnow`)를 가리키고,
+가짜 카메라 자체도 서비스(`seatnow-fake-camera`)로 떠 있다. **진짜 카메라를
+달면 가짜 카메라 서비스는 끈다:** `systemctl --user disable --now seatnow-fake-camera`.
+
+### ② 평소에 쓰는 명령
+
+| 하고 싶은 것 | 명령 |
+|---|---|
+| 지금 도는지 | `systemctl --user status seatnow` |
+| 판정 줄 실시간으로 보기 | `journalctl --user -u seatnow -f` |
+| 멈추기 / 다시 켜기 | `systemctl --user stop seatnow` / `restart seatnow` |
+| 오늘 판정 기록 | `~/seatnow/results/live/2026-09-06.jsonl` (날짜별, 14일 지나면 지움) |
+| 마지막 실행 요약 | `~/seatnow/results/live/last_run_summary.json` |
+
+### ③ 확인한 것 (2026-09-06)
+
+| 시험 | 결과 |
+|---|---|
+| 설치 직후 판정 시작 | 41초 만에 첫 틱 (모델 준비 시간), 이후 15초마다 |
+| 프로세스를 강제로 죽임 (`kill -9`) | 10초 뒤 systemd 가 다시 띄움, 기록은 같은 날짜 파일에 이어 씀 |
+| `systemctl --user stop` | 요약 파일 쓰고 깨끗이 종료 |
+| **박스 재부팅** | **아직 못 했다** — `sudo reboot` 에 비밀번호가 필요해서. 아래 ④ |
+
+### ④ 네가 한 번 해줄 것 — 재부팅 시험
+
+노트북에서 SSH 로 붙어 (맨 위 "먼저"):
+
+```bash
+sudo reboot
+```
+
+1~2분 뒤 다시 붙어서:
+
+```bash
+systemctl --user status seatnow seatnow-fake-camera | grep -E "Active|●"
+journalctl --user -u seatnow -n 3 -o cat
+```
+
+→ 둘 다 `active (running)` 이고 판정 줄이 새로 찍히면 끝. 안 뜨면
+`loginctl show-user hugo -p Linger` 가 `yes` 인지 본다.
+
+<details>
+<summary><b>막혔을 때</b></summary>
+
+- **`Failed to connect to bus`** — SSH 로 붙었는데 사용자 systemd 가 안 보인다.
+  `export XDG_RUNTIME_DIR=/run/user/$(id -u)` 를 치고 다시.
+- **부팅 뒤 서비스가 안 떠 있다** — linger 가 꺼진 것. `loginctl enable-linger hugo`.
+- **`status` 가 `activating (auto-restart)` 를 반복한다** — 카메라를 못 연다.
+  `journalctl --user -u seatnow -n 20` 에 이유가 있다. 대개 `seatnow.env` 의
+  주소·비밀번호다.
+- **판정은 도는데 `프레임 없음` 만 찍힌다** — 11단계 "막혔을 때".
+
+</details>
 
 ---
 

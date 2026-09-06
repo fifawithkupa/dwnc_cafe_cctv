@@ -19,8 +19,10 @@ ExecStart=%h/seatnow/venv/bin/python -m engine.seatnow ${SEATNOW_URL} \
     --det-model yolov8n_openvino_model --pose-model yolov8n-pose_openvino_model \
     --no-video --log-dir %h/seatnow/results/live --keep-days ${SEATNOW_KEEP_DAYS} \
     $SEATNOW_EXTRA
-# SIGINT lets the loop write last_run_summary.json before exiting.
+# SIGINT lets the loop write last_run_summary.json before exiting; the loop
+# then exits 130, which is a clean stop here, not a failure.
 KillSignal=SIGINT
+SuccessExitStatus=130
 TimeoutStopSec=30
 # Always come back: camera unplugged, stream error, crash, anything.
 Restart=always

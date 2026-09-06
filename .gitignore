@@ -21,3 +21,5 @@ results/live_box/*.jsonl
 # mediamtx 가 실행 폴더에 만드는 자체 인증서 (edge/fake_camera.sh)
 auto.crt
 auto.key
+# 카메라 비밀번호가 들어가는 실제 설정 (deploy/seatnow.env.example 을 복사해 만든다)
+deploy/seatnow.env

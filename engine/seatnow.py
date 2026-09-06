@@ -37,6 +37,7 @@ from engine.seatnow_hwaccel import HWACCEL_AUTO, HWACCEL_CHOICES, resolve_hwacce
 from engine.seatnow_layout import LayoutError, load_layout
 from engine.seatnow_live import (
     FFmpegLiveReader,
+    LiveLogRotator,
     TickSchedule,
     is_live_source,
     burst_period_frames,
@@ -119,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-detections", action="store_true", help="Add the detector's raw output and dropped-table rules to each JSONL record (diagnoses model miss vs. code rejection)")
     parser.add_argument("--no-scene-reset", action="store_true", help="Disable automatic scene-cut reset")
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
+    parser.add_argument("--log-dir", type=Path, help="실시간 입력용: 이 폴더에 날짜별 JSONL(YYYY-MM-DD.jsonl)로 이어 쓴다. 재시작해도 그날 파일에 붙고 자정에 새 파일로 넘어간다 (--log 와 같이 못 씀)")
+    parser.add_argument("--keep-days", type=int, default=14, help="--log-dir 에서 이 날짜보다 오래된 파일은 지운다 (0 = 안 지움)")
     parser.add_argument("--run-seconds", type=float, help="실시간(rtsp://) 입력일 때 이 시간이 지나면 멈춘다 (없으면 계속 돈다)")
     parser.add_argument("--max-frame-age-seconds", type=float, default=None, help="실시간 입력에서 이보다 오래된 화면은 없는 것으로 친다 (기본: 판단 주기와 같음, 0 = 끔). 끊긴 카메라의 옛 화면으로 판정하지 않기 위한 것")
     parser.add_argument("--live-burst-seconds", type=float, default=5.0, help="실시간 입력에서 몇 초마다 프레임 묶음 하나를 변환할지 (0 = 모든 프레임 변환; 2코어 박스에서는 5초가 맞다)")
@@ -201,6 +204,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--live-burst-seconds cannot be negative")
     if getattr(args, "max_frame_age_seconds", None) is not None and args.max_frame_age_seconds < 0:
         raise ValueError("--max-frame-age-seconds cannot be negative")
+    if getattr(args, "log_dir", None) is not None:
+        if not live:
+            raise ValueError("--log-dir 는 실시간(rtsp://) 입력에만 쓴다")
+        if args.log is not None:
+            raise ValueError("--log-dir 와 --log 는 같이 쓸 수 없다")
+    if getattr(args, "keep_days", 0) is not None and args.keep_days < 0:
+        raise ValueError("--keep-days cannot be negative")
     if args.sample_seconds <= 0:
         raise ValueError("--sample-seconds must be positive")
     if args.median_frames < 0:
@@ -724,9 +734,18 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     info = probe_stream(url)
     if analyzer.layout is not None:
         analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
-    log_path = args.log or live_log_default(url)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path = log_path.with_name(log_path.stem + "_summary.json")
+    rotator: Optional[LiveLogRotator] = None
+    if args.log_dir is not None:
+        rotator = LiveLogRotator(args.log_dir, keep_days=args.keep_days)
+        removed = rotator.prune()
+        if removed:
+            print(f"오래된 로그 {len(removed)}개 삭제 (--keep-days {args.keep_days})", flush=True)
+        log_path = None
+        summary_path = Path(args.log_dir) / "last_run_summary.json"
+    else:
+        log_path = args.log or live_log_default(url)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path = log_path.with_name(log_path.stem + "_summary.json")
     print(
         f"Live: {shown_url} — {info.width}x{info.height}, {info.fps:.3f} fps, codec={info.codec}",
         flush=True,
@@ -803,9 +822,21 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     runner: Optional[_TickRunner] = None
     reader.start()
     try:
-        with log_path.open("w", encoding="utf-8") as log_file:
+        if rotator is not None:
+            log_file = rotator.open()
+            log_path = rotator.path
+        else:
+            log_file = log_path.open("w", encoding="utf-8")
+        try:
             runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer=None)
             while True:
+                if rotator is not None:
+                    rotated = rotator.maybe_rotate()
+                    if rotated is not log_file:
+                        log_file = rotated
+                        runner.log_file = rotated
+                        log_path = rotator.path
+                        print(f"새 로그 파일: {log_path}", flush=True)
                 if deadline is not None and time.perf_counter() >= deadline:
                     break
                 wait = schedule.wait_seconds()
@@ -911,6 +942,11 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                 schedule.advance()
                 if args.max_samples is not None and runner.processed >= args.max_samples:
                     break
+        finally:
+            if rotator is not None:
+                rotator.close()
+            else:
+                log_file.close()
     except KeyboardInterrupt:
         interrupted = True
         print("Interrupted — 요약을 쓰고 끝냅니다", file=sys.stderr, flush=True)

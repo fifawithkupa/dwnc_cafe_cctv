@@ -1,0 +1,32 @@
+# SeatNow live judging — systemd *user* unit (runs as the box user, no root).
+# Installed by deploy/install_service.sh into ~/.config/systemd/user/.
+#
+# Why a user unit: the box user has no passwordless sudo, and a user unit
+# with `loginctl enable-linger` starts at boot without anyone logging in.
+# The user's groups (render, video) come along, so hardware decoding works.
+
+[Unit]
+Description=SeatNow live seat judging
+# The app itself waits for the camera (probe retries with backoff), so no
+# network-online dependency is needed at the user level.
+
+[Service]
+Type=simple
+WorkingDirectory=%h/seatnow
+EnvironmentFile=%h/seatnow/deploy/seatnow.env
+ExecStart=%h/seatnow/venv/bin/python -m engine.seatnow ${SEATNOW_URL} \
+    --layout ${SEATNOW_LAYOUT} \
+    --det-model yolov8n_openvino_model --pose-model yolov8n-pose_openvino_model \
+    --no-video --log-dir %h/seatnow/results/live --keep-days ${SEATNOW_KEEP_DAYS} \
+    $SEATNOW_EXTRA
+# SIGINT lets the loop write last_run_summary.json before exiting.
+KillSignal=SIGINT
+TimeoutStopSec=30
+# Always come back: camera unplugged, stream error, crash, anything.
+Restart=always
+RestartSec=10
+# Model load takes ~40 s on this box; don't count that as a failed start.
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=default.target

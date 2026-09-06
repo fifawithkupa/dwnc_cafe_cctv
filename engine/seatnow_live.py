@@ -685,3 +685,86 @@ def probe_live_hwaccel(name: str, url: object, ffmpeg: Optional[str] = None) -> 
     except (OSError, subprocess.TimeoutExpired):
         return False
     return completed.returncode == 0 and len(completed.stdout) > 0
+
+
+# ----------------------------------------------------------------- log files
+
+
+class LiveLogRotator:
+    """One JSONL file per local day, appended across restarts, pruned by age.
+
+    A service that restarts must not truncate the day's log (the file loop's
+    ``open("w")`` would), and a box that runs for months must not fill its
+    disk.  Names are ``YYYY-MM-DD.jsonl``; ``prune`` only touches files whose
+    name starts with a date, so notes and reports beside them are safe.
+    """
+
+    def __init__(self, directory, keep_days: int = 14, now=None) -> None:
+        import datetime as _dt
+        from pathlib import Path as _Path
+
+        self.directory = _Path(directory)
+        self.keep_days = int(keep_days)
+        self._now = now or (lambda: _dt.datetime.now().astimezone())
+        self._handle = None
+        self._date = None
+        self.path = None
+
+    def _today(self):
+        return self._now().date()
+
+    def _path_for(self, day):
+        return self.directory / f"{day.isoformat()}.jsonl"
+
+    def open(self):
+        self.directory.mkdir(parents=True, exist_ok=True)
+        day = self._today()
+        self.path = self._path_for(day)
+        self._handle = self.path.open("a", encoding="utf-8")
+        self._date = day
+        return self._handle
+
+    def maybe_rotate(self):
+        """Return the current handle, switching files when the date changed."""
+        if self._handle is None:
+            return self.open()
+        day = self._today()
+        if day == self._date:
+            return self._handle
+        self.close()
+        handle = self.open()
+        self.prune()
+        return handle
+
+    def prune(self):
+        """Delete dated files older than ``keep_days``; returns what was removed."""
+        import datetime as _dt
+        import re as _re
+
+        if self.keep_days <= 0 or not self.directory.exists():
+            return []
+        cutoff = self._today() - _dt.timedelta(days=self.keep_days)
+        removed = []
+        for candidate in self.directory.iterdir():
+            match = _re.match(r"^(\d{4}-\d{2}-\d{2})", candidate.name)
+            if not match or not candidate.is_file():
+                continue
+            try:
+                day = _dt.date.fromisoformat(match.group(1))
+            except ValueError:
+                continue
+            if day < cutoff:
+                try:
+                    candidate.unlink()
+                    removed.append(candidate)
+                except OSError:
+                    pass
+        return removed
+
+    def close(self) -> None:
+        if self._handle is not None:
+            try:
+                self._handle.flush()
+                self._handle.close()
+            finally:
+                self._handle = None

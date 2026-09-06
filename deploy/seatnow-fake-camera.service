@@ -1,0 +1,19 @@
+# TEST BENCH ONLY — a fake camera made of mediamtx + an ffmpeg loop of a clip.
+# Not for a real store: there the camera is the RTSP server.
+# Enable with: systemctl --user enable --now seatnow-fake-camera
+
+[Unit]
+Description=SeatNow fake camera (mediamtx + clip republish) — test bench only
+
+[Service]
+Type=simple
+WorkingDirectory=%h/seatnow
+# mediamtx in the background of this unit's cgroup, publisher in the foreground;
+# if either dies systemd restarts both.
+ExecStart=/bin/bash -c '%h/tools/mediamtx %h/tools/mediamtx.yml & sleep 2; exec /usr/bin/python3 -m edge.rtsp_republish results/edge/clips/4mp_h265.mp4 --no-server --path seatnow'
+KillMode=control-group
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

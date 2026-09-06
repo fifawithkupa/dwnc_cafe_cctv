@@ -25,6 +25,8 @@ from engine.seatnow_live import (
     HWACCEL_FAILURE_PATTERNS,
     coherent_tail,
     is_live_source,
+    redact_url,
+    should_disable_hwaccel,
 )
 
 
@@ -275,6 +277,91 @@ class CoherentWindowTests(unittest.TestCase):
             reader.close()
         self.assertEqual([int(f[0, 0, 0]) for _, f in burst], [10, 11, 12, 13, 14])
         self.assertEqual(center_index, 4)
+
+
+class StaleFrameTests(unittest.TestCase):
+    def test_frames_older_than_max_age_are_treated_as_absent(self) -> None:
+        # Real clock plus a jumpable offset: the wait loop needs time to move.
+        offset = [0.0]
+        payload = b"".join(_frame_payload(i) for i in range(5))
+        spawn = _spawner([(payload, True, "")])
+        reader = FFmpegLiveReader(
+            "rtsp://cam/stream",
+            WIDTH,
+            HEIGHT,
+            spawn=spawn,
+            clock=lambda: time.monotonic() + offset[0],
+        )
+        reader.start()
+        try:
+            self.assertTrue(_wait_until(lambda: reader.stats()["frames_decoded"] >= 5))
+            _, fresh = reader.read_burst(2, timeout=0.1, max_age_s=30.0)
+            offset[0] = 45.0  # 45 s later, camera silent
+            center_index, stale = reader.read_burst(2, timeout=0.1, max_age_s=30.0)
+        finally:
+            reader.close()
+        self.assertEqual(len(fresh), 5)
+        self.assertEqual(stale, [])
+        self.assertEqual(center_index, -1)
+
+
+class HwaccelFallbackTests(unittest.TestCase):
+    def test_disable_hwaccel_restarts_ffmpeg_without_the_flag(self) -> None:
+        spawn = _spawner([(b"", True, "")])
+        reader = FFmpegLiveReader(
+            "rtsp://cam/stream", WIDTH, HEIGHT,
+            hwaccel_args=("-hwaccel", "vaapi"), spawn=spawn, reconnect_delays=(0.0,),
+        )
+        reader.start()
+        try:
+            self.assertTrue(_wait_until(lambda: len(spawn.calls) >= 1))
+            self.assertIn("-hwaccel", spawn.calls[0])
+            reader.disable_hwaccel()
+            self.assertTrue(_wait_until(lambda: len(spawn.calls) >= 2))
+        finally:
+            reader.close()
+        self.assertNotIn("-hwaccel", spawn.calls[-1])
+        self.assertEqual(reader.hwaccel_args, ())
+        self.assertTrue(reader.stats()["hwaccel_disabled"])
+
+    def test_policy_falls_back_after_repeated_dead_connections_with_hwaccel_errors(self) -> None:
+        healthy = {"hwaccel_suspect": False, "reconnects": 0, "frames_decoded": 100, "hwaccel_disabled": False}
+        self.assertFalse(should_disable_hwaccel(healthy, frames_at_last_tick=95))
+        # reconnecting, no new frames, and ffmpeg blamed the accelerator
+        broken = {"hwaccel_suspect": True, "reconnects": 3, "frames_decoded": 100, "hwaccel_disabled": False}
+        self.assertTrue(should_disable_hwaccel(broken, frames_at_last_tick=100))
+        # frames are still arriving -> not dead, do not switch
+        alive = {"hwaccel_suspect": True, "reconnects": 3, "frames_decoded": 130, "hwaccel_disabled": False}
+        self.assertFalse(should_disable_hwaccel(alive, frames_at_last_tick=100))
+        # already switched -> never again
+        done = dict(broken, hwaccel_disabled=True)
+        self.assertFalse(should_disable_hwaccel(done, frames_at_last_tick=100))
+
+    def test_patterns_match_what_this_ffmpeg_actually_prints(self) -> None:
+        real = (
+            "[AVHWDeviceContext @ 0x6131] Failed to initialise VAAPI connection: -1 (unknown libva error).\n"
+            "Device creation failed: -5.\n"
+            "No device available for decoder: device type vaapi needed for codec hevc.\n"
+            "[vist#0:0/hevc @ 0x6131] Hardware device setup failed for decoder: Input/output error\n"
+        )
+        hits = [
+            line for line in real.splitlines()
+            if any(p.lower() in line.lower() for p in HWACCEL_FAILURE_PATTERNS)
+        ]
+        self.assertGreaterEqual(len(hits), 3)
+        self.assertTrue(any("Hardware device setup failed" in h for h in hits))
+
+
+class RedactUrlTests(unittest.TestCase):
+    def test_password_is_hidden_but_host_and_path_kept(self) -> None:
+        self.assertEqual(
+            redact_url("rtsp://admin:S3cret!@192.168.0.50:554/Streaming/Channels/101"),
+            "rtsp://admin:***@192.168.0.50:554/Streaming/Channels/101",
+        )
+
+    def test_url_without_credentials_is_unchanged(self) -> None:
+        self.assertEqual(redact_url("rtsp://192.168.0.50/x"), "rtsp://192.168.0.50/x")
+        self.assertEqual(redact_url("sample_raw/cafe.mov"), "sample_raw/cafe.mov")
 
 
 class LiveReaderReconnectTests(unittest.TestCase):

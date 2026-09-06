@@ -41,6 +41,8 @@ from engine.seatnow_live import (
     is_live_source,
     burst_period_frames,
     probe_live_hwaccel,
+    redact_url,
+    should_disable_hwaccel,
     probe_stream,
     process_rss_mb,
 )
@@ -713,7 +715,8 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     on: how late the tick started, how long it took, memory, decoder health.
     """
     url = str(args.input)
-    print(f"스트림 확인 중: {url}", flush=True)
+    shown_url = redact_url(url)
+    print(f"스트림 확인 중: {shown_url}", flush=True)
     info = probe_stream(url)
     if analyzer.layout is not None:
         analyzer.layout = analyzer.layout.scaled_to(info.width, info.height)
@@ -721,7 +724,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path = log_path.with_name(log_path.stem + "_summary.json")
     print(
-        f"Live: {url} — {info.width}x{info.height}, {info.fps:.3f} fps, codec={info.codec}",
+        f"Live: {shown_url} — {info.width}x{info.height}, {info.fps:.3f} fps, codec={info.codec}",
         flush=True,
     )
     hwaccel = resolve_hwaccel(args.hwaccel, url, prober=probe_live_hwaccel)
@@ -736,7 +739,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         args,
         analyzer,
         input_info={
-            "url": url,
+            "url": shown_url,
             "live": True,
             "width": info.width,
             "height": info.height,
@@ -776,6 +779,11 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         burst_frames=burst_frames,
     )
     max_span_s = 1.0 if burst_period else None
+    # A camera that went quiet must not keep being judged from its last
+    # picture: frames older than two intervals count as "no frames".
+    max_age_s = 2.0 * args.sample_seconds
+    frames_at_last_tick = 0
+    fallback_during_run = False
     schedule = TickSchedule(args.sample_seconds)
     started = time.perf_counter()
     deadline = started + args.run_seconds if args.run_seconds else None
@@ -807,8 +815,19 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     args.median_frames,
                     timeout=min(10.0, args.sample_seconds),
                     max_span_s=max_span_s,
+                    max_age_s=max_age_s,
                 )
                 stats = reader.stats()
+                if should_disable_hwaccel(stats, frames_at_last_tick):
+                    reader.disable_hwaccel()
+                    fallback_during_run = True
+                    run_context["decode"]["fallback_during_run"] = True
+                    print(
+                        "⚠️  하드웨어 디코더가 죽어서 스트림이 끊겼습니다 — 소프트웨어 디코딩으로 갈아탑니다. "
+                        "판정은 계속되지만 느려집니다 (docs/edge-setup.md 부록 B): "
+                        + " | ".join(stats["hwaccel_messages"][:2]),
+                        flush=True,
+                    )
                 if stats["hwaccel_suspect"] and not warned_hwaccel:
                     warned_hwaccel = True
                     print(
@@ -823,8 +842,30 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         f"재연결 {stats['reconnects']}회, 마지막 오류: {stats['last_error']}",
                         flush=True,
                     )
+                    # A visible hole in the log: consumers must show these
+                    # seats as unknown, never as "still what it was".
+                    gap = {
+                        "gap": True,
+                        "reason": "no_fresh_frames",
+                        "wall_clock": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        "elapsed_s": round(time.perf_counter() - started, 1),
+                        "scheduled_s": round(schedule.scheduled - schedule.t0, 3),
+                        "live": {
+                            "reconnects": stats["reconnects"],
+                            "connected": stats["connected"],
+                            "frames_decoded": stats["frames_decoded"],
+                            "newest_age_s": stats["newest_age_s"],
+                            "last_error": stats["last_error"],
+                            "hwaccel_suspect": stats["hwaccel_suspect"],
+                            "hwaccel_disabled": stats["hwaccel_disabled"],
+                        },
+                    }
+                    log_file.write(json.dumps(gap, ensure_ascii=False) + "\n")
+                    log_file.flush()
+                    frames_at_last_tick = stats["frames_decoded"]
                     schedule.advance()
                     continue
+                frames_at_last_tick = stats["frames_decoded"]
                 center_time = burst[center_index][0]
                 rss = process_rss_mb()
                 child = reader.child_pid()
@@ -841,6 +882,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     "live": {
                         "hwaccel": hwaccel.name,
                         "hwaccel_suspect": stats["hwaccel_suspect"],
+                        "hwaccel_disabled": stats["hwaccel_disabled"],
                         "frames_decoded": stats["frames_decoded"],
                         "decode_fps": stats["decode_fps"],
                         "reconnects": stats["reconnects"],
@@ -874,7 +916,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     elapsed = time.perf_counter() - started
     processed = runner.processed if runner is not None else 0
     summary = {
-        "url": url,
+        "url": shown_url,
         "elapsed_s": round(elapsed, 1),
         "ticks": processed,
         "no_frame_ticks": no_frame_ticks,
@@ -907,6 +949,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         "decode": {
             "hwaccel": hwaccel.name,
             "fallback_at_start": hwaccel.fallback,
+            "fallback_during_run": fallback_during_run,
             "suspect_during_run": stats["hwaccel_suspect"],
             "messages": stats["hwaccel_messages"],
             "frames_decoded": stats["frames_decoded"],
@@ -939,7 +982,8 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         )
     print(
         f"디코딩: {hwaccel.name}"
-        + (" ⚠️ 실행 중 소프트웨어로 떨어진 흔적 있음" if stats["hwaccel_suspect"] else "")
+        + (" ⚠️ 실행 중 하드웨어가 죽어 소프트웨어로 갈아탐" if fallback_during_run else "")
+        + (" ⚠️ 실행 중 하드웨어 실패 흔적 있음" if stats["hwaccel_suspect"] and not fallback_during_run else "")
     )
     print(f"JSONL log: {log_path}")
     print(f"Summary: {summary_path}")

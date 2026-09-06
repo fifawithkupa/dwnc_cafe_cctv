@@ -47,6 +47,7 @@ HWACCEL_FAILURE_PATTERNS: Tuple[str, ...] = (
     "No device available for decoder",
     "hwaccel initialisation returned error",
     "Failed setup for format",
+    "Hardware device setup failed",
     "Error creating a QSV session",
     "Error initializing an internal MFX session",
     "falling back to software",
@@ -64,6 +65,42 @@ Spawn = Callable[[List[str], object], object]
 def is_live_source(value: object) -> bool:
     """True for stream URLs the live reader handles (RTSP), False for files."""
     return str(value).lower().startswith(LIVE_SCHEMES)
+
+
+def redact_url(value: object) -> str:
+    """Hide the password in ``scheme://user:pass@host/...`` for logs and records."""
+    text = str(value)
+    scheme_end = text.find("://")
+    if scheme_end < 0:
+        return text
+    authority_end = text.find("/", scheme_end + 3)
+    authority = text[scheme_end + 3 : authority_end if authority_end >= 0 else len(text)]
+    at = authority.rfind("@")
+    if at < 0:
+        return text
+    userinfo = authority[:at]
+    colon = userinfo.find(":")
+    if colon < 0:
+        return text
+    redacted = userinfo[: colon + 1] + "***" + authority[at:]
+    return text[: scheme_end + 3] + redacted + (text[authority_end:] if authority_end >= 0 else "")
+
+
+def should_disable_hwaccel(stats: dict, frames_at_last_tick: int) -> bool:
+    """Switch to software decoding when the accelerator is what killed the stream.
+
+    Three things must hold at once: ffmpeg blamed the accelerator on stderr,
+    the reader has been reconnecting, and no frame has arrived since the
+    last tick.  A stream that still delivers frames is left alone, and the
+    switch happens once.
+    """
+    if stats.get("hwaccel_disabled"):
+        return False
+    if not stats.get("hwaccel_suspect"):
+        return False
+    if int(stats.get("reconnects", 0)) < 2:
+        return False
+    return int(stats.get("frames_decoded", 0)) <= int(frames_at_last_tick)
 
 
 def coherent_tail(frames: Sequence[Frame], wanted: int, max_span_s: Optional[float]) -> List[Frame]:
@@ -158,6 +195,7 @@ class FFmpegLiveReader:
         self._reconnects = 0
         self._last_error: Optional[str] = None
         self._hwaccel_suspect = False
+        self._hwaccel_disabled = False
         self._hwaccel_messages: List[str] = []
         self._connected = False
 
@@ -226,8 +264,19 @@ class FFmpegLiveReader:
 
     # ------------------------------------------------------------------- reads
 
+    def _fresh_frames(self, max_age_s: Optional[float]) -> List[Frame]:
+        frames = list(self._buffer)
+        if max_age_s is None or not frames:
+            return frames
+        now = self._clock() - self._t0
+        return [frame for frame in frames if now - frame[0] <= max_age_s]
+
     def read_burst(
-        self, n: int, timeout: float = 5.0, max_span_s: Optional[float] = None
+        self,
+        n: int,
+        timeout: float = 5.0,
+        max_span_s: Optional[float] = None,
+        max_age_s: Optional[float] = None,
     ) -> Tuple[int, List[Frame]]:
         """Newest ``2n+1`` frames, oldest first; the last one is the centre.
 
@@ -236,7 +285,9 @@ class FFmpegLiveReader:
         arrived, returns ``(-1, [])`` so the caller can skip the tick.
         With ``max_span_s`` the window is additionally required to come
         from one burst (see ``coherent_tail``); on timeout the newest
-        coherent run is returned instead of a mixed one.
+        coherent run is returned instead of a mixed one.  With ``max_age_s``
+        frames older than that are ignored entirely — a camera that went
+        silent must not keep being judged from its last picture.
         """
         if n < 0:
             raise ValueError("n cannot be negative")
@@ -244,17 +295,30 @@ class FFmpegLiveReader:
         deadline = self._clock() + max(0.0, timeout)
         with self._condition:
             while not self._stop.is_set():
-                snapshot = coherent_tail(list(self._buffer), wanted, max_span_s)
+                snapshot = coherent_tail(self._fresh_frames(max_age_s), wanted, max_span_s)
                 if len(snapshot) >= wanted:
                     break
                 remaining = deadline - self._clock()
                 if remaining <= 0:
                     break
                 self._condition.wait(min(remaining, 0.05))
-            snapshot = coherent_tail(list(self._buffer), wanted, max_span_s)
+            snapshot = coherent_tail(self._fresh_frames(max_age_s), wanted, max_span_s)
         if not snapshot:
             return -1, []
         return len(snapshot) - 1, snapshot
+
+    def disable_hwaccel(self) -> None:
+        """Drop the accelerator flags and restart ffmpeg in software mode."""
+        with self._condition:
+            self.hwaccel_args = ()
+            self._hwaccel_disabled = True
+        process = self._process
+        if process is not None:
+            try:
+                if process.poll() is None:  # type: ignore[attr-defined]
+                    process.terminate()  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
     def stats(self) -> dict:
         now = self._clock()
@@ -266,6 +330,7 @@ class FFmpegLiveReader:
             reconnects = self._reconnects
             last_error = self._last_error
             suspect = self._hwaccel_suspect
+            disabled = self._hwaccel_disabled
             messages = list(self._hwaccel_messages)
             connected = self._connected
         window = 5.0
@@ -280,6 +345,7 @@ class FFmpegLiveReader:
             "decode_fps": round(decode_fps, 2),
             "last_error": last_error,
             "hwaccel_suspect": suspect,
+            "hwaccel_disabled": disabled,
             "hwaccel_messages": messages,
             "uptime_s": now - self._t0,
         }
@@ -314,9 +380,10 @@ class FFmpegLiveReader:
         ffmpeg = self._ffmpeg
         if ffmpeg is None and self._spawn is _default_spawn:
             ffmpeg, _ = require_ffmpeg()
-        command = self.build_command(ffmpeg or "ffmpeg")
         attempt = 0
         while not self._stop.is_set():
+            # Rebuilt every attempt: disable_hwaccel() changes the flags.
+            command = self.build_command(ffmpeg or "ffmpeg")
             stderr_file = tempfile.TemporaryFile(mode="w+b")
             process = None
             try:

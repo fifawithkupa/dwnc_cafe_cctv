@@ -92,6 +92,16 @@ def summarize_records(records: Sequence[dict], interval_seconds: float) -> dict:
         "rss_mb_all": memory_trend(rss_points),
         "ffmpeg_rss_mb": memory_trend(ffmpeg_points, skip=min(2, max(0, len(ffmpeg_points) - 2))),
         "elapsed_s": float(last.get("process", {}).get("elapsed_s", 0.0)) if last else 0.0,
+        # 전송이 꺼져 있었으면 None. 숫자가 0 인 것과 아예 안 보낸 것은 다르다.
+        "publish": (
+            {
+                "sent": int(last["publish"].get("sent", 0)),
+                "failed": int(last["publish"].get("failed", 0)),
+                "last_error": last["publish"].get("last_error"),
+            }
+            if last and isinstance(last.get("publish"), dict)
+            else None
+        ),
     }
 
 
@@ -165,6 +175,14 @@ def render(summary: dict, samples: Optional[dict], name: str) -> str:
     )
     f = summary["ffmpeg_rss_mb"]
     lines.append(f"- 메모리(ffmpeg 디코더): 마지막 {_fmt(f['last'], 'MB', 0)} · 추세 {_fmt(f['mb_per_hour'], 'MB/시간', 0)}")
+    p = summary.get("publish")
+    if p is None:
+        lines.append("- Supabase 전송: 꺼짐")
+    else:
+        lines.append(
+            f"- Supabase 전송 성공 {p['sent']}회 · 실패 {p['failed']}회"
+            + (f" · 마지막 오류: {p['last_error']}" if p["last_error"] else "")
+        )
     if samples:
         c = samples["cores"]
         lines.append("")

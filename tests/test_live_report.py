@@ -9,6 +9,7 @@ from pathlib import Path
 
 from edge.live_report import (
     memory_trend,
+    render,
     summarize_records,
     summarize_samples,
 )
@@ -25,6 +26,18 @@ def _record(index: int, duration: float, rss: float, late: float = 0.0, skipped:
 
 
 class RecordSummaryTests(unittest.TestCase):
+    def test_publish_counts_come_from_the_last_record(self) -> None:
+        records = [_record(0, 30.0, 600), _record(1, 5.0, 900), _record(2, 5.0, 900)]
+        records[-1]["publish"] = {"sent": 40, "failed": 2, "last_error": "HTTP 503"}
+        summary = summarize_records(records, interval_seconds=15.0)
+        self.assertEqual(summary["publish"], {"sent": 40, "failed": 2, "last_error": "HTTP 503"})
+        self.assertIn("전송 성공 40회 · 실패 2회", render(summary, None, "x"))
+
+    def test_no_publish_field_means_publishing_was_off(self) -> None:
+        summary = summarize_records([_record(0, 30.0, 600), _record(1, 5.0, 900)], interval_seconds=15.0)
+        self.assertIsNone(summary["publish"])
+        self.assertIn("Supabase 전송: 꺼짐", render(summary, None, "x"))
+
     def test_first_tick_is_excluded_from_timing_but_reported(self) -> None:
         records = [_record(0, 40.0, 600), _record(1, 5.0, 1000), _record(2, 7.0, 1010), _record(3, 6.0, 1020)]
         summary = summarize_records(records, interval_seconds=15.0)

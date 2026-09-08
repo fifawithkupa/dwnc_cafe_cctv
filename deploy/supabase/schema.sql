@@ -126,3 +126,14 @@ end $$;
 -- insert into public.cafes (id, name) values ('dwnc', '카페 이름');
 -- insert into public.boxes (auth_user_id, cafe_id, label)
 --   values ('<Authentication 에서 만든 박스 사용자의 UUID>', 'dwnc', 'uhho');
+
+-- ── 앱이 먼저 만든 cafes 표를 박스가 갱신할 수 있게 ───────────────────────
+-- 앱은 `cafes.seats_total`·`seats_available`·`congestion` 을 화면에 뿌린다.
+-- 박스가 그 칸을 15초마다 갱신하므로 자기 카페 줄에 한해 쓰기를 연다.
+-- (카메라가 끊긴 동안에는 박스가 이 칸을 건드리지 않는다. 마지막 값이 남고
+--  `congestion_updated_at` 이 멈추므로, 앱이 45초 규칙으로 "확인 중"을 띄운다.)
+drop policy if exists "cafes: box updates own cafe" on public.cafes;
+create policy "cafes: box updates own cafe" on public.cafes
+  for update to authenticated
+  using (id in (select cafe_id from public.boxes where auth_user_id = auth.uid()))
+  with check (id in (select cafe_id from public.boxes where auth_user_id = auth.uid()));

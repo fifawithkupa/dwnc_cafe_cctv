@@ -444,25 +444,36 @@ def _owner_of_each_chair(layout: SeatLayout) -> List[Tuple[Optional[str], Point]
 
 
 def build_draft(layout: SeatLayout) -> FloorPlan:
-    """Project every seat and chair onto the floor and fit them to a canvas."""
-    if layout.floor_reference is None:
-        raise FloorProjectionError(
-            "바닥 기준점이 없어 평면도를 만들 수 없습니다 — calibrate.py 에서 "
-            "[f]로 바닥의 직사각형 네 귀퉁이를 찍고 저장하세요"
-        )
+    """Project every seat and chair onto the floor and fit them to a canvas.
+
+    With floor reference points the positions are a real top-down projection.
+    Without them -- the usual install, where nobody clicked the floor -- the
+    camera image itself is the map: every box lands where the camera sees it
+    and is flagged ``needs_review`` so the editor shows it as "move me".  A
+    roughly right map today beats a precise one that costs another half hour
+    on the ladder, and the editor is where it gets fixed either way.
+    """
     frame_size = (
         int(layout.source.get("width", 1920)),
         int(layout.source.get("height", 1080)),
     )
-    transform = build_transform(layout.floor_reference.image_points, frame_size)
-
     units = layout.judgement_units()
     seat_anchors = [(unit, floor_anchor(unit.box)) for unit in units]
     chair_owners = _owner_of_each_chair(layout)
 
-    projected: List[Optional[Point]] = [
-        transform.project(anchor) for _, anchor in seat_anchors
-    ] + [transform.project(anchor) for _, anchor in chair_owners]
+    if layout.floor_reference is not None:
+        transform = build_transform(layout.floor_reference.image_points, frame_size)
+        projected: List[Optional[Point]] = [
+            transform.project(anchor) for _, anchor in seat_anchors
+        ] + [transform.project(anchor) for _, anchor in chair_owners]
+        review_all = False
+    else:
+        # 화면 좌표 그대로. 자리는 상자 한가운데, 의자는 바닥에 닿는 점.
+        projected = [
+            ((unit.box[0] + unit.box[2]) / 2.0, (unit.box[1] + unit.box[3]) / 2.0)
+            for unit, _ in seat_anchors
+        ] + [anchor for _, anchor in chair_owners]
+        review_all = True
 
     placed = [point for point in projected if point is not None]
     if not placed:
@@ -493,7 +504,7 @@ def build_draft(layout: SeatLayout) -> FloorPlan:
         return (
             (point[0] - min_x) * scale + margin,
             (point[1] - min_y) * scale + margin,
-            False,
+            review_all,
         )
 
     seats: List[FloorSeat] = []
@@ -531,11 +542,18 @@ def build_draft(layout: SeatLayout) -> FloorPlan:
 
     barred, counters = arrange_bars(tuple(seats))
     arranged_seats = separate_overlaps(barred, counters)
+    arranged_chairs = arrange_chairs(arranged_seats, tuple(chairs))
+    if review_all:
+        # 정돈(바 정렬·의자 배치)은 자리를 서로 예쁘게 놓을 뿐, 이 지도가
+        # 화면 좌표에서 왔다는 사실을 바꾸지 않는다.  하나도 빠짐없이
+        # 사람이 봐야 한다.
+        arranged_seats = tuple(replace(seat, needs_review=True) for seat in arranged_seats)
+        arranged_chairs = tuple(replace(chair, needs_review=True) for chair in arranged_chairs)
     return FloorPlan(
         schema_version=FLOORPLAN_SCHEMA_VERSION,
         extent=extent,
         seats=arranged_seats,
-        chairs=arrange_chairs(arranged_seats, tuple(chairs)),
+        chairs=arranged_chairs,
         counters=counters,
         landmarks=(),
         walls=(),
@@ -685,3 +703,52 @@ def load_floorplan(path: Path) -> FloorPlan:
             (float(point[0]), float(point[1])) for point in data.get("walls", [])
         ),
     )
+
+
+def _say(message: str) -> None:
+    """Print, and survive a console whose encoding cannot hold the message.
+
+    A Windows terminal in cp949 raises on characters the message may carry,
+    and a crash while reporting success would look like a failed install.
+    """
+    try:
+        print(message)
+    except Exception:  # noqa: BLE001
+        print(message.encode("ascii", "replace").decode("ascii"))
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """평면도 초안을 만든다.
+
+    파일이 이미 있으면 건드리지 않는다 -- 사람이 편집기에서 옮겨 놓은 것을
+    설치 스크립트가 조용히 덮으면 그날 작업이 사라진다.
+    """
+    import argparse
+
+    from engine.seatnow_layout import load_layout
+
+    parser = argparse.ArgumentParser(description="레이아웃에서 손님용 지도 초안을 만든다")
+    parser.add_argument("--layout", type=Path, required=True, help="calibrate.py 가 만든 레이아웃")
+    parser.add_argument("--floorplan", type=Path, help="출력 경로 (기본: <layout>.floorplan.json)")
+    parser.add_argument("--force", action="store_true", help="이미 있어도 덮어쓴다")
+    args = parser.parse_args(argv)
+
+    out = args.floorplan or args.layout.with_name(args.layout.stem + ".floorplan.json")
+    if out.exists() and not args.force:
+        _say(f"이미 있음: {out} (그대로 둡니다. 덮어쓰려면 --force)")
+        return 0
+    plan = build_draft(load_layout(args.layout))
+    save_floorplan(plan, out)
+    review = sum(1 for seat in plan.seats if seat.needs_review)
+    _say(
+        f"저장됨: {out} (자리 {len(plan.seats)}개, 의자 {len(plan.chairs)}개"
+        + (f", 위치 확인 필요 {review}개: 편집기로 옮긴다" if review else "")
+        + ")"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

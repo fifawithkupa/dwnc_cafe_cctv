@@ -110,11 +110,30 @@ class BuildDraftTests(unittest.TestCase):
             self.assertGreaterEqual(seat.y, 0.0)
             self.assertLessEqual(seat.y, height)
 
-    def test_no_floor_reference_is_refused(self):
-        # Silently drawing an empty map would look like "this cafe has no
-        # seats" rather than "nobody clicked the floor points yet".
-        with self.assertRaises(FloorProjectionError):
-            build_draft(layout(with_reference=False))
+    def test_no_floor_reference_places_seats_where_the_camera_sees_them(self):
+        # 설치 당일 바닥 네 점을 안 찍는 것이 기본값이다.  그때는 카메라
+        # 화면이 곧 지도이고, 전부 "옮겨야 함"으로 표시해 편집기가 알려준다.
+        plan = build_draft(layout(with_reference=False))
+        self.assertEqual(len(plan.seats), len(layout(with_reference=False).judgement_units()))
+        self.assertTrue(all(seat.needs_review for seat in plan.seats))
+        self.assertTrue(all(chair.needs_review for chair in plan.chairs))
+        width, height = plan.extent
+        for seat in plan.seats:
+            self.assertGreaterEqual(seat.x, 0.0)
+            self.assertGreaterEqual(seat.y, 0.0)
+            self.assertLessEqual(seat.x, width)
+            self.assertLessEqual(seat.y, height)
+
+    def test_no_floor_reference_keeps_left_right_order_of_the_image(self):
+        plan = build_draft(layout(with_reference=False))
+        by_id = {seat.seat_id: seat for seat in plan.seats}
+        # 화면에서 T1 상자(800~1000)는 BAR7 칸(1100~)보다 왼쪽이다.
+        bar = min((s for s in plan.seats if s.seat_id != "T1"), key=lambda s: s.x)
+        self.assertLess(by_id["T1"].x, bar.x)
+
+    def test_with_floor_reference_still_projects(self):
+        projected = build_draft(layout(with_reference=True))
+        self.assertFalse(all(seat.needs_review for seat in projected.seats))
 
     def test_landmarks_start_empty(self):
         self.assertEqual(build_draft(layout()).landmarks, ())
@@ -561,6 +580,41 @@ class ClearanceTests(unittest.TestCase):
                                         self._counter_box(counter)),
                     f"{seat.seat_id} 이 카운터 위에 겹쳤다",
                 )
+
+
+class FloorplanCommandTests(unittest.TestCase):
+    """`python -m install.floorplan` — 설치 당일 지도 초안을 만드는 명령."""
+
+    def _layout_file(self, folder):
+        from engine.seatnow_layout import save_layout
+
+        path = Path(folder) / "cafe.json"
+        save_layout(layout(with_reference=False), path)
+        return path
+
+    def test_writes_a_draft_next_to_the_layout(self):
+        from install.floorplan import main
+
+        with tempfile.TemporaryDirectory() as folder:
+            layout_path = self._layout_file(folder)
+            self.assertEqual(main(["--layout", str(layout_path)]), 0)
+            out = Path(folder) / "cafe.floorplan.json"
+            self.assertTrue(out.exists())
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["schema_version"], FLOORPLAN_SCHEMA_VERSION)
+            self.assertTrue(all(seat["needs_review"] for seat in data["seats"]))
+
+    def test_existing_file_is_left_alone_unless_forced(self):
+        from install.floorplan import main
+
+        with tempfile.TemporaryDirectory() as folder:
+            layout_path = self._layout_file(folder)
+            out = Path(folder) / "cafe.floorplan.json"
+            out.write_text('{"hand": "edited"}', encoding="utf-8")
+            self.assertEqual(main(["--layout", str(layout_path)]), 0)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), {"hand": "edited"})
+            self.assertEqual(main(["--layout", str(layout_path), "--force"]), 0)
+            self.assertIn("seats", json.loads(out.read_text(encoding="utf-8")))
 
 
 if __name__ == "__main__":

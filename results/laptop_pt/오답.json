@@ -1,0 +1,645 @@
+{
+  "run_dir": "results\\laptop_pt",
+  "log": "results\\laptop_pt\\log.jsonl",
+  "summary": {
+    "total": 72,
+    "오답": 2,
+    "유지": 0,
+    "지연": 3,
+    "가림모름": 9,
+    "맞음": 58,
+    "화각밖": 0,
+    "정답없음": 0,
+    "scored": 72,
+    "accepted": 70,
+    "fixable": 2,
+    "evidence_missed": 10,
+    "evidence_imagined": 1,
+    "directions": {
+      "놓침": 2
+    }
+  },
+  "misses": [
+    {
+      "timestamp": 30.0,
+      "seat": "T5",
+      "truth": "occupied",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "오답",
+      "direction": "놓침",
+      "reason": "no_customer_evidence",
+      "note": "",
+      "truth_evidence": "t",
+      "our_evidence": "",
+      "missed_evidence": "t",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1355.0,
+        583.0,
+        1648.0,
+        763.0
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1291.05,
+            472.06,
+            1403.95,
+            655.77
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            1224.72,
+            537.5,
+            1377.51,
+            733.18
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            1645.0,
+            667.0,
+            1776.0,
+            799.0
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 45.0,
+      "seat": "T5",
+      "truth": "occupied",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "오답",
+      "direction": "놓침",
+      "reason": "no_customer_evidence",
+      "note": "",
+      "truth_evidence": "t",
+      "our_evidence": "",
+      "missed_evidence": "t",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1355.0,
+        583.0,
+        1648.0,
+        763.0
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1279.65,
+            480.62,
+            1390.84,
+            666.68
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            1209.93,
+            545.18,
+            1378.93,
+            763.47
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            1645.0,
+            667.0,
+            1776.0,
+            799.0
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    }
+  ],
+  "evidence_gaps": [
+    {
+      "timestamp": 0.0,
+      "seat": "T6",
+      "truth": "occupied",
+      "app_state": "occupied",
+      "evidence_state": "occupied",
+      "category": "맞음",
+      "direction": null,
+      "reason": "objects:book",
+      "note": "",
+      "truth_evidence": "tc",
+      "our_evidence": "t",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [
+        {
+          "class": "book",
+          "confidence": 0.3859,
+          "box": [
+            827.69,
+            633.19,
+            941.13,
+            697.93
+          ],
+          "share": 1.0
+        }
+      ],
+      "chair_objects": [],
+      "seat_box": [
+        695.33,
+        546.84,
+        1052.42,
+        933.59
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            699.36,
+            585.89,
+            807.21,
+            847.52
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            800.1,
+            675.19,
+            969.57,
+            931.97
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            797.66,
+            538.54,
+            866.52,
+            600.27
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            947.97,
+            615.01,
+            1048.91,
+            799.36
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            978.4,
+            488.08,
+            1067.41,
+            752.36
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 15.0,
+      "seat": "T6",
+      "truth": "occupied",
+      "app_state": "occupied",
+      "evidence_state": "occupied",
+      "category": "맞음",
+      "direction": null,
+      "reason": "objects:backpack,book",
+      "note": "",
+      "truth_evidence": "tc",
+      "our_evidence": "t",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [
+        {
+          "class": "book",
+          "confidence": 0.455,
+          "box": [
+            812.21,
+            611.08,
+            927.2,
+            675.21
+          ],
+          "share": 1.0
+        },
+        {
+          "class": "backpack",
+          "confidence": 0.1548,
+          "box": [
+            944.37,
+            511.42,
+            1033.43,
+            624.48
+          ],
+          "share": 0.7574
+        }
+      ],
+      "chair_objects": [],
+      "seat_box": [
+        693.76,
+        544.84,
+        1051.0,
+        932.01
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            693.47,
+            578.96,
+            802.04,
+            839.1
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            800.1,
+            675.19,
+            969.57,
+            931.97
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            797.66,
+            538.54,
+            866.52,
+            600.27
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            939.79,
+            654.18,
+            1037.77,
+            814.22
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            978.4,
+            488.08,
+            1067.41,
+            752.36
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 15.0,
+      "seat": "BAR7-4",
+      "truth": "empty",
+      "app_state": "unknown",
+      "evidence_state": "unknown",
+      "category": "가림모름",
+      "direction": "과잉모름",
+      "reason": "spans_multiple_seats",
+      "note": "",
+      "truth_evidence": "",
+      "our_evidence": "s",
+      "missed_evidence": "",
+      "imagined_evidence": "s",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1333.92,
+        359.01,
+        1439.34,
+        476.26
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1333.92,
+            359.01,
+            1439.34,
+            476.26
+          ],
+          "confidence": 1.0,
+          "occupied": true
+        }
+      ]
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "T3",
+      "truth": "occupied",
+      "app_state": "unknown",
+      "evidence_state": "unknown",
+      "category": "가림모름",
+      "direction": "과잉모름",
+      "reason": "occluded_by_person:0.58",
+      "note": "",
+      "truth_evidence": "s",
+      "our_evidence": "",
+      "missed_evidence": "s",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        880.0,
+        368.0,
+        1000.0,
+        418.0
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            901.1,
+            390.58,
+            944.52,
+            471.65
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "T6",
+      "truth": "occupied",
+      "app_state": "occupied",
+      "evidence_state": "occupied",
+      "category": "맞음",
+      "direction": null,
+      "reason": "objects:book",
+      "note": "",
+      "truth_evidence": "tc",
+      "our_evidence": "t",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [
+        {
+          "class": "book",
+          "confidence": 0.3123,
+          "box": [
+            847.19,
+            587.42,
+            960.56,
+            651.58
+          ],
+          "share": 1.0
+        }
+      ],
+      "chair_objects": [],
+      "seat_box": [
+        691.16,
+        535.4,
+        1049.2,
+        923.66
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            701.93,
+            565.11,
+            810.29,
+            824.48
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            800.1,
+            675.19,
+            969.57,
+            931.97
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            797.66,
+            538.54,
+            866.52,
+            600.27
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            946.07,
+            671.7,
+            1042.3,
+            815.17
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        },
+        {
+          "class": "chair",
+          "box": [
+            978.4,
+            488.08,
+            1067.41,
+            752.36
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 30.0,
+      "seat": "BAR7-6",
+      "truth": "empty",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "맞음",
+      "direction": null,
+      "reason": "no_customer_evidence",
+      "note": "",
+      "truth_evidence": "c",
+      "our_evidence": "",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1580.84,
+        379.99,
+        1700.99,
+        525.32
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1580.84,
+            379.99,
+            1700.99,
+            525.32
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 45.0,
+      "seat": "BAR7-6",
+      "truth": "empty",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "맞음",
+      "direction": null,
+      "reason": "no_customer_evidence",
+      "note": "",
+      "truth_evidence": "c",
+      "our_evidence": "",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1580.84,
+        379.99,
+        1700.99,
+        525.32
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1580.84,
+            379.99,
+            1700.99,
+            525.32
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 60.0,
+      "seat": "BAR7-6",
+      "truth": "empty",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "맞음",
+      "direction": null,
+      "reason": "no_customer_evidence",
+      "note": "테이블 옮김",
+      "truth_evidence": "c",
+      "our_evidence": "",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1580.84,
+        379.99,
+        1700.99,
+        525.32
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1580.84,
+            379.99,
+            1700.99,
+            525.32
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    },
+    {
+      "timestamp": 75.0,
+      "seat": "BAR7-6",
+      "truth": "empty",
+      "app_state": "empty",
+      "evidence_state": "empty",
+      "category": "맞음",
+      "direction": null,
+      "reason": "no_customer_evidence",
+      "note": "",
+      "truth_evidence": "c",
+      "our_evidence": "",
+      "missed_evidence": "c",
+      "imagined_evidence": "",
+      "objects": [],
+      "chair_objects": [],
+      "seat_box": [
+        1580.84,
+        379.99,
+        1700.99,
+        525.32
+      ],
+      "connected_chairs": [
+        {
+          "class": "chair",
+          "box": [
+            1580.84,
+            379.99,
+            1700.99,
+            525.32
+          ],
+          "confidence": 1.0,
+          "occupied": false
+        }
+      ]
+    }
+  ]
+}

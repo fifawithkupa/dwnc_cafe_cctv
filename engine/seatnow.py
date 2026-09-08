@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -47,6 +48,16 @@ from engine.seatnow_live import (
     should_disable_hwaccel,
     probe_stream,
     process_rss_mb,
+)
+from edge.publish import (
+    FloorplanWatcher,
+    _publish_stats_for_record,
+    box_version,
+    floorplan_path_for,
+    gap_payload,
+    live_payload,
+    publisher_from_env,
+    seat_index_from_layout,
 )
 
 
@@ -720,6 +731,48 @@ def _percentile(values, fraction: float):
     return ordered[index]
 
 
+def _publish_warn(error: BaseException) -> None:
+    """Say a transport failed, and survive a console that cannot print it.
+
+    A Windows terminal in cp949 raises on the warning sign, and a crash in
+    the warning would be a crash in the judging loop.
+    """
+    message = f"Supabase 전송 준비 실패: {type(error).__name__}: {error}"
+    try:
+        print(f"⚠️  {message}", flush=True)
+    except Exception:  # noqa: BLE001
+        try:
+            print(message.encode("ascii", "replace").decode("ascii"), flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _publish_tick(publisher, record: dict, cafe_id: str, version: str) -> None:
+    """Hand one judged tick to the publisher.  Nothing here may raise.
+
+    A transport problem must never stop the judging loop: the box keeps
+    its own JSONL either way, and the app falls back to "확인 중" through
+    the 45s staleness rule (docs/앱연동.md).
+    """
+    if publisher is None:
+        return
+    try:
+        publisher.publish_live(live_payload(record, cafe_id, version))
+        record["publish"] = _publish_stats_for_record(publisher)
+    except Exception as error:  # noqa: BLE001 -- 전송 문제는 판정을 멈추지 않는다
+        _publish_warn(error)
+
+
+def _publish_gap(publisher, seat_index: list, cafe_id: str, version: str, wall_clock: str) -> None:
+    """A hole in the log goes out as "every seat unknown", never as old values."""
+    if publisher is None:
+        return
+    try:
+        publisher.publish_live(gap_payload(seat_index, cafe_id, version, wall_clock))
+    except Exception as error:  # noqa: BLE001
+        _publish_warn(error)
+
+
 def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     """Judge a camera stream on a wall-clock schedule until told to stop.
 
@@ -752,6 +805,23 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     )
     hwaccel = resolve_hwaccel(args.hwaccel, url, prober=probe_live_hwaccel)
     print(hwaccel.describe(), flush=True)
+
+    publisher, publish_state = publisher_from_env(os.environ)
+    version = box_version()
+    cafe_id = publisher.cafe_id if publisher is not None else ""
+    seat_index = seat_index_from_layout(analyzer.layout) if analyzer.layout is not None else []
+    floorplan_watcher: Optional[FloorplanWatcher] = None
+    print(f"Supabase 전송: {publish_state}", flush=True)
+    if publisher is not None:
+        publisher.start()
+        if args.layout is not None:
+            floorplan_watcher = FloorplanWatcher(floorplan_path_for(args.layout))
+            if not floorplan_watcher.path.exists():
+                print(
+                    f"지도 없음: {floorplan_watcher.path} 가 없어 cafe_maps 는 올리지 않습니다 "
+                    f"(python -m install.floorplan --layout {args.layout} 로 초안을 만든다)",
+                    flush=True,
+                )
     if hwaccel.fallback:
         print(
             "⚠️  하드웨어 디코딩이 잡히지 않았습니다 — 소프트웨어로 돕니다. "
@@ -830,6 +900,11 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         try:
             runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer=None)
             while True:
+                if floorplan_watcher is not None and publisher is not None:
+                    floorplan = floorplan_watcher.changed()
+                    if floorplan is not None:
+                        publisher.publish_map(floorplan)
+                        print(f"지도 올림: {floorplan_watcher.path}", flush=True)
                 if rotator is not None:
                     rotated = rotator.maybe_rotate()
                     if rotated is not log_file:
@@ -898,6 +973,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     }
                     log_file.write(json.dumps(gap, ensure_ascii=False) + "\n")
                     log_file.flush()
+                    _publish_gap(publisher, seat_index, cafe_id, version, gap["wall_clock"])
                     frames_at_last_tick = stats["frames_decoded"]
                     schedule.advance()
                     continue
@@ -931,7 +1007,13 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         "elapsed_s": round(time.perf_counter() - started, 1),
                     },
                 }
+                if publisher is not None:
+                    try:
+                        extra["publish"] = _publish_stats_for_record(publisher)
+                    except Exception:  # noqa: BLE001
+                        pass
                 record = runner.judge(burst, center_index, center_time, extra=extra)
+                _publish_tick(publisher, record, cafe_id, version)
                 tick_durations.append(record["tick"]["duration_s"])
                 inference_ms.append(record.get("inference_ms", 0.0))
                 late_seconds.append(late)
@@ -952,6 +1034,8 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         print("Interrupted — 요약을 쓰고 끝냅니다", file=sys.stderr, flush=True)
     finally:
         reader.close()
+        if publisher is not None:
+            publisher.stop()
 
     stats = reader.stats()
     elapsed = time.perf_counter() - started
@@ -997,6 +1081,9 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "reconnects": stats["reconnects"],
             "last_error": stats["last_error"],
         },
+        "publish": (
+            {"enabled": True, **publisher.stats()} if publisher is not None else {"enabled": False}
+        ),
         "interrupted": interrupted,
         "log": str(log_path),
     }
@@ -1026,6 +1113,12 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         + (" ⚠️ 실행 중 하드웨어가 죽어 소프트웨어로 갈아탐" if fallback_during_run else "")
         + (" ⚠️ 실행 중 하드웨어 실패 흔적 있음" if stats["hwaccel_suspect"] and not fallback_during_run else "")
     )
+    if publisher is not None:
+        ps = summary["publish"]
+        print(
+            f"Supabase 전송: 성공 {ps['sent']}회 · 실패 {ps['failed']}회"
+            + (f" · 마지막 오류: {ps['last_error']}" if ps["last_error"] else "")
+        )
     print(f"JSONL log: {log_path}")
     print(f"Summary: {summary_path}")
     if processed == 0 and not interrupted:

@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from edge.publish import (
+    ENV_KEYS,
     GAP_REASON,
     SEATS_SCHEMA_VERSION,
+    FloorplanWatcher,
+    SupabasePublisher,
+    box_version,
+    floorplan_path_for,
     gap_payload,
     live_payload,
+    publisher_from_env,
     seat_index_from_layout,
 )
 from engine.seatnow_layout import LayoutChair, LayoutSeat, LayoutTable, SeatLayout
@@ -147,6 +160,264 @@ class SeatIndexTest(unittest.TestCase):
                 {"seat_id": "BAR7-2", "kind": "bar_seat", "zone": "BAR7"},
             ],
         )
+
+
+class _FakeSupabase:
+    """Auth + PostgREST 흉내. 받은 요청을 기록하고, 정해진 횟수만큼 401 을 돌려준다."""
+
+    def __init__(self):
+        self.requests: list = []
+        self.unauthorized_left = 0
+        self.tokens_issued = 0
+        self.lock = threading.Lock()
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):  # 조용히
+                pass
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                with outer.lock:
+                    outer.requests.append(
+                        {
+                            "path": self.path,
+                            "headers": {k.lower(): v for k, v in self.headers.items()},
+                            "body": json.loads(body) if body else None,
+                        }
+                    )
+                    if self.path.startswith("/auth/v1/token"):
+                        outer.tokens_issued += 1
+                        payload = json.dumps(
+                            {"access_token": f"tok{outer.tokens_issued}", "expires_in": 3600}
+                        ).encode()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(payload)))
+                        self.end_headers()
+                        self.wfile.write(payload)
+                        return
+                    if outer.unauthorized_left > 0:
+                        outer.unauthorized_left -= 1
+                        self.send_response(401)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                self.send_response(201)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def wait_for(self, count, timeout=5.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self.lock:
+                if len(self.requests) >= count:
+                    return True
+            time.sleep(0.02)
+        return False
+
+    def upserts(self, table):
+        with self.lock:
+            return [r for r in self.requests if r["path"] == f"/rest/v1/{table}"]
+
+
+def _wait(predicate, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+class PublisherTest(unittest.TestCase):
+    def setUp(self):
+        self.fake = _FakeSupabase()
+        self.logs: list = []
+        self.publisher = SupabasePublisher(
+            self.fake.url,
+            "anon-key",
+            "box@x",
+            "pw",
+            "dwnc",
+            timeout=2.0,
+            sleep=lambda s: time.sleep(min(s, 0.01)),
+            log=self.logs.append,
+        )
+
+    def tearDown(self):
+        self.publisher.stop()
+        self.fake.close()
+
+    def _payload(self, n=1):
+        return {
+            "cafe_id": "dwnc",
+            "status": "live",
+            "total_tables": n,
+            "occupied_tables": 0,
+            "free_tables": n,
+            "unknown_tables": 0,
+            "seats": [],
+            "tick_at": "t",
+            "box_version": "v",
+            "schema_version": 1,
+        }
+
+    def test_logs_in_then_upserts_with_merge_duplicates(self):
+        self.publisher.start()
+        self.publisher.publish_live(self._payload())
+        self.assertTrue(self.fake.wait_for(2))
+        login, upsert = self.fake.requests[0], self.fake.requests[1]
+        self.assertEqual(login["path"], "/auth/v1/token?grant_type=password")
+        self.assertEqual(login["headers"]["apikey"], "anon-key")
+        self.assertEqual(login["body"], {"email": "box@x", "password": "pw"})
+        self.assertEqual(upsert["path"], "/rest/v1/cafe_live")
+        self.assertEqual(upsert["headers"]["authorization"], "Bearer tok1")
+        self.assertEqual(upsert["headers"]["apikey"], "anon-key")
+        self.assertIn("resolution=merge-duplicates", upsert["headers"]["prefer"])
+        self.assertEqual(upsert["body"]["cafe_id"], "dwnc")
+        self.assertTrue(_wait(lambda: self.publisher.stats()["sent"] == 1))
+
+    def test_only_the_latest_value_is_sent_when_ticks_pile_up(self):
+        # 시작 전에 세 개를 넣으면 마지막 것 하나만 간다.
+        self.publisher.publish_live(self._payload(1))
+        self.publisher.publish_live(self._payload(2))
+        self.publisher.publish_live(self._payload(3))
+        self.publisher.start()
+        self.assertTrue(_wait(lambda: self.publisher.stats()["sent"] == 1))
+        time.sleep(0.2)
+        upserts = self.fake.upserts("cafe_live")
+        self.assertEqual(len(upserts), 1)
+        self.assertEqual(upserts[0]["body"]["total_tables"], 3)
+
+    def test_401_triggers_one_relogin_and_a_retry(self):
+        self.fake.unauthorized_left = 1
+        self.publisher.start()
+        self.publisher.publish_live(self._payload())
+        self.assertTrue(_wait(lambda: self.publisher.stats()["sent"] == 1))
+        paths = [r["path"] for r in self.fake.requests]
+        self.assertEqual(
+            paths,
+            [
+                "/auth/v1/token?grant_type=password",
+                "/rest/v1/cafe_live",
+                "/auth/v1/token?grant_type=password",
+                "/rest/v1/cafe_live",
+            ],
+        )
+        self.assertEqual(
+            self.fake.upserts("cafe_live")[-1]["headers"]["authorization"], "Bearer tok2"
+        )
+
+    def test_unreachable_server_counts_failures_and_never_raises(self):
+        dead = SupabasePublisher(
+            "http://127.0.0.1:9",
+            "k",
+            "e",
+            "p",
+            "dwnc",
+            timeout=0.5,
+            sleep=lambda s: time.sleep(min(s, 0.01)),
+            log=self.logs.append,
+        )
+        dead.start()
+        dead.publish_live(self._payload())
+        self.assertTrue(_wait(lambda: dead.stats()["failed"] >= 1))
+        stats = dead.stats()
+        self.assertEqual(stats["sent"], 0)
+        self.assertIsNotNone(stats["last_error"])
+        self.assertGreater(stats["backoff_s"], 0.0)
+        self.assertTrue(any("전송 실패" in line for line in self.logs))
+        dead.stop()
+
+    def test_map_goes_to_cafe_maps_with_only_cafe_id_and_floorplan(self):
+        self.publisher.start()
+        self.publisher.publish_map({"schema_version": 2, "seats": []})
+        self.assertTrue(_wait(lambda: len(self.fake.upserts("cafe_maps")) == 1))
+        body = self.fake.upserts("cafe_maps")[0]["body"]
+        self.assertEqual(body, {"cafe_id": "dwnc", "floorplan": {"schema_version": 2, "seats": []}})
+
+    def test_stop_returns_quickly(self):
+        self.publisher.start()
+        started = time.time()
+        self.publisher.stop()
+        self.assertLess(time.time() - started, 3.0)
+
+
+class EnvTest(unittest.TestCase):
+    FULL = {
+        "SEATNOW_CAFE_ID": "dwnc",
+        "SEATNOW_SUPABASE_URL": "http://127.0.0.1:9/",
+        "SEATNOW_SUPABASE_ANON_KEY": "k",
+        "SEATNOW_SUPABASE_EMAIL": "e",
+        "SEATNOW_SUPABASE_PASSWORD": "p",
+    }
+
+    def test_all_five_keys_make_a_publisher(self):
+        publisher, message = publisher_from_env(self.FULL)
+        self.assertIsNotNone(publisher)
+        self.assertEqual(publisher.cafe_id, "dwnc")
+        self.assertEqual(message, "켜짐 (dwnc)")
+
+    def test_any_missing_key_turns_it_off_and_names_the_key(self):
+        for key in ENV_KEYS:
+            env = dict(self.FULL)
+            del env[key]
+            publisher, message = publisher_from_env(env)
+            self.assertIsNone(publisher, key)
+            self.assertEqual(message, f"꺼짐 ({key} 없음)")
+
+    def test_blank_value_counts_as_missing(self):
+        env = dict(self.FULL, SEATNOW_SUPABASE_PASSWORD="  ")
+        publisher, message = publisher_from_env(env)
+        self.assertIsNone(publisher)
+        self.assertIn("SEATNOW_SUPABASE_PASSWORD", message)
+
+
+class BoxVersionTest(unittest.TestCase):
+    def test_repo_gives_a_short_hash(self):
+        version = box_version()
+        self.assertRegex(version, r"^[0-9a-f]{7,12}$")
+
+    def test_outside_a_repo_is_unknown(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(box_version(Path(folder)), "unknown")
+
+
+class FloorplanWatcherTest(unittest.TestCase):
+    def test_path_is_next_to_the_layout(self):
+        self.assertEqual(
+            floorplan_path_for(Path("layouts/cafe.json")), Path("layouts/cafe.floorplan.json")
+        )
+
+    def test_reports_content_once_per_change(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "a.floorplan.json"
+            watcher = FloorplanWatcher(path)
+            self.assertIsNone(watcher.changed())  # 파일 없음
+            path.write_text('{"schema_version": 2}', encoding="utf-8")
+            self.assertEqual(watcher.changed(), {"schema_version": 2})
+            self.assertIsNone(watcher.changed())  # 안 바뀜
+            path.write_text('{"schema_version": 3}', encoding="utf-8")
+            later = time.time() + 10
+            os.utime(path, (later, later))
+            self.assertEqual(watcher.changed(), {"schema_version": 3})
+
+    def test_broken_json_is_ignored(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "a.floorplan.json"
+            path.write_text("{not json", encoding="utf-8")
+            self.assertIsNone(FloorplanWatcher(path).changed())
 
 
 if __name__ == "__main__":

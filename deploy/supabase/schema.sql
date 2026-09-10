@@ -127,13 +127,10 @@ end $$;
 -- insert into public.boxes (auth_user_id, cafe_id, label)
 --   values ('<Authentication 에서 만든 박스 사용자의 UUID>', 'dwnc', 'uhho');
 
--- ── 앱이 먼저 만든 cafes 표를 박스가 갱신할 수 있게 ───────────────────────
--- 앱은 `cafes.seats_total`·`seats_available`·`congestion` 을 화면에 뿌린다.
--- 박스가 그 칸을 15초마다 갱신하므로 자기 카페 줄에 한해 쓰기를 연다.
--- (카메라가 끊긴 동안에는 박스가 이 칸을 건드리지 않는다. 마지막 값이 남고
---  `congestion_updated_at` 이 멈추므로, 앱이 45초 규칙으로 "확인 중"을 띄운다.)
-drop policy if exists "cafes: box updates own cafe" on public.cafes;
-create policy "cafes: box updates own cafe" on public.cafes
-  for update to authenticated
-  using (id in (select cafe_id from public.boxes where auth_user_id = auth.uid()))
-  with check (id in (select cafe_id from public.boxes where auth_user_id = auth.uid()));
+-- ── 앱이 먼저 만든 cafes 표는 박스가 건드리지 않는다 (2026-09-10 확인·결정) ────
+-- 실제 프로젝트를 읽어보니:
+--  * 앱에는 자리별 표 `seats` 가 따로 있고, 트리거 `sync_cafe_seat_count` 가
+--    `cafes.seats_total`·`seats_available` 을 그 표에서 다시 계산한다.
+--  * `cafes.congestion` 은 check 제약(`cafes_congestion_ck`)으로
+--    'available'/'full' 두 값만 받는다.
+-- 그래서 cafes 에 쓰기 정책을 열지 않는다.  박스는 cafe_live·cafe_maps 에만 쓴다.

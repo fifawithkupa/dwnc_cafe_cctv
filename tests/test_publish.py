@@ -12,17 +12,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from edge.publish import (
-    CONGESTION_BUSY,
-    CONGESTION_FREE,
-    CONGESTION_NORMAL,
     ENV_KEYS,
     GAP_REASON,
     SEATS_SCHEMA_VERSION,
     FloorplanWatcher,
     SupabasePublisher,
     box_version,
-    cafes_payload,
-    congestion_for,
     floorplan_path_for,
     gap_payload,
     live_payload,
@@ -321,8 +316,7 @@ class PublisherTest(unittest.TestCase):
         self.fake.unauthorized_left = 1
         self.publisher.start()
         self.publisher.publish_live(self._payload())
-        # cafes 갱신까지 끝나야 이번 틱의 요청이 다 찍힌다.
-        self.assertTrue(_wait(lambda: len(self.fake.patches("cafes")) == 1))
+        self.assertTrue(_wait(lambda: self.publisher.stats()["sent"] == 1))
         paths = [r["path"] for r in self.fake.requests]
         self.assertEqual(
             paths,
@@ -331,8 +325,6 @@ class PublisherTest(unittest.TestCase):
                 "/rest/v1/cafe_live",
                 "/auth/v1/token?grant_type=password",
                 "/rest/v1/cafe_live",
-                # 같은 틱에 앱이 읽는 칸도 갱신한다 (토큰은 이미 새것이라 재로그인 없음).
-                "/rest/v1/cafes?id=eq.dwnc",
             ],
         )
         self.assertEqual(
@@ -367,25 +359,16 @@ class PublisherTest(unittest.TestCase):
         body = self.fake.upserts("cafe_maps")[0]["body"]
         self.assertEqual(body, {"cafe_id": "dwnc", "floorplan": {"schema_version": 2, "seats": []}})
 
-    def test_live_row_also_updates_the_columns_the_app_reads(self):
+    def test_the_app_owned_cafes_table_is_never_touched(self):
+        # 앱의 `cafes` 는 앱 자체 트리거가 채우고, congestion 은 우리 낱말을 거부한다.
+        # live 든 gap 이든 박스는 cafe_live 에만 쓴다 (2026-09-10 결정).
         self.publisher.start()
         self.publisher.publish_live(self._payload(9, occupied=6))
-        self.assertTrue(_wait(lambda: len(self.fake.patches("cafes")) == 1))
-        patch = self.fake.patches("cafes")[0]
-        self.assertIn("id=eq.dwnc", patch["path"])
-        self.assertEqual(patch["body"]["seats_total"], 9)
-        self.assertEqual(patch["body"]["seats_available"], 3)
-        self.assertEqual(patch["body"]["congestion"], CONGESTION_BUSY)
-        self.assertIn("congestion_updated_at", patch["body"])
-        self.assertIn("last_updated", patch["body"])
-
-    def test_a_gap_leaves_the_app_columns_alone(self):
-        self.publisher.start()
         self.publisher.publish_live(self._payload(9, status="gap"))
-        self.assertTrue(_wait(lambda: len(self.fake.upserts("cafe_live")) == 1))
+        self.assertTrue(_wait(lambda: self.publisher.stats()["sent"] >= 1))
         time.sleep(0.2)
-        # 끊긴 동안 마지막 값을 덮으면 앱이 "만석"이나 "다 비었음"을 보여준다.
         self.assertEqual(self.fake.patches("cafes"), [])
+        self.assertTrue(all("/cafes" not in r["path"] for r in self.fake.requests))
 
     def test_stop_returns_quickly(self):
         self.publisher.start()
@@ -458,29 +441,6 @@ class FloorplanWatcherTest(unittest.TestCase):
             path = Path(folder) / "a.floorplan.json"
             path.write_text("{not json", encoding="utf-8")
             self.assertIsNone(FloorplanWatcher(path).changed())
-
-
-class CongestionTest(unittest.TestCase):
-    def test_words_follow_the_occupied_share(self):
-        self.assertEqual(congestion_for(0, 12), CONGESTION_FREE)
-        self.assertEqual(congestion_for(3, 12), CONGESTION_FREE)
-        self.assertEqual(congestion_for(6, 12), CONGESTION_NORMAL)
-        self.assertEqual(congestion_for(9, 12), CONGESTION_BUSY)
-        self.assertEqual(congestion_for(12, 12), CONGESTION_BUSY)
-
-    def test_no_seats_at_all_is_not_a_crash(self):
-        self.assertEqual(congestion_for(0, 0), CONGESTION_NORMAL)
-
-    def test_payload_carries_only_the_five_columns(self):
-        payload = cafes_payload(
-            {"total_tables": 6, "free_tables": 2, "occupied_tables": 3}, "2026-09-08T22:00:00+09:00"
-        )
-        self.assertEqual(
-            sorted(payload),
-            ["congestion", "congestion_updated_at", "last_updated", "seats_available", "seats_total"],
-        )
-        # 확실히 빈 것만 센다: 6 - 3 = 3 이 아니라 2 다 (하나는 모름).
-        self.assertEqual(payload["seats_available"], 2)
 
 
 if __name__ == "__main__":

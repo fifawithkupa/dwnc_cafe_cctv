@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 import subprocess
 import threading
@@ -24,11 +23,6 @@ GAP_REASON = "no_fresh_frames"
 _COUNTABLE = ("occupied", "empty", "unknown")
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-
-
-def _now_iso() -> str:
-    """The box clock as an ISO string.  The box keeps time over NTP."""
-    return datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
 
 
 def _kind(layout_kind: Optional[str]) -> str:
@@ -101,45 +95,14 @@ def live_payload(record: Dict[str, Any], cafe_id: str, box_version: str) -> Dict
     return _row(cafe_id, "live", seats, str(record.get("wall_clock", "")), box_version)
 
 
-# 앱의 `cafes.congestion` 이 쓰는 낱말.  값은 앱이 이미 화면에 뿌리고 있는
-# 것이라 우리가 새로 만들지 않는다 -- 못 보던 낱말을 넣으면 앱이 그 카페만
-# 빈칸으로 그린다.
-CONGESTION_FREE = "여유"
-CONGESTION_NORMAL = "보통"
-CONGESTION_BUSY = "혼잡"
-
-
-def congestion_for(occupied: int, total: int) -> str:
-    """사용중 비율을 앱의 혼잡도 낱말로 바꾼다.
-
-    모름은 분모에 남는다.  모름이 많으면 사용중 비율이 낮게 나오고 혼잡도가
-    실제보다 한가하게 보이는데, 그건 "모름을 빈자리로 세지 않는다"는 원칙의
-    대가다 -- 숫자(``seats_available``)는 그래도 정직하다.
-    """
-    if total <= 0:
-        return CONGESTION_NORMAL
-    ratio = occupied / total
-    if ratio < 1 / 3:
-        return CONGESTION_FREE
-    if ratio < 2 / 3:
-        return CONGESTION_NORMAL
-    return CONGESTION_BUSY
-
-
-def cafes_payload(live: Dict[str, Any], now_iso: str) -> Dict[str, Any]:
-    """The four columns the customer app already reads from ``cafes``.
-
-    The app was there first: it prints ``seats_available`` and ``congestion``
-    on the list screen.  Writing only our own table would leave that screen
-    frozen on whatever was typed in by hand, so the box updates both.
-    """
-    return {
-        "seats_total": live["total_tables"],
-        "seats_available": live["free_tables"],
-        "congestion": congestion_for(live["occupied_tables"], live["total_tables"]),
-        "congestion_updated_at": now_iso,
-        "last_updated": now_iso,
-    }
+# 앱이 먼저 만든 `cafes` 표는 건드리지 않는다 (2026-09-10 확인·결정).
+#  - 앱에는 자리별 표 `seats` 가 따로 있고, 그 표가 바뀔 때마다 트리거
+#    (`sync_cafe_seat_count`)가 `cafes.seats_total`·`seats_available` 을 다시
+#    계산한다.  우리가 직접 써도 다음 자리 변동 때 덮어써진다.
+#  - `cafes.congestion` 은 check 제약으로 'available'/'full' 두 값만 받는다.
+#    우리 낱말(여유/보통/혼잡)은 데이터베이스가 거부한다.
+# 박스는 우리 표(`cafe_live`·`cafe_maps`)에만 쓴다.  손님 앱이 실시간 값을
+# 보려면 `cafe_live` 를 읽어야 한다 (docs/앱연동.md).
 
 
 def gap_payload(
@@ -264,11 +227,6 @@ class SupabasePublisher:
             try:
                 if live is not None:
                     self._send("cafe_live", live)
-                    # 카메라가 끊긴 동안(gap)은 앱이 읽는 칸을 건드리지 않는다.
-                    # 마지막 값을 그대로 두고 갱신 시각만 멈추게 해서, 앱이
-                    # "확인 중"으로 바꿀 수 있게 하는 것이 사용자 결정이다.
-                    if live.get("status") == "live":
-                        self._patch_cafe(cafes_payload(live, _now_iso()))
                 if floorplan is not None:
                     self._send("cafe_maps", {"cafe_id": self.cafe_id, "floorplan": floorplan})
             except Exception as error:  # noqa: BLE001 -- 판정을 지키는 게 우선
@@ -286,31 +244,6 @@ class SupabasePublisher:
         if not 200 <= response.status_code < 300:
             raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
         self._note_success()
-
-    def _patch_cafe(self, columns: Dict[str, Any]) -> None:
-        """Update just this cafe's row in the app's own ``cafes`` table."""
-        self._ensure_token()
-        response = self._patch(columns)
-        if response.status_code == 401:
-            self._token = None
-            self._ensure_token()
-            response = self._patch(columns)
-        if not 200 <= response.status_code < 300:
-            raise RuntimeError(f"cafes HTTP {response.status_code}: {response.text[:200]}")
-
-    def _patch(self, columns: Dict[str, Any]):
-        return self._session.patch(
-            f"{self._url}/rest/v1/cafes",
-            params={"id": f"eq.{self.cafe_id}"},
-            headers={
-                "apikey": self._anon_key,
-                "Authorization": f"Bearer {self._token}",
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal",
-            },
-            data=json.dumps(columns, ensure_ascii=False).encode("utf-8"),
-            timeout=self._timeout,
-        )
 
     def _upsert(self, table: str, row: Dict[str, Any]):
         return self._session.post(

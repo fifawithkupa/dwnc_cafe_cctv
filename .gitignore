@@ -23,3 +23,6 @@ auto.crt
 auto.key
 # 카메라 비밀번호가 들어가는 실제 설정 (deploy/seatnow.env.example 을 복사해 만든다)
 deploy/seatnow.env
+# Supabase 개인 액세스 토큰 등, 사람이 잠깐 넣어두는 열쇠 (저장소에 절대 올리지 않는다)
+env.local
+.env.local

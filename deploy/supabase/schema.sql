@@ -20,7 +20,8 @@ create table if not exists public.cafe_live (
   status           text not null check (status in ('live', 'gap')),
   total_tables     integer not null,
   occupied_tables  integer not null,
-  free_tables      integer not null,
+  free_tables      integer not null,               -- 확정된 빈자리 수 (앱이 보여주는 것)
+  busy_tables      integer not null default 0,     -- 사용중으로 보여줄 수 (schema_version 2, 2026-09-10)
   unknown_tables   integer not null,
   seats            jsonb not null,
   tick_at          timestamptz,
@@ -28,6 +29,9 @@ create table if not exists public.cafe_live (
   box_version      text,
   schema_version   integer not null default 1
 );
+
+-- 2026-09-10 이전에 만든 표에는 busy_tables 가 없다. 있으면 그대로 두고 없으면 붙인다.
+alter table public.cafe_live add column if not exists busy_tables integer not null default 0;
 
 -- 이름표 사진: 카페당 한 줄. 설치 때 박스가 카메라 화면에 자리 이름표만 써 넣은 사진을
 -- Storage `seat-sheets/<cafe_id>.jpg` 에 올리고 여기 줄을 하나 남긴다. 앱 팀은 이 사진을

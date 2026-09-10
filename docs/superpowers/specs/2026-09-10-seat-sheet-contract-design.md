@@ -13,14 +13,14 @@
 | 물음 | 답 |
 |---|---|
 | 전체 테이블 수 | 설치 때 그린 네모 수 = 고정. 카메라가 못 보는 테이블은 없게 설치한다 |
-| 모름(unknown) 표시 | **사용중으로 칠한다.** 대시보드는 나중에 |
+| 모름(unknown) 표시 | **이전에 확정된 값을 유지한다** (같은 날 수정: 처음엔 "사용중으로 칠한다"였다). 앱은 확정된 것만 본다 — 앉으면 2번, 떠나면 3번 연속. 대시보드는 나중에 |
 | 바 자리 | 칸마다 네모 하나 (UI 표현은 앱 팀 몫) |
 | 매칭이 사는 곳 | 앱 코드. 사진은 근거 자료 |
 | 사진 보관 | Supabase Storage, 카페당 한 장, 덮어쓰기 |
 
 ## 박스가 보내는 것
 
-- `cafe_live` (기존) + `busy_tables`(= occupied + unknown), `seats[].busy`(= state != empty).
+- `cafe_live` (기존) + `seats[].busy`(= 마지막 확정 상태 != empty; 확정 전엔 true), `busy_tables`(= busy 수), `free_tables`(= total − busy). `occupied_tables`·`unknown_tables` 는 이번 판정 원본.
   `schema_version = 2`. `state`·`reason_code` 는 원본으로 남긴다 (대시보드용).
 - `cafe_seat_sheets` (새, 카페당 한 줄): `seat_ids`, `image_path`, `taken_at`, `box_version`.
 - Storage `seat-sheets/<cafe_id>.jpg` (비공개 버킷).

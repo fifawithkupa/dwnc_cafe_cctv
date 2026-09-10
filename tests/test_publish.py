@@ -58,13 +58,18 @@ def _layout() -> SeatLayout:
     )
 
 
-def _table(name, state, *, kind="table", zone=None, reason="", raw_state=None, predicted=False):
+def _table(
+    name, state, *, kind="table", zone=None, reason="", raw_state=None, predicted=False, shown="auto"
+):
+    if shown == "auto":  # 확정된 상태가 이번 판정과 같은 보통의 경우
+        shown = state if state in ("occupied", "empty") else None
     return {
         "layout_name": name,
         "label": "L00X",
         "layout_kind": kind,
         "layout_zone_name": zone,
         "state": state,
+        "shown_state": shown,
         "raw_state": raw_state or state,
         "reason": reason,
         "predicted": predicted,
@@ -100,20 +105,28 @@ class LivePayloadTest(unittest.TestCase):
         self.assertEqual(payload["schema_version"], SEATS_SCHEMA_VERSION)
         self.assertEqual(SEATS_SCHEMA_VERSION, 2)
 
-    def test_busy_is_everything_but_a_confirmed_empty(self):
-        # 앱은 busy 하나로 칠한다: 모름은 사용중 색 (2026-09-10 결정). 빈자리 수는 확실한 것만.
+    def test_busy_follows_the_last_confirmed_state_not_this_tick(self):
+        # 앱은 busy 하나로 칠하고, busy 는 마지막으로 확정된 값이다 (2026-09-10 결정).
         record = _record(
             [
-                _table("T1", "occupied"),
-                _table("T2", "empty"),
-                _table("T3", "unknown", reason="compact_occluded_pose"),
+                _table("T1", "occupied"),                                    # 확정 사용중
+                _table("T2", "empty"),                                       # 확정 빈자리
+                _table("T3", "unknown", reason="awaiting_confirmation:x", shown="empty"),  # 방금 앉음, 아직 빈자리로
+                _table("T4", "unknown", reason="occluded_by_person", shown="occupied"),    # 가림, 이전 값 유지
+                _table("T5", "unknown", reason="occluded_by_person", shown=None),          # 아직 확정 없음
+                _table("T6", "empty", shown="occupied"),                     # 떠나는 중 (3번 대기), 아직 사용중
             ]
         )
         payload = live_payload(record, "dwnc", "v")
-        self.assertEqual([s["busy"] for s in payload["seats"]], [True, False, True])
-        self.assertEqual(payload["busy_tables"], 2)
-        self.assertEqual(payload["free_tables"], 1)
+        self.assertEqual(
+            [s["busy"] for s in payload["seats"]], [True, False, False, True, True, True]
+        )
+        self.assertEqual(payload["busy_tables"], 4)
+        self.assertEqual(payload["free_tables"], 2)
         self.assertEqual(payload["busy_tables"] + payload["free_tables"], payload["total_tables"])
+        # 이번 판정에서 본 것은 따로 남는다 (대시보드용). busy 와 합이 안 맞아도 된다.
+        self.assertEqual(payload["occupied_tables"], 1)
+        self.assertEqual(payload["unknown_tables"], 3)
 
     def test_ignored_seats_are_left_out(self):
         record = _record([_table("T1", "occupied"), _table("T9", "ignore")])

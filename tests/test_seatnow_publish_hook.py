@@ -32,6 +32,7 @@ class HookTest(unittest.TestCase):
                     "layout_name": "T1",
                     "layout_kind": "table",
                     "state": "empty",
+                    "shown_state": "empty",  # 확정된 빈자리 — 앱에 free 로 나간다
                     "raw_state": "empty",
                     "reason": "",
                 }

@@ -1299,6 +1299,61 @@ class OccupancyEvidenceCodeTests(unittest.TestCase):
         self.assertEqual(evidence_code_from_log(legacy), "s")
 
 
+class AppSeesOnlyConfirmedStatesTests(unittest.TestCase):
+    """손님 앱에 나가는 값(``confirmed_state`` → ``busy``)은 확정된 것만 바뀐다.
+
+    2026-09-10 결정: 앉은 사람은 2번 연속, 떠난 자리는 3번 연속 봐야 색이 바뀌고,
+    그 사이와 모름(가림) 동안에는 **이전 값을 그대로** 보여준다.
+    """
+
+    FRAME_SHAPE = (1080, 1920)
+
+    def tracker(self) -> TableTracker:
+        return TableTracker(occupy_confirmations=2, empty_confirmations=3)
+
+    def test_a_seat_just_taken_stays_shown_as_empty_until_confirmed(self):
+        tracker = self.tracker()
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+        first = tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        self.assertEqual(first.visible_tracks[0].stable_state, OccupancyState.UNKNOWN)
+        self.assertEqual(first.visible_tracks[0].confirmed_state, OccupancyState.EMPTY)
+        self.assertEqual(track_to_dict(first.visible_tracks[0])["shown_state"], "empty")
+
+        second = tracker.update([occupied], 30.0, self.FRAME_SHAPE)
+        self.assertEqual(second.visible_tracks[0].confirmed_state, OccupancyState.OCCUPIED)
+
+    def test_occlusion_and_the_release_wait_keep_the_previous_value(self):
+        tracker = self.tracker()
+        empty = table_observation(OccupancyState.EMPTY)
+        occupied = table_observation(OccupancyState.OCCUPIED)
+        hidden = table_observation(OccupancyState.UNKNOWN, reason="occluded_by_person")
+
+        tracker.update([empty], 0.0, self.FRAME_SHAPE)
+        tracker.update([occupied], 15.0, self.FRAME_SHAPE)
+        tracker.update([occupied], 30.0, self.FRAME_SHAPE)
+
+        covered = tracker.update([hidden], 45.0, self.FRAME_SHAPE)
+        self.assertEqual(covered.visible_tracks[0].visible_state, OccupancyState.UNKNOWN)
+        self.assertEqual(covered.visible_tracks[0].confirmed_state, OccupancyState.OCCUPIED)
+
+        for timestamp in (60.0, 75.0):
+            waiting = tracker.update([empty], timestamp, self.FRAME_SHAPE)
+            self.assertEqual(waiting.visible_tracks[0].confirmed_state, OccupancyState.OCCUPIED)
+        released = tracker.update([empty], 90.0, self.FRAME_SHAPE)
+        self.assertEqual(released.visible_tracks[0].confirmed_state, OccupancyState.EMPTY)
+
+    def test_before_any_confirmation_there_is_no_value(self):
+        # 시작 직후 첫 관측이 가림이면 아직 아무것도 확정된 게 없다 → 앱은 busy 로 받는다.
+        tracker = self.tracker()
+        hidden = table_observation(OccupancyState.UNKNOWN, reason="occluded_by_person")
+        update = tracker.update([hidden], 0.0, self.FRAME_SHAPE)
+        self.assertIsNone(update.visible_tracks[0].confirmed_state)
+        self.assertIsNone(track_to_dict(update.visible_tracks[0])["shown_state"])
+
+
 class EmptyToOccupiedGoesThroughUnknownTests(unittest.TestCase):
     """빈자리에서 점유 근거가 처음 보이면 **모름**을 거쳐 사용중이 된다.
 

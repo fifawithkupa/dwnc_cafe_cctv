@@ -42,15 +42,19 @@ def seat_index_from_layout(layout: SeatLayout) -> List[Dict[str, Any]]:
 
 def _totals(seats: List[Dict[str, Any]]) -> Dict[str, int]:
     counts = {"occupied": 0, "empty": 0, "unknown": 0}
+    busy = 0
     for seat in seats:
         counts[seat["state"]] += 1
+        busy += 1 if seat["busy"] else 0
     return {
         "total_tables": len(seats),
+        # 이번 판정에서 본 것 (대시보드용).  busy/free 와 합이 안 맞을 수 있다.
         "occupied_tables": counts["occupied"],
-        "free_tables": counts["empty"],
         "unknown_tables": counts["unknown"],
-        # 앱이 "사용중"으로 보여줄 개수. 모름은 사용중으로 접는다 (2026-09-10 결정).
-        "busy_tables": counts["occupied"] + counts["unknown"],
+        # 앱이 보여주는 것: 마지막으로 *확정된* 상태 기준 (2026-09-10 결정).
+        # free 는 확정된 빈자리만 — 모름·확정 대기·아직 확정 없음은 전부 busy.
+        "busy_tables": busy,
+        "free_tables": len(seats) - busy,
     }
 
 
@@ -93,7 +97,9 @@ def live_payload(record: Dict[str, Any], cafe_id: str, box_version: str) -> Dict
                 "seat_id": str(table.get("layout_name") or table.get("label") or "?"),
                 "kind": _kind(table.get("layout_kind")),
                 "zone": table.get("layout_zone_name"),
-                "busy": state != "empty",  # 앱은 이 한 칸으로 색칠한다
+                # 앱은 이 한 칸으로 색칠한다.  확정된 빈자리만 false — 앉으면 2번(15~30초),
+                # 떠나면 3번(45초) 연속 봐야 바뀌고, 그 사이·모름 동안엔 이전 값이 유지된다.
+                "busy": table.get("shown_state") != "empty",
                 "state": state,
                 "reason_code": reason_code,
             }

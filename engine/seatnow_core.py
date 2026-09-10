@@ -220,6 +220,10 @@ class Track:
     layout_version: int = 1
     layout_state: str = "ACTIVE"
     layout_changed_at: Optional[float] = None
+    # 손님 앱에 나가는 값.  마지막으로 *확정된* 사용중/빈자리만 기억하고,
+    # 모름·확정 대기 동안에는 바뀌지 않는다 (2026-09-10 결정: 앱은 확정된 것만
+    # 보여준다 — 앉은 뒤 2번, 떠난 뒤 3번 연속 봐야 색이 바뀐다).
+    confirmed_state: Optional[OccupancyState] = None
 
     @property
     def label(self) -> str:
@@ -2167,6 +2171,12 @@ def aggregate_burst_observations(
     return center_tables
 
 
+def _remember_confirmed(track: Track) -> None:
+    """stable_state 가 사용중/빈자리로 정해졌을 때만 앱용 값을 갱신한다."""
+    if track.stable_state in (OccupancyState.OCCUPIED, OccupancyState.EMPTY):
+        track.confirmed_state = track.stable_state
+
+
 class TableTracker:
     """Stable IDs and asymmetric occupancy debouncing for visible tables."""
 
@@ -2248,6 +2258,9 @@ class TableTracker:
             layout_version=self.layout_version,
             layout_state="ACTIVE",
             layout_changed_at=timestamp,
+            confirmed_state=(
+                initial_state if initial_state in (OccupancyState.OCCUPIED, OccupancyState.EMPTY) else None
+            ),
         )
         self.next_id += 1
         self.tracks.append(track)
@@ -2367,6 +2380,7 @@ class TableTracker:
         track.stable_state = initial_state
         track.pending_state = pending_state
         track.pending_count = pending_count
+        _remember_confirmed(track)
         track.layout_version = self.layout_version
         track.layout_state = "ACTIVE"
         track.layout_changed_at = timestamp
@@ -2656,6 +2670,7 @@ class TableTracker:
                 # 사용중이라고 단정할 수도 없으니 모름으로 남긴다 — 빈자리
                 # 수에서는 빠지고(build_seat_report), 다음 판단이면 풀린다.
                 track.stable_state = OccupancyState.UNKNOWN
+        _remember_confirmed(track)
         if track.stable_state != previous:
             return {
                 "type": "state_resolved" if was_unresolved else "state_change",
@@ -3622,6 +3637,8 @@ def track_to_dict(track: Track) -> Dict[str, object]:
         "predicted": track.predicted,
         "state": track.visible_state.value,
         "persistent_state": track.stable_state.value,
+        # 앱이 보는 값 (edge/publish.py 의 busy).  확정 전엔 None.
+        "shown_state": track.confirmed_state.value if track.confirmed_state is not None else None,
         "raw_state": observation.raw_state.value,
         "confidence": round(observation.raw_score, 4),
         "table_confidence": round(observation.table_confidence, 4),

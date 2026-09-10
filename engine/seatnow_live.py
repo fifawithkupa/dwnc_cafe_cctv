@@ -573,7 +573,9 @@ def probe_stream(
                 last_error = last_error[0]
         if attempt + 1 < attempts:
             sleep(delays[min(attempt, len(delays) - 1)])
-    raise RuntimeError(f"스트림을 열 수 없습니다: {url} — {last_error}")
+    # 로그(journal)에 남는 줄이다 — 카메라 비밀번호가 그대로 찍히면 안 된다.
+    shown = redact_url(url)
+    raise RuntimeError(f"스트림을 열 수 없습니다: {shown} — {last_error.replace(url, shown)}")
 
 
 # -------------------------------------------------------------------- memory

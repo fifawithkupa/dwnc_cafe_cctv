@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parents[1] / "engine"
-FORBIDDEN = {"install", "install.floorplan", "install.floor_projection"}
+FORBIDDEN = {"install"}
 
 
 def _imported_modules(path: Path) -> set:

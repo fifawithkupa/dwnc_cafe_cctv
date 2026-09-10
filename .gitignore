@@ -26,3 +26,5 @@ deploy/seatnow.env
 # Supabase 개인 액세스 토큰 등, 사람이 잠깐 넣어두는 열쇠 (저장소에 절대 올리지 않는다)
 env.local
 .env.local
+# 이름표 사진을 올린 좌석 파일의 해시 (박스가 만든다)
+layouts/*.seat_sheet.sha

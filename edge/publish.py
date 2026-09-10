@@ -8,17 +8,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from engine.seatnow_layout import COUNTED_ZONE_KIND, SeatLayout
 from engine.seatnow_report import classify_reason
 
-SEATS_SCHEMA_VERSION = 1
+SEATS_SCHEMA_VERSION = 2  # 2: busy / busy_tables 추가 (2026-09-10)
+SEAT_SHEET_BUCKET = "seat-sheets"
+SEAT_SHEET_IN_FLIGHT_S = 120.0
 GAP_REASON = "no_fresh_frames"
 _COUNTABLE = ("occupied", "empty", "unknown")
 
@@ -46,6 +49,8 @@ def _totals(seats: List[Dict[str, Any]]) -> Dict[str, int]:
         "occupied_tables": counts["occupied"],
         "free_tables": counts["empty"],
         "unknown_tables": counts["unknown"],
+        # 앱이 "사용중"으로 보여줄 개수. 모름은 사용중으로 접는다 (2026-09-10 결정).
+        "busy_tables": counts["occupied"] + counts["unknown"],
     }
 
 
@@ -88,6 +93,7 @@ def live_payload(record: Dict[str, Any], cafe_id: str, box_version: str) -> Dict
                 "seat_id": str(table.get("layout_name") or table.get("label") or "?"),
                 "kind": _kind(table.get("layout_kind")),
                 "zone": table.get("layout_zone_name"),
+                "busy": state != "empty",  # 앱은 이 한 칸으로 색칠한다
                 "state": state,
                 "reason_code": reason_code,
             }
@@ -114,12 +120,122 @@ def gap_payload(
             "seat_id": entry["seat_id"],
             "kind": entry["kind"],
             "zone": entry.get("zone"),
+            "busy": True,
             "state": "unknown",
             "reason_code": GAP_REASON,
         }
         for entry in seat_index
     ]
     return _row(cafe_id, "gap", seats, wall_clock, box_version)
+
+
+# ── 이름표 사진 ─────────────────────────────────────────────────────────────
+# 앱 팀은 지도를 피그마로 그려 앱 코드에 넣는다 (앱팀할일.md).  그러려면 네모마다
+# 어떤 이름표(seat_id)를 붙일지 알아야 하므로, 설치 때 카메라 화면 위에 판정 단위
+# 마다 네모와 이름표만 그린 사진 한 장을 올린다.  상태 색은 일부러 없다.
+
+
+def _draw_seat_label(image, text: str, origin, color, scale: float) -> None:
+    import cv2
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.9 * scale
+    thickness = max(1, int(round(2 * scale)))
+    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+    x, y = origin
+    top = y - text_h - baseline - 6
+    if top < 0:
+        top = y + 2
+    cv2.rectangle(image, (x, top), (x + text_w + 10, top + text_h + baseline + 6), color, -1)
+    cv2.putText(image, text, (x + 5, top + text_h + 3), font, font_scale, (20, 20, 20), thickness, cv2.LINE_AA)
+
+
+def seat_sheet_image(frame, layout: SeatLayout, quality: int = 90) -> bytes:
+    """카메라 원본 위에 판정 단위마다 네모 + 이름표.  JPEG 바이트를 돌려준다."""
+    import cv2
+
+    output = frame.copy()
+    height, width = output.shape[:2]
+    scale = max(0.6, min(width, height) / 1100.0)
+    thickness = max(2, int(round(scale * 2)))
+    color = (60, 220, 255)  # BGR.  상태 색(빨강/초록/회색)과 겹치지 않는 노랑
+    for unit in layout.judgement_units():
+        x1, y1, x2, y2 = [int(round(value)) for value in unit.box]
+        cv2.rectangle(output, (x1, y1), (x2, y2), color, thickness)
+        _draw_seat_label(output, unit.name, (x1, y1), color, scale)
+    ok, encoded = cv2.imencode(".jpg", output, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+    if not ok:
+        raise RuntimeError("이름표 사진 JPEG 인코딩 실패")
+    return encoded.tobytes()
+
+
+def seat_sheet_row(
+    cafe_id: str, seat_index: List[Dict[str, Any]], taken_at: str, box_version: str
+) -> Dict[str, Any]:
+    """`cafe_seat_sheets` 한 줄: 사진의 이름표 목록과 사진이 있는 곳."""
+    return {
+        "cafe_id": cafe_id,
+        "seat_ids": list(seat_index),
+        "image_path": f"{SEAT_SHEET_BUCKET}/{cafe_id}.jpg",
+        "taken_at": taken_at,
+        "box_version": box_version,
+    }
+
+
+class SeatSheetNeed:
+    """좌석 파일이 바뀌었는데 아직 이름표 사진을 못 올렸는지 기억한다.
+
+    마커 파일(`<카페>.seat_sheet.sha`)에는 올리기에 *성공한* 좌석 파일의 해시가 있다.
+    그래서 재시작해도 다시 안 찍고, 올리기가 실패했으면 다음 틱에 다시 시도한다.
+    넘긴 뒤 답이 없으면 ``in_flight_s`` 뒤에 다시 시도한다.
+    """
+
+    def __init__(self, layout_path, clock=time.time, in_flight_s: float = SEAT_SHEET_IN_FLIGHT_S) -> None:
+        self.layout_path = Path(layout_path)
+        self.marker_path = self.layout_path.with_name(self.layout_path.stem + ".seat_sheet.sha")
+        self._clock = clock
+        self._in_flight_s = in_flight_s
+        self._handed_off_at: Optional[float] = None
+        self._handed_off_hash: Optional[str] = None
+
+    def _layout_hash(self) -> Optional[str]:
+        try:
+            return hashlib.sha256(self.layout_path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
+    def _done_hash(self) -> Optional[str]:
+        try:
+            return self.marker_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+
+    def pending(self) -> bool:
+        current = self._layout_hash()
+        if current is None or current == self._done_hash():
+            return False
+        if self._handed_off_at is not None and self._clock() - self._handed_off_at < self._in_flight_s:
+            return False
+        return True
+
+    def handed_off(self) -> None:
+        self._handed_off_at = self._clock()
+        self._handed_off_hash = self._layout_hash()
+
+    def mark_done(self) -> None:
+        digest = self._handed_off_hash or self._layout_hash()
+        if digest is not None:
+            self.marker_path.write_text(digest, encoding="utf-8")
+        self._handed_off_at = None
+        self._handed_off_hash = None
+
+    def describe(self) -> str:
+        """시작 화면 한 줄."""
+        if self._layout_hash() is None:
+            return f"좌석 파일 없음 ({self.layout_path})"
+        if self.pending():
+            return "올려야 함 — 화면에 사람이 없는 첫 판정 때 찍는다"
+        return "이미 올림 (좌석 파일이 바뀌면 다시 찍는다)"
 
 
 MAX_BACKOFF_S = 60.0
@@ -166,7 +282,7 @@ class SupabasePublisher:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._latest_live: Optional[Dict[str, Any]] = None
-        self._pending_map: Optional[Dict[str, Any]] = None
+        self._pending_sheet: Optional[Tuple[bytes, Dict[str, Any], Optional[Callable[[], None]]]] = None
         self._token: Optional[str] = None
         self._token_expires_at: float = 0.0
         self._backoff_s: float = 0.0
@@ -195,9 +311,12 @@ class SupabasePublisher:
             self._latest_live = payload
         self._wake.set()
 
-    def publish_map(self, floorplan: Dict[str, Any]) -> None:
+    def publish_seat_sheet(
+        self, jpeg: bytes, row: Dict[str, Any], on_done: Optional[Callable[[], None]] = None
+    ) -> None:
+        """이름표 사진 하나를 올린다.  성공했을 때만 ``on_done`` 을 (스레드에서) 부른다."""
         with self._lock:
-            self._pending_map = floorplan
+            self._pending_sheet = (jpeg, row, on_done)
         self._wake.set()
 
     def stats(self) -> Dict[str, Any]:
@@ -221,14 +340,20 @@ class SupabasePublisher:
                 break
             with self._lock:
                 live, self._latest_live = self._latest_live, None
-                floorplan, self._pending_map = self._pending_map, None
-            if live is None and floorplan is None:
+                sheet, self._pending_sheet = self._pending_sheet, None
+            if live is None and sheet is None:
                 continue
             try:
                 if live is not None:
                     self._send("cafe_live", live)
-                if floorplan is not None:
-                    self._send("cafe_maps", {"cafe_id": self.cafe_id, "floorplan": floorplan})
+                if sheet is not None:
+                    jpeg, row, on_done = sheet
+                    # 사진 먼저, 표 나중 — 표에 줄이 있으면 사진도 있다는 뜻이 되게.
+                    self._upload_object(SEAT_SHEET_BUCKET, f"{self.cafe_id}.jpg", jpeg, "image/jpeg")
+                    self._send("cafe_seat_sheets", row)
+                    self._log(f"이름표 사진 올림: {row.get('image_path')}")
+                    if on_done is not None:
+                        on_done()
             except Exception as error:  # noqa: BLE001 -- 판정을 지키는 게 우선
                 self._note_failure(f"{type(error).__name__}: {error}")
                 # 실패한 값은 버린다. 다음 틱이 더 새롭다. 백오프 동안은 잔다.
@@ -244,6 +369,30 @@ class SupabasePublisher:
         if not 200 <= response.status_code < 300:
             raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
         self._note_success()
+
+    def _upload_object(self, bucket: str, name: str, data: bytes, content_type: str) -> None:
+        """Storage 에 파일 하나를 덮어쓴다 (x-upsert).  401 이면 한 번 다시 로그인."""
+        self._ensure_token()
+        response = self._put_object(bucket, name, data, content_type)
+        if response.status_code == 401:
+            self._token = None
+            self._ensure_token()
+            response = self._put_object(bucket, name, data, content_type)
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError(f"storage {bucket}/{name} HTTP {response.status_code}: {response.text[:200]}")
+
+    def _put_object(self, bucket: str, name: str, data: bytes, content_type: str):
+        return self._session.post(
+            f"{self._url}/storage/v1/object/{bucket}/{name}",
+            headers={
+                "apikey": self._anon_key,
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": content_type,
+                "x-upsert": "true",
+            },
+            data=data,
+            timeout=self._timeout,
+        )
 
     def _upsert(self, table: str, row: Dict[str, Any]):
         return self._session.post(
@@ -342,33 +491,6 @@ def box_version(project_dir: Path = PROJECT_DIR) -> str:
         return "unknown"
     text = output.stdout.strip()
     return text if output.returncode == 0 and text else "unknown"
-
-
-def floorplan_path_for(layout_path: Path) -> Path:
-    layout_path = Path(layout_path)
-    return layout_path.with_name(layout_path.stem + ".floorplan.json")
-
-
-class FloorplanWatcher:
-    """Hands back the floor plan file once each time it changes on disk."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = Path(path)
-        self._seen_mtime: Optional[float] = None
-
-    def changed(self) -> Optional[Dict[str, Any]]:
-        try:
-            mtime = self.path.stat().st_mtime
-        except OSError:
-            return None
-        if self._seen_mtime is not None and mtime == self._seen_mtime:
-            return None
-        try:
-            content = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        self._seen_mtime = mtime
-        return content
 
 
 def _publish_stats_for_record(publisher) -> Dict[str, Any]:

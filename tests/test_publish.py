@@ -11,20 +11,50 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from edge.publish import (
     ENV_KEYS,
     GAP_REASON,
+    SEAT_SHEET_BUCKET,
     SEATS_SCHEMA_VERSION,
-    FloorplanWatcher,
+    SeatSheetNeed,
     SupabasePublisher,
     box_version,
-    floorplan_path_for,
     gap_payload,
     live_payload,
     publisher_from_env,
     seat_index_from_layout,
+    seat_sheet_image,
+    seat_sheet_row,
 )
 from engine.seatnow_layout import LayoutChair, LayoutSeat, LayoutTable, SeatLayout
+
+
+def _layout() -> SeatLayout:
+    return SeatLayout(
+        schema_version=3,
+        source={"width": 1920, "height": 1080},
+        tables=(
+            LayoutTable(
+                id=1,
+                name="T1",
+                box=(800.0, 700.0, 1000.0, 850.0),
+                chairs=(LayoutChair(id=1, box=(780.0, 800.0, 830.0, 880.0)),),
+            ),
+            LayoutTable(
+                id=7,
+                name="BAR7",
+                box=(1100.0, 620.0, 1500.0, 760.0),
+                kind="counted_zone",
+                seats=(
+                    LayoutSeat(id=1, box=(1100.0, 620.0, 1300.0, 760.0)),
+                    LayoutSeat(id=2, box=(1300.0, 620.0, 1500.0, 760.0)),
+                ),
+            ),
+        ),
+    )
 
 
 def _table(name, state, *, kind="table", zone=None, reason="", raw_state=None, predicted=False):
@@ -67,6 +97,22 @@ class LivePayloadTest(unittest.TestCase):
         self.assertEqual(payload["tick_at"], "2026-09-08T20:32:45+0900")
         self.assertEqual(payload["box_version"], "abc1234")
         self.assertEqual(payload["schema_version"], SEATS_SCHEMA_VERSION)
+        self.assertEqual(SEATS_SCHEMA_VERSION, 2)
+
+    def test_busy_is_everything_but_a_confirmed_empty(self):
+        # 앱은 busy 하나로 칠한다: 모름은 사용중 색 (2026-09-10 결정). 빈자리 수는 확실한 것만.
+        record = _record(
+            [
+                _table("T1", "occupied"),
+                _table("T2", "empty"),
+                _table("T3", "unknown", reason="compact_occluded_pose"),
+            ]
+        )
+        payload = live_payload(record, "dwnc", "v")
+        self.assertEqual([s["busy"] for s in payload["seats"]], [True, False, True])
+        self.assertEqual(payload["busy_tables"], 2)
+        self.assertEqual(payload["free_tables"], 1)
+        self.assertEqual(payload["busy_tables"] + payload["free_tables"], payload["total_tables"])
 
     def test_ignored_seats_are_left_out(self):
         record = _record([_table("T1", "occupied"), _table("T9", "ignore")])
@@ -85,8 +131,8 @@ class LivePayloadTest(unittest.TestCase):
         self.assertEqual(
             seats,
             [
-                {"seat_id": "BAR7-1", "kind": "bar_seat", "zone": "BAR7", "state": "empty", "reason_code": None},
-                {"seat_id": "BAR7-2", "kind": "bar_seat", "zone": "BAR7", "state": "occupied", "reason_code": None},
+                {"seat_id": "BAR7-1", "kind": "bar_seat", "zone": "BAR7", "busy": False, "state": "empty", "reason_code": None},
+                {"seat_id": "BAR7-2", "kind": "bar_seat", "zone": "BAR7", "busy": True, "state": "occupied", "reason_code": None},
             ],
         )
 
@@ -121,37 +167,17 @@ class GapPayloadTest(unittest.TestCase):
         self.assertEqual(payload["free_tables"], 0)
         self.assertEqual(payload["unknown_tables"], 2)
         self.assertEqual(payload["tick_at"], "2026-09-08T21:00:00+0900")
+        self.assertEqual(payload["busy_tables"], 2)
         for seat in payload["seats"]:
             self.assertEqual(seat["state"], "unknown")
+            self.assertTrue(seat["busy"])
             self.assertEqual(seat["reason_code"], GAP_REASON)
         self.assertEqual(payload["seats"][1]["zone"], "BAR7")
 
 
 class SeatIndexTest(unittest.TestCase):
     def test_index_lists_every_judgement_unit(self):
-        layout = SeatLayout(
-            schema_version=3,
-            source={"width": 1920, "height": 1080},
-            tables=(
-                LayoutTable(
-                    id=1,
-                    name="T1",
-                    box=(800.0, 700.0, 1000.0, 850.0),
-                    chairs=(LayoutChair(id=1, box=(780.0, 800.0, 830.0, 880.0)),),
-                ),
-                LayoutTable(
-                    id=7,
-                    name="BAR7",
-                    box=(1100.0, 620.0, 1500.0, 760.0),
-                    kind="counted_zone",
-                    seats=(
-                        LayoutSeat(id=1, box=(1100.0, 620.0, 1300.0, 760.0)),
-                        LayoutSeat(id=2, box=(1300.0, 620.0, 1500.0, 760.0)),
-                    ),
-                ),
-            ),
-        )
-        index = seat_index_from_layout(layout)
+        index = seat_index_from_layout(_layout())
         self.assertEqual(
             index,
             [
@@ -160,6 +186,67 @@ class SeatIndexTest(unittest.TestCase):
                 {"seat_id": "BAR7-2", "kind": "bar_seat", "zone": "BAR7"},
             ],
         )
+
+
+class SeatSheetTest(unittest.TestCase):
+    def test_image_is_a_jpeg_of_the_frame_size_with_the_boxes_drawn(self):
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        jpeg = seat_sheet_image(frame, _layout())
+        self.assertEqual(jpeg[:2], b"\xff\xd8")
+        decoded = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        self.assertEqual(decoded.shape, (1080, 1920, 3))
+        # T1 네모의 윗변(y=700, x 800..1000)과 BAR7-2 의 윗변에 선이 그어져 있다.
+        self.assertGreater(int(decoded[700, 800:1000].sum()), 0)
+        self.assertGreater(int(decoded[620, 1300:1500].sum()), 0)
+        # 네모 밖 먼 곳은 그대로 검다 (상태 색·머리글 같은 걸 덧칠하지 않는다).
+        self.assertEqual(int(decoded[1000, 100:300].sum()), 0)
+
+    def test_row_lists_the_seat_ids_and_where_the_picture_is(self):
+        index = seat_index_from_layout(_layout())
+        row = seat_sheet_row("dwnc", index, "2026-09-10T14:00:00+0900", "abc1234")
+        self.assertEqual(
+            row,
+            {
+                "cafe_id": "dwnc",
+                "seat_ids": index,
+                "image_path": f"{SEAT_SHEET_BUCKET}/dwnc.jpg",
+                "taken_at": "2026-09-10T14:00:00+0900",
+                "box_version": "abc1234",
+            },
+        )
+
+
+class SeatSheetNeedTest(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.layout = Path(self.folder.name) / "cafe.json"
+        self.layout.write_text('{"tables": []}', encoding="utf-8")
+        self.now = 1000.0
+        self.need = SeatSheetNeed(self.layout, clock=lambda: self.now, in_flight_s=120.0)
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def test_a_new_layout_needs_a_sheet_until_one_is_uploaded(self):
+        self.assertTrue(self.need.pending())
+        self.need.mark_done()
+        self.assertFalse(self.need.pending())
+        # 재시작해도 (새 객체) 마커 파일이 기억한다.
+        self.assertFalse(SeatSheetNeed(self.layout).pending())
+
+    def test_editing_the_layout_asks_for_a_new_sheet(self):
+        self.need.mark_done()
+        self.layout.write_text('{"tables": [1]}', encoding="utf-8")
+        self.assertTrue(self.need.pending())
+
+    def test_while_an_upload_is_in_flight_it_is_not_asked_again_until_a_timeout(self):
+        self.need.handed_off()
+        self.assertFalse(self.need.pending())
+        self.now += 121.0  # 올리기가 실패해서 mark_done 이 안 왔다 → 다시 시도
+        self.assertTrue(self.need.pending())
+
+    def test_missing_layout_file_never_needs_a_sheet(self):
+        self.assertFalse(SeatSheetNeed(self.layout.with_name("nope.json")).pending())
 
 
 class _FakeSupabase:
@@ -181,14 +268,16 @@ class _FakeSupabase:
 
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", "0"))
-                body = self.rfile.read(length).decode("utf-8")
+                raw = self.rfile.read(length)
+                is_json = "json" in (self.headers.get("Content-Type") or "")
                 with outer.lock:
                     outer.requests.append(
                         {
                             "path": self.path,
                             "method": self.command,
                             "headers": {k.lower(): v for k, v in self.headers.items()},
-                            "body": json.loads(body) if body else None,
+                            "body": json.loads(raw.decode("utf-8")) if (is_json and raw) else None,
+                            "raw": raw,
                         }
                     )
                     if self.path.startswith("/auth/v1/token"):
@@ -352,12 +441,31 @@ class PublisherTest(unittest.TestCase):
         self.assertTrue(any("전송 실패" in line for line in self.logs))
         dead.stop()
 
-    def test_map_goes_to_cafe_maps_with_only_cafe_id_and_floorplan(self):
+    def test_seat_sheet_goes_to_storage_first_then_to_cafe_seat_sheets(self):
         self.publisher.start()
-        self.publisher.publish_map({"schema_version": 2, "seats": []})
-        self.assertTrue(_wait(lambda: len(self.fake.upserts("cafe_maps")) == 1))
-        body = self.fake.upserts("cafe_maps")[0]["body"]
-        self.assertEqual(body, {"cafe_id": "dwnc", "floorplan": {"schema_version": 2, "seats": []}})
+        done = []
+        row = {"cafe_id": "dwnc", "seat_ids": [], "image_path": "seat-sheets/dwnc.jpg"}
+        self.publisher.publish_seat_sheet(b"\xff\xd8jpeg", row, on_done=lambda: done.append(1))
+        self.assertTrue(_wait(lambda: len(self.fake.upserts("cafe_seat_sheets")) == 1))
+        self.assertTrue(_wait(lambda: done == [1]))
+        paths = [r["path"] for r in self.fake.requests if not r["path"].startswith("/auth")]
+        self.assertEqual(paths, ["/storage/v1/object/seat-sheets/dwnc.jpg", "/rest/v1/cafe_seat_sheets"])
+        upload = self.fake.requests[1]
+        self.assertEqual(upload["headers"]["content-type"], "image/jpeg")
+        self.assertEqual(upload["headers"]["x-upsert"], "true")
+        self.assertEqual(upload["headers"]["authorization"], "Bearer tok1")
+        self.assertEqual(upload["raw"], b"\xff\xd8jpeg")
+        self.assertEqual(self.fake.upserts("cafe_seat_sheets")[0]["body"], row)
+
+    def test_a_failed_sheet_upload_does_not_call_on_done_and_counts_as_a_failure(self):
+        self.fake.unauthorized_left = 3  # 재로그인 한 번으로도 못 넘긴다
+        self.publisher.start()
+        done = []
+        self.publisher.publish_seat_sheet(b"x", {"cafe_id": "dwnc"}, on_done=lambda: done.append(1))
+        self.assertTrue(_wait(lambda: self.publisher.stats()["failed"] >= 1))
+        time.sleep(0.2)
+        self.assertEqual(done, [])
+        self.assertEqual(self.fake.upserts("cafe_seat_sheets"), [])
 
     def test_the_app_owned_cafes_table_is_never_touched(self):
         # 앱의 `cafes` 는 앱 자체 트리거가 채우고, congestion 은 우리 낱말을 거부한다.
@@ -415,32 +523,6 @@ class BoxVersionTest(unittest.TestCase):
     def test_outside_a_repo_is_unknown(self):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(box_version(Path(folder)), "unknown")
-
-
-class FloorplanWatcherTest(unittest.TestCase):
-    def test_path_is_next_to_the_layout(self):
-        self.assertEqual(
-            floorplan_path_for(Path("layouts/cafe.json")), Path("layouts/cafe.floorplan.json")
-        )
-
-    def test_reports_content_once_per_change(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "a.floorplan.json"
-            watcher = FloorplanWatcher(path)
-            self.assertIsNone(watcher.changed())  # 파일 없음
-            path.write_text('{"schema_version": 2}', encoding="utf-8")
-            self.assertEqual(watcher.changed(), {"schema_version": 2})
-            self.assertIsNone(watcher.changed())  # 안 바뀜
-            path.write_text('{"schema_version": 3}', encoding="utf-8")
-            later = time.time() + 10
-            os.utime(path, (later, later))
-            self.assertEqual(watcher.changed(), {"schema_version": 3})
-
-    def test_broken_json_is_ignored(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "a.floorplan.json"
-            path.write_text("{not json", encoding="utf-8")
-            self.assertIsNone(FloorplanWatcher(path).changed())
 
 
 if __name__ == "__main__":

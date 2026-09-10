@@ -135,19 +135,38 @@ def gap_payload(
 # 마다 네모와 이름표만 그린 사진 한 장을 올린다.  상태 색은 일부러 없다.
 
 
-def _draw_seat_label(image, text: str, origin, color, scale: float) -> None:
-    import cv2
+def _rects_overlap(a, b) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.9 * scale
-    thickness = max(1, int(round(2 * scale)))
-    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-    x, y = origin
-    top = y - text_h - baseline - 6
-    if top < 0:
-        top = y + 2
-    cv2.rectangle(image, (x, top), (x + text_w + 10, top + text_h + baseline + 6), color, -1)
-    cv2.putText(image, text, (x + 5, top + text_h + 3), font, font_scale, (20, 20, 20), thickness, cv2.LINE_AA)
+
+def seat_sheet_label_rects(units, text_size, frame_size) -> List[Tuple[str, int, int, int, int]]:
+    """이름표를 놓을 자리 (name, x, y, w, h).  겹치면 위로 한 줄씩 밀어 올린다.
+
+    바 칸은 좁아서 이름표가 칸보다 넓다.  그대로 두면 옆 칸 이름표가 앞 이름표를
+    덮어 앱 팀이 못 읽는다.  ``text_size(text) -> (w, h)`` 는 글자 크기를 잰다.
+    """
+    width, height = frame_size
+    placed: List[Tuple[str, int, int, int, int]] = []
+    for unit in units:
+        x1, y1, _x2, _y2 = [int(round(value)) for value in unit.box]
+        text_w, text_h = text_size(unit.name)
+        w, h = text_w + 10, text_h + 8
+        x = max(0, min(x1, width - w))
+        y = y1 - h - 2
+        if y < 0:
+            y = y1 + 2
+        rect = (unit.name, x, y, w, h)
+        for _ in range(12):
+            if not any(_rects_overlap(rect[1:], other[1:]) for other in placed):
+                break
+            y -= h + 2
+            if y < 0:  # 위로 갈 데가 없으면 칸 안쪽으로 내려간다
+                y = rect[2] + h + 2
+            rect = (unit.name, x, y, w, h)
+        placed.append(rect)
+    return placed
 
 
 def seat_sheet_image(frame, layout: SeatLayout, quality: int = 90) -> bytes:
@@ -159,10 +178,22 @@ def seat_sheet_image(frame, layout: SeatLayout, quality: int = 90) -> bytes:
     scale = max(0.6, min(width, height) / 1100.0)
     thickness = max(2, int(round(scale * 2)))
     color = (60, 220, 255)  # BGR.  상태 색(빨강/초록/회색)과 겹치지 않는 노랑
-    for unit in layout.judgement_units():
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.9 * scale
+    font_thickness = max(1, int(round(2 * scale)))
+
+    def text_size(text: str) -> Tuple[int, int]:
+        (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
+        return text_w, text_h + baseline
+
+    units = layout.judgement_units()
+    for unit in units:
         x1, y1, x2, y2 = [int(round(value)) for value in unit.box]
         cv2.rectangle(output, (x1, y1), (x2, y2), color, thickness)
-        _draw_seat_label(output, unit.name, (x1, y1), color, scale)
+    for name, x, y, w, h in seat_sheet_label_rects(units, text_size, (width, height)):
+        cv2.rectangle(output, (x, y), (x + w, y + h), color, -1)
+        (_tw, text_h), baseline = cv2.getTextSize(name, font, font_scale, font_thickness)
+        cv2.putText(output, name, (x + 5, y + 4 + text_h), font, font_scale, (20, 20, 20), font_thickness, cv2.LINE_AA)
     ok, encoded = cv2.imencode(".jpg", output, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
     if not ok:
         raise RuntimeError("이름표 사진 JPEG 인코딩 실패")

@@ -27,6 +27,7 @@ from edge.publish import (
     publisher_from_env,
     seat_index_from_layout,
     seat_sheet_image,
+    seat_sheet_label_rects,
     seat_sheet_row,
 )
 from engine.seatnow_layout import LayoutChair, LayoutSeat, LayoutTable, SeatLayout
@@ -200,6 +201,22 @@ class SeatSheetTest(unittest.TestCase):
         self.assertGreater(int(decoded[620, 1300:1500].sum()), 0)
         # 네모 밖 먼 곳은 그대로 검다 (상태 색·머리글 같은 걸 덧칠하지 않는다).
         self.assertEqual(int(decoded[1000, 100:300].sum()), 0)
+
+    def test_labels_of_narrow_neighbouring_bar_slots_do_not_cover_each_other(self):
+        # 바 칸은 이름표보다 좁다. 옆 칸 이름표가 앞 것을 덮으면 앱 팀이 못 읽는다.
+        units = _layout().judgement_units()
+        rects = seat_sheet_label_rects(units, lambda text: (len(text) * 30, 24), (1920, 1080))
+        self.assertEqual([r[0] for r in rects], ["T1", "BAR7-1", "BAR7-2"])
+        boxes = [r[1:] for r in rects]
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1 :]:
+                overlap = a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+                self.assertFalse(overlap, f"{a} 와 {b} 가 겹친다")
+        # 전부 화면 안에 있다.
+        for _name, x, y, w, h in rects:
+            self.assertGreaterEqual(x, 0)
+            self.assertGreaterEqual(y, 0)
+            self.assertLessEqual(x + w, 1920)
 
     def test_row_lists_the_seat_ids_and_where_the_picture_is(self):
         index = seat_index_from_layout(_layout())

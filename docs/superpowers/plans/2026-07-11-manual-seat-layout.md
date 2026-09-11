@@ -48,7 +48,7 @@ cctv_results/
 ```bash
 cd /Users/junyeong/Desktop/seatnow-cv
 git init
-git add .gitignore seatnow.py seatnow_core.py verify_seatnow.py occupancy_mvp.py pose_judge.py tests/ docs/ SEATNOW_전체정리.md
+git add .gitignore seatnow.py seatnow_core.py verify_seatnow.py occupancy_mvp.py pose_judge.py tests/ docs/ 문서/SEATNOW_전체정리.md
 git commit -m "chore: initial commit of SeatNow inference pipeline
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
@@ -1222,7 +1222,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `layouts/seminar_room.json` (Task 7에서 저장한 것, 또는 아래 수기 좌표)
-- Modify: `SEATNOW_전체정리.md` — 3절 표에 `calibrate.py`/`seatnow_layout.py` 행 추가, 2절에 "레이아웃 모드" 언급
+- Modify: `문서/SEATNOW_전체정리.md` — 3절 표에 `calibrate.py`/`seatnow_layout.py` 행 추가, 2절에 "레이아웃 모드" 언급
 
 **Interfaces:**
 - Consumes: 전체 파이프라인.
@@ -1271,7 +1271,7 @@ EOF
 
 Expected: `layout e2e OK: {...}` (실패 시 프레임 렌더를 뽑아 원인 확인 후 조정 — 존 좌표 오차 가능성부터 본다)
 
-- [ ] **Step 4: 문서 갱신** — `SEATNOW_전체정리.md`
+- [ ] **Step 4: 문서 갱신** — `문서/SEATNOW_전체정리.md`
   - 3절 표에 두 행 추가:
     `| seatnow_layout.py | 수동 좌석 레이아웃 로드/검증/스케일 |`
     `| calibrate.py | 클릭 캘리브레이션 도구 (테이블·의자 등록 → layouts/*.json) |`
@@ -1282,7 +1282,7 @@ Expected: `layout e2e OK: {...}` (실패 시 프레임 렌더를 뽑아 원인 �
 
 ```bash
 ./venv/bin/python -m unittest discover tests 2>&1 | tail -3
-git add layouts/seminar_room.json SEATNOW_전체정리.md
+git add layouts/seminar_room.json 문서/SEATNOW_전체정리.md
 git commit -m "feat: sample layout, e2e verification, docs for layout mode
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"

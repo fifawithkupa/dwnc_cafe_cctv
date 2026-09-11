@@ -2,7 +2,7 @@
 
 > 작성: 2026-08-27
 > 기준 커밋: `JINOI/main` = `6d0d078`
-> 관련: `plan.md` T3, `CLAUDE.md`, `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md`
+> 관련: `문서/plan.md` T3, `CLAUDE.md`, `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md`
 
 ## 1. 배경과 목표
 

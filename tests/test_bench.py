@@ -72,7 +72,7 @@ class ResolveModelTests(unittest.TestCase):
 
 
 class TickBudgetTests(unittest.TestCase):
-    """plan.md T6: 50% of the tick passes, 100% is conditional, above fails."""
+    """문서/plan.md T6: 50% of the tick passes, 100% is conditional, above fails."""
 
     RESULTS = [
         measurement("detect", 1280, "pt", 500.0),
@@ -94,7 +94,7 @@ class TickBudgetTests(unittest.TestCase):
             sample_seconds=15.0,
         )
 
-        # plan.md's worked example: 5 frames x (detect + pose + 4 crops).
+        # 문서/plan.md's worked example: 5 frames x (detect + pose + 4 crops).
         self.assertEqual(budget["frames_per_tick"], 5)
         self.assertEqual(budget["inferences_per_tick"], 30)
         # 500 + 250 + 4*300 = 1950 ms per frame, x5 = 9.75 s.

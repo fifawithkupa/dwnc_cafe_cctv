@@ -10,7 +10,7 @@ comparable answer on the MacBook baseline and on the edge box.
     python bench.py --frames sample_raw/cafe.mp4      # real frames, not noise
     python bench.py --backends pt --imgsz 640 1280    # quick pass
 
-Grading follows plan.md T6: a profile that fits in half the tick passes, one
+Grading follows 문서/plan.md T6: a profile that fits in half the tick passes, one
 that fits in the whole tick is conditional, and anything above the tick fails.
 The 50% margin exists because a 24/7 box also has to absorb RTSP reconnects,
 decoder resets, and log rotation.
@@ -289,7 +289,7 @@ def print_latency_table(results: Sequence[Measurement]) -> None:
 
 
 def print_budget_table(budgets: Sequence[Dict[str, object]]) -> None:
-    print("\n## tick 예산 (plan.md T6 합격 기준)\n")
+    print("\n## tick 예산 (문서/plan.md T6 합격 기준)\n")
     print("| profile | backend | 추론/tick | tick 소요 | tick 사용률 | 판정 |")
     print("|---|---|---:|---:|---:|:---:|")
     for budget in budgets:

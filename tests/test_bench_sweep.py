@@ -1,4 +1,4 @@
-"""Tests for the parameter-sweep harness (plan.md T7)."""
+"""Tests for the parameter-sweep harness (문서/plan.md T7)."""
 
 from __future__ import annotations
 

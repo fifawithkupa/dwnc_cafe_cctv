@@ -16,7 +16,7 @@ Two things the file path never had to worry about:
   failure as a *warning* and carries on in software, so the process exit
   code says nothing.  The reader keeps ffmpeg's stderr and flags known
   fallback messages in ``stats()``; the tick loop prints that loudly and
-  writes it into every record (plan.md §2 "T8에 딸려 갈 것").
+  writes it into every record (문서/plan.md §2 "T8에 딸려 갈 것").
 """
 
 from __future__ import annotations

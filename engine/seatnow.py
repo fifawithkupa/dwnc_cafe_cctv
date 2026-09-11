@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "보내는 건 따로 돈다: python3 -m edge.telemetry_upload")
     parser.add_argument("--open-hours", type=str, default=None,
                         help='매장 영업시간 "09:00-22:00". 문 닫은 시간을 알아야 '
-                             '장식과 손님 짐을 구분할 수 있다 (판정개선_데이터설계.md §4-1)')
+                             '장식과 손님 짐을 구분할 수 있다 (문서/판정개선_데이터설계.md §4-1)')
     parser.add_argument("--telemetry-control-rate", type=float, default=0.01,
                         help="잘 돌아간 틱 중 대조군으로 남길 비율 (기본 1%%). "
                              "어려운 것만 모으면 배운 규칙이 편향된다")
@@ -340,7 +340,7 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
 def _open_telemetry(args, run_context, cafe_id: str):
     """`--telemetry-dir` 를 줬을 때만 기록기를 만든다.  아니면 None.
 
-    설계는 `판정개선_데이터설계.md` §9·§10.  루프는 파일에 덧붙이기만 하고,
+    설계는 `문서/판정개선_데이터설계.md` §9·§10.  루프는 파일에 덧붙이기만 하고,
     보내는 건 `python3 -m edge.telemetry_upload` 가 하루 한 번 따로 한다.
     만들다 실패해도 판정은 그대로 돈다 — 기록은 판정보다 덜 중요하다.
     """
@@ -841,7 +841,7 @@ _SHEET_WAIT_LOG_EVERY = 20  # 틱.  15초 × 20 = 5분에 한 번만 "대기 중
 def _maybe_seat_sheet(
     need, publisher, layout, frame, record: dict, seat_index: list, version: str, waited: int
 ) -> int:
-    """좌석 파일이 새것이고 화면에 사람이 없으면 이름표 사진을 올린다 (앱팀할일.md).
+    """좌석 파일이 새것이고 화면에 사람이 없으면 이름표 사진을 올린다 (문서/앱팀할일.md).
 
     돌려주는 값은 "사람 때문에 기다린 틱 수" — 로그를 5분에 한 번으로 줄이는 데만 쓴다.
     여기서는 아무것도 raise 하지 않는다.
@@ -869,7 +869,7 @@ def _maybe_seat_sheet(
 def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     """Judge a camera stream on a wall-clock schedule until told to stop.
 
-    This is the deployment loop.  It never writes video (plan.md T10), it
+    This is the deployment loop.  It never writes video (문서/plan.md T10), it
     judges the newest frames on every tick even while the stream is
     reconnecting, and every JSONL record carries what the 24/7 box is judged
     on: how late the tick started, how long it took, memory, decoder health.

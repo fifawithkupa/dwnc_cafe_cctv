@@ -1,6 +1,6 @@
 """Serve a local video file as a live RTSP stream, for testing without a camera.
 
-plan.md T5: the camera is not bought until the edge bench (T6) fixes the
+문서/plan.md T5: the camera is not bought until the edge bench (T6) fixes the
 resolution, but T8's stream reader and T9's Quick Sync decoding have to be
 verifiable before then.  This republishes an existing sample video as a real
 RTSP stream so the whole pipeline — decode, infer, tick — runs against a live
@@ -119,7 +119,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise FileNotFoundError(f"Source video not found: {args.source}")
 
     ffmpeg = require_binary(
-        "ffmpeg", "Install it first (see ONBOARDING.md)."
+        "ffmpeg", "Install it first (see 문서/ONBOARDING.md)."
     )
     url = f"rtsp://{args.host}:{args.port}/{args.path}"
 

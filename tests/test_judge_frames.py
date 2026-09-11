@@ -317,7 +317,7 @@ class BelongingsPromptTests(unittest.TestCase):
             self.assertIn(example, prompt)
 
     def test_prompt_excludes_the_wall_counter(self):
-        # plan.md section 0-c: the long window/wall bench is one blob to the
+        # 문서/plan.md section 0-c: the long window/wall bench is one blob to the
         # model and a six-seat row to a person.  Until someone draws its seat
         # slots it is not a judgement unit, so counting it on one side only
         # would manufacture an inflation that is not there.

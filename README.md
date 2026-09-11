@@ -3,7 +3,9 @@
 카페 CCTV 영상을 분석해 테이블별 점유 여부를 판정하고, 손님 앱에 "몇 자리 남음"을
 보여주기 위한 CV 파이프라인. YOLOv8(탐지+포즈) 기반.
 
-**전체 배경/로드맵/판정 로직은 [`SEATNOW_전체정리.md`](SEATNOW_전체정리.md) 를 먼저 읽어주세요.**
+**전체 배경/로드맵/판정 로직은 [`문서/SEATNOW_전체정리.md`](문서/SEATNOW_전체정리.md) 를 먼저 읽어주세요.**
+
+절차·할 일·정리는 전부 [`문서/`](문서/README.md) 에 모여 있습니다. 지금 할 차례가 궁금하면 [`문서/다음할일.md`](문서/다음할일.md) 부터 보세요.
 
 ## 저장소 구성
 
@@ -62,7 +64,7 @@ Codex 정답지는 다시 만들려면 Codex를 또 돌려야 하기 때문이�
 | `checks/judge_schema.json` | Codex가 답해야 하는 JSON 모양 |
 | `tests/` | 유닛 테스트 546개 (모델 없이 순수 로직 검증) |
 | `docs/superpowers/` | 설계 스펙·구현 계획 |
-| `plan.md` | 작업 플랜 — **§1에 지금 하던 일**, §2에 결정 기록 |
+| `문서/plan.md` | 작업 플랜 — **§1에 지금 하던 일**, §2에 결정 기록 |
 
 ## 환경 설정 (팀원용)
 
@@ -93,7 +95,7 @@ python3 -m venv venv
 **샘플 영상(`sample_raw/`)은 저장소에 없습니다** (용량·개인정보).
 `results/`는 판독표(`report.md`)만 올라가고 사진·로그·영상은 빠집니다.
 팀 구글 드라이브로 공유 — 받는 방법과 **"오프라인 사용 가능" 고정이 왜 필수인지**는
-[`ONBOARDING.md` §2](ONBOARDING.md) 참조.
+[`문서/ONBOARDING.md` §2](문서/ONBOARDING.md) 참조.
 
 ## 실행
 
@@ -203,7 +205,7 @@ python3 -m venv venv
 - ✅ **수동 좌석 캘리브레이션(레이아웃) 머지 완료** — 설계/계획:
   - 스펙: `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md`
   - 구현 계획(태스크 단위): `docs/superpowers/plans/2026-07-11-manual-seat-layout.md`
-- ✅ 의자→테이블 점유 전파 회귀 복구 (plan.md T1). `f1f41d5`가 제거하고
+- ✅ 의자→테이블 점유 전파 회귀 복구 (문서/plan.md T1). `f1f41d5`가 제거하고
   `70a86bc`가 되살리지 않아 `seat_detections`가 항상 비어 있던 문제
 - ✅ 진단 로깅(T2), 다중 영상 평가셋·커버리지 집계(T3), OpenVINO 익스포트·벤치(T4),
   RTSP 재송출 하네스(T5), 파라미터 스윕 하네스(T7 코드)
@@ -213,7 +215,7 @@ python3 -m venv venv
 - 🚧 다음: 엣지 박스 도착 → `edge/check_edge.py` → `edge/bench.py` → `edge/bench_decode.py`
   → 카메라 확정 → RTSP 리더(T8) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
 
-작업 순서와 근거는 [`plan.md`](plan.md) 참조.
+작업 순서와 근거는 [`문서/plan.md`](문서/plan.md) 참조.
 
 ## 개발 규칙
 

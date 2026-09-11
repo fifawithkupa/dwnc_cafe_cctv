@@ -196,7 +196,7 @@ class ChairLinkPipelineTests(unittest.TestCase):
 
 
 class OccludedSeatPipelineTests(unittest.TestCase):
-    """The compact-pose rescue path that plan.md §T1 calls the fatal chain."""
+    """The compact-pose rescue path that 문서/plan.md §T1 calls the fatal chain."""
 
     CHAIR = (560.0, 400.0, 700.0, 560.0)
     PERSON = (565.0, 300.0, 695.0, 520.0)

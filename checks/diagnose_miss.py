@@ -401,7 +401,7 @@ def run_detector(
 
     from engine.seatnow_core import load_model
 
-    # 한글이 든 경로에서 cv2.imread 가 조용히 실패한다 (plan.md §7).
+    # 한글이 든 경로에서 cv2.imread 가 조용히 실패한다 (문서/plan.md §7).
     data = np.frombuffer(frame_path.read_bytes(), dtype=np.uint8)
     frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if frame is None:

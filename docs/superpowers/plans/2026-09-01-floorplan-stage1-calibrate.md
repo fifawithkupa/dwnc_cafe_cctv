@@ -1127,7 +1127,7 @@ git commit -m "feat: calibrate.py [f] - 바닥 네 점 찍기
 ### Task 6: 문서 갱신
 
 **Files:**
-- Modify: `README.md` (평가·벤치 도구 절의 캘리브레이션 부분), `plan.md` (§0-a 상태표, T14)
+- Modify: `README.md` (평가·벤치 도구 절의 캘리브레이션 부분), `문서/plan.md` (§0-a 상태표, T14)
 
 **Interfaces:**
 - Consumes: Task 1~5
@@ -1151,9 +1151,9 @@ git commit -m "feat: calibrate.py [f] - 바닥 네 점 찍기
 #    이어서 작업하려면 --edit layouts/cafe_angle1.json
 ```
 
-- [ ] **Step 2: plan.md에 진행 상황을 적는다**
+- [ ] **Step 2: 문서/plan.md에 진행 상황을 적는다**
 
-`plan.md` §0-a 상태표의 T14 줄 아래에 한 줄을 더한다:
+`문서/plan.md` §0-a 상태표의 T14 줄 아래에 한 줄을 더한다:
 
 ```markdown
 | **2D 평면도 1단계** | ✅ **완료 (2026-09-01)** | 스키마 v3(소속 미정 의자·바닥 네 점) + `calibrate.py` 확장. 설계: `docs/superpowers/specs/2026-09-01-2d-floorplan-design.md` |
@@ -1167,7 +1167,7 @@ Expected: PASS
 - [ ] **Step 4: 커밋**
 
 ```bash
-git add README.md plan.md
+git add README.md 문서/plan.md
 git commit -m "docs: 캘리브레이션 절차 3-a~3-d 와 2D 평면도 1단계 완료 기록"
 ```
 

@@ -1,4 +1,4 @@
-"""앱 코드에 넣은 이름표 목록이 박스 좌석 파일과 같은지 대조한다 (앱팀할일.md 3단계).
+"""앱 코드에 넣은 이름표 목록이 박스 좌석 파일과 같은지 대조한다 (문서/앱팀할일.md 3단계).
 
     python -m install.seat_check --layout layouts/<카페>.json --app-ids <앱이 보낸 목록.txt>
 

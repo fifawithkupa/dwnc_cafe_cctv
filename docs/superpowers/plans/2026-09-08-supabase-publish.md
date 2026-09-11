@@ -33,7 +33,7 @@
 | `deploy/supabase/schema.sql` (새) | 표·트리거·RLS·realtime |
 | `deploy/seatnow.env.example` (수정) | 환경변수 5줄 |
 | `docs/앱연동.md` (새) | 앱 개발자 문서 |
-| `카페설치당일.md`, `다음할일.md` (수정) | 6-3 단계에 평면도 초안 명령, 남은 일 갱신 |
+| `문서/카페설치당일.md`, `문서/다음할일.md` (수정) | 6-3 단계에 평면도 초안 명령, 남은 일 갱신 |
 
 ---
 
@@ -1726,13 +1726,13 @@ git commit -m "docs(앱연동): 앱 개발자용 — 표 모양, 45초 규칙, �
 
 ---
 
-### Task 9: 설치 문서 갱신 (`카페설치당일.md` 6-3, `다음할일.md`)
+### Task 9: 설치 문서 갱신 (`문서/카페설치당일.md` 6-3, `문서/다음할일.md`)
 
 **Files:**
-- Modify: `카페설치당일.md` — 6-3 절
-- Modify: `다음할일.md` — 2번 항목, "남은 것"
+- Modify: `문서/카페설치당일.md` — 6-3 절
+- Modify: `문서/다음할일.md` — 2번 항목, "남은 것"
 
-- [ ] **Step 1: `카페설치당일.md` 6-3 을 아래로 바꾼다**
+- [ ] **Step 1: `문서/카페설치당일.md` 6-3 을 아래로 바꾼다**
 
 기존 "### 6-3. 다시 Claude 에게" 절의 "Claude 가 하는 일" 문단을:
 
@@ -1751,7 +1751,7 @@ Claude 가 하는 일: 그린 레이아웃으로 **지도 초안**을 만들고(
 | Supabase 전송 | 시작 화면 `Supabase 전송: 켜짐 (카페id)`. 대시보드 `cafe_live` 의 `updated_at` 이 15초마다 바뀐다. `꺼짐` 이면 박스 `seatnow.env` 의 다섯 값을 본다 |
 ```
 
-- [ ] **Step 2: `다음할일.md`**
+- [ ] **Step 2: `문서/다음할일.md`**
 
 "## 2. 카메라가 오기 전에" 의 첫 항목(판정 결과를 보여줄 서버·앱)을:
 
@@ -1772,7 +1772,7 @@ Claude 가 하는 일: 그린 레이아웃으로 **지도 초안**을 만들고(
 - [ ] **Step 3: 커밋**
 
 ```bash
-git add 카페설치당일.md 다음할일.md
+git add 문서/카페설치당일.md 문서/다음할일.md
 git commit -m "docs: 설치 당일 6-3 에 지도 초안·Supabase 확인, 다음할일에 켜는 순서"
 ```
 
@@ -1829,10 +1829,10 @@ curl -s "https://<project>.supabase.co/rest/v1/cafe_live?cafe_id=eq.dwnc&select=
 
 - [ ] **Step 6: 기록**
 
-`다음할일.md` 맨 위 표에 "Supabase 전송 켜짐, 끊김 시험 통과" 한 줄. 커밋:
+`문서/다음할일.md` 맨 위 표에 "Supabase 전송 켜짐, 끊김 시험 통과" 한 줄. 커밋:
 
 ```bash
-git add 다음할일.md
+git add 문서/다음할일.md
 git commit -m "docs: Supabase 전송 실측 — 집 박스에서 15초마다 갱신, gap·복구 확인"
 ```
 

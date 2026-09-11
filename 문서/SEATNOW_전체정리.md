@@ -185,7 +185,7 @@ Seatify 논문의 3번째 테스트(Hip-Knee 수직 거리)는 **의도적으로
 
 `--sample-seconds`(기본 15초) 하나뿐이다. **엣지 박스에서 돌릴 계산량을 예측
 가능하게 두는 것이 우선**이라, 점유 증거가 보였을 때 5초로 당기던 2차 판단은
-뺐다 (2026-09-02, `plan.md` §3). 되살리려면 그 커밋을 되돌리면 된다.
+뺐다 (2026-09-02, `문서/plan.md` §3). 되살리려면 그 커밋을 되돌리면 된다.
 
 ### 5.3 비대칭 디바운싱 — `TableTracker`
 
@@ -373,7 +373,7 @@ INT8 양자화 → 엣지 디바이스에 배포되는 스냅샷
 - **MVP**: 카페 기존 PC에 소프트웨어 설치 (하드웨어 비용 0)
 - **확장**: 대여형 미니PC 또는 라즈베리파이/Jetson Nano → RTSP로 IP카메라 수신
 
-> **"기존 PC" ≠ "POS기"** — 파일럿 단계에서 POS 설치는 제외한다 (`plan.md` §2).
+> **"기존 PC" ≠ "POS기"** — 파일럿 단계에서 POS 설치는 제외한다 (`문서/plan.md` §2).
 >
 > 1. POS는 매장 매출의 단일 장애점이다. 결제가 밀리는 사고가 한 번만 나도 그 매장을 잃는다
 > 2. POS PC 사양이 대체로 우리 워크로드보다 낮다 (Celeron/Atom, RAM 4GB, Win10 IoT)
@@ -386,7 +386,7 @@ INT8 양자화 → 엣지 디바이스에 배포되는 스냅샷
 > 프로세스 우선순위/CPU 상한 격리 + 원인 판별 로깅.
 
 **파일럿 엣지 박스**: 중고 미니PC (Intel 6세대 i3급, ~10만원). Quick Sync 하드웨어 디코딩이
-선택 이유이므로 `-hwaccel qsv` 적용이 전제다 (`plan.md` T9 — 현재 코드에는 미적용).
+선택 이유이므로 `-hwaccel qsv` 적용이 전제다 (`문서/plan.md` T9 — 현재 코드에는 미적용).
 카메라는 엣지 벤치(T6) 결과로 해상도를 정한 뒤 구매하며, **RTSP 개방 여부 확인이 필수**다.
 
 **CCTV 호환성** — ✅ IP카메라(RTSP/ONVIF), NVR+IP카메라 / ⚠️ 일부 클라우드형·아날로그+DVR(변환 시) / ❌ 순수 아날로그 구형, 완전 폐쇄형 클라우드.
@@ -461,7 +461,7 @@ CCTV → NVR → 엣지 디바이스     →   Supabase   →  SeatNow 앱
 ## 14. 관련 문서
 
 - `README.md` — 팀원용 셋업/실행 (일부 내용 갱신 필요, §9)
-- `ONBOARDING.md` — 셋업 시 함정 2가지 (ffmpeg 필수 / numpy&lt;2 유지)
+- `문서/ONBOARDING.md` — 셋업 시 함정 2가지 (ffmpeg 필수 / numpy&lt;2 유지)
 - `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md` — 수동 레이아웃 설계
 - `docs/superpowers/specs/2026-07-13-layout-zone-tracking-design.md` — 존 트래킹 설계
 - `docs/superpowers/plans/2026-07-11-manual-seat-layout.md` — 구현 계획

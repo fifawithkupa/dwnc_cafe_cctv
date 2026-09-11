@@ -35,7 +35,7 @@ alter table public.cafe_live add column if not exists busy_tables integer not nu
 
 -- 이름표 사진: 카페당 한 줄. 설치 때 박스가 카메라 화면에 자리 이름표만 써 넣은 사진을
 -- Storage `seat-sheets/<cafe_id>.jpg` 에 올리고 여기 줄을 하나 남긴다. 앱 팀은 이 사진을
--- 보고 피그마 네모마다 이름표를 붙여 앱 코드에 넣는다 (앱팀할일.md). 다시 찍으면 덮어쓴다.
+-- 보고 피그마 네모마다 이름표를 붙여 앱 코드에 넣는다 (문서/앱팀할일.md). 다시 찍으면 덮어쓴다.
 create table if not exists public.cafe_seat_sheets (
   cafe_id      text primary key references public.cafes (id),
   seat_ids     jsonb not null,               -- [{"seat_id":"T1","kind":"table","zone":null}, ...]

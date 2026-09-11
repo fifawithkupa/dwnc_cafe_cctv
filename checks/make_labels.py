@@ -1,6 +1,6 @@
 """Generate — and validate — a SeatNow labelling fixture for one video.
 
-plan.md T3: the 1-hour recording and the 10-minute edge cases cannot be scored
+문서/plan.md T3: the 1-hour recording and the 10-minute edge cases cannot be scored
 because they have no labels.  Labelling is manual work that only a person can
 do, so this script does everything around it: it probes the video, extracts a
 contact sheet to label from, and writes a skeleton fixture with every interval
@@ -19,7 +19,7 @@ pre-created and every occupancy field left blank.
 Every interval needs each seat listed in exactly one of ``occupied``,
 ``empty``, or ``ignore``.  ``ignore`` is not a cop-out: it is the label for a
 seat the camera genuinely cannot judge, and its share is the coverage number
-that decides the one-camera question in plan.md §2.
+that decides the one-camera question in 문서/plan.md §2.
 """
 
 from __future__ import annotations

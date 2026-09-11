@@ -44,7 +44,7 @@ class OccupancyState(str, Enum):
 
 # Seat furniture a customer can sit on.  Chair links carry occupancy to the
 # table they belong to, so this set must stay in sync with the class names the
-# detector emits (see the fine-tuning class-reduction note in plan.md).
+# detector emits (see the fine-tuning class-reduction note in 문서/plan.md).
 SEAT_CLASSES = frozenset({"chair", "couch", "bench"})
 
 

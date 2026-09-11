@@ -12,7 +12,7 @@ side by side.
 Beyond accuracy it reports *coverage*: how much of the labelled time SeatNow
 spends on tables it refuses to score (``raw_state=ignore``) and how often a
 table goes missing.  That is the number that decides the one-camera question
-in plan.md §2 — a seat the camera cannot see is not a model problem.
+in 문서/plan.md §2 — a seat the camera cannot see is not a model problem.
 """
 
 from __future__ import annotations

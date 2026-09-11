@@ -1,6 +1,6 @@
 """Sweep SeatNow's cadence/resolution parameters for accuracy vs. tick cost.
 
-plan.md T7: run the ``median_frames x sample_seconds x imgsz x table_crops``
+문서/plan.md T7: run the ``median_frames x sample_seconds x imgsz x table_crops``
 grid over the labelled evaluation set, then pick the point that is the most
 accurate among those that still fit inside a tick.
 
@@ -97,7 +97,7 @@ def build_run_command(
     """Compose the seatnow.py invocation for one grid point.
 
     ``--no-video`` is not an optimisation here: writing an annotated MP4 for
-    every grid point would dominate the runtime being measured, and plan.md
+    every grid point would dominate the runtime being measured, and 문서/plan.md
     T10 makes it the deployment default anyway.
     """
     command = [
@@ -229,7 +229,7 @@ def print_table(results: Sequence[PointResult]) -> None:
         )
         if best.tick_utilization > 0.5:
             print(
-                "  ⚠️ tick의 50%를 넘는다. plan.md T6 기준으로는 CONDITIONAL이며, "
+                "  ⚠️ tick의 50%를 넘는다. 문서/plan.md T6 기준으로는 CONDITIONAL이며, "
                 "24/7 운영 시 RTSP 재연결·디코더 리셋 몫이 부족하다."
             )
     else:

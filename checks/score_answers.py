@@ -466,7 +466,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     output = args.output or run_dir / "채점표.md"
     misses = args.misses or run_dir / "오답.json"
-    # 한글이 든 경로에는 Path 로 쓴다 (plan.md §7 윈도우 함정).
+    # 한글이 든 경로에는 Path 로 쓴다 (문서/plan.md §7 윈도우 함정).
     output.write_text(render_report(verdicts, args.title or run_dir.name), encoding="utf-8")
     misses.write_text(
         json.dumps(

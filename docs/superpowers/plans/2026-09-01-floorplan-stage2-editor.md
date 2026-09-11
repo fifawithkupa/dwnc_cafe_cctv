@@ -1752,7 +1752,7 @@ git commit -m "feat: 평면도 편집 화면
 
 **Files:**
 - Create: `layouts/cafe_angle1.floorplan.json`
-- Modify: `README.md`, `plan.md`, `.gitignore`
+- Modify: `README.md`, `문서/plan.md`, `.gitignore`
 
 **Interfaces:**
 - Consumes: Task 1~4 전부
@@ -1843,7 +1843,7 @@ Expected: 레이아웃의 소속 미정 개수가 편집기에서 붙인 만큼 
   --log sample_results/angle1_layout.jsonl
 ```
 
-`plan.md` §0-a 상태표의 "2D 평면도 1단계" 줄 아래에 더한다:
+`문서/plan.md` §0-a 상태표의 "2D 평면도 1단계" 줄 아래에 더한다:
 
 ```markdown
 | **2D 평면도 2단계** | ✅ **완료 (2026-09-01)** | 투영·`floorplan.json`·브라우저 편집기. 의자 소속을 지도에서 고치면 판정이 따라온다 |
@@ -1853,7 +1853,7 @@ Expected: 레이아웃의 소속 미정 개수가 편집기에서 붙인 만큼 
 
 ```bash
 ./venv/Scripts/python.exe -m unittest discover tests
-git add README.md plan.md .gitignore docs/inspect
+git add README.md 문서/plan.md .gitignore docs/inspect
 git commit -m "docs: 2D 평면도 2단계 완료 - 편집기와 실행 결과"
 ```
 

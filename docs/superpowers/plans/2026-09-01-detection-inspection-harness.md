@@ -1633,7 +1633,7 @@ def render_summary(rows: List[Row], records: List[Dict[str, object]]) -> str:
     how = {
         "install": "카메라를 다시 단다 (코드로 풀지 않는다)",
         "geometry": "구제 경로·좌석 칸 다시 긋기",
-        "model": "파인튜닝 또는 imgsz 상향 (plan.md T11)",
+        "model": "파인튜닝 또는 imgsz 상향 (문서/plan.md T11)",
         "time": "기다리면 된다 — 할 일 없음",
         "settled": "판정이 끝난 것 — 문제 아님",
         "other": "어휘에 없는 코드 — 확인 필요",
@@ -1719,7 +1719,7 @@ model이면 파인튜닝이다."
 
 **Files:**
 - Create: `docs/inspect/angle{1..4}.md`
-- Modify: `plan.md` (§0-a 상태표, §0-c에 결과 절 추가), `README.md` (도구 목록)
+- Modify: `문서/plan.md` (§0-a 상태표, §0-c에 결과 절 추가), `README.md` (도구 목록)
 
 **Interfaces:**
 - Consumes: Task 2·4·6의 모든 CLI
@@ -1827,7 +1827,7 @@ orca terminal create --worktree active --title "JUDGE" --command "codex" --focus
 
 - [ ] **Step 8: 한 문장으로 결론을 쓴다**
 
-설계 §10-4의 형식이다. `plan.md` §0-c 아래에 절을 추가한다:
+설계 §10-4의 형식이다. `문서/plan.md` §0-c 아래에 절을 추가한다:
 
 ```markdown
 ### 2026-09-01 — 검출 검사 하네스 첫 실행 (T14 완결)
@@ -1847,7 +1847,7 @@ orca terminal create --worktree active --title "JUDGE" --command "codex" --focus
 **따라오는 다음 행동**: (파인튜닝 / 구제 경로 / 카메라 각도 중 하나)
 ```
 
-`plan.md` §0-a 상태표의 T14 줄을 `✅ 완료 (2026-09-01)`로 바꾼다.
+`문서/plan.md` §0-a 상태표의 T14 줄을 `✅ 완료 (2026-09-01)`로 바꾼다.
 
 - [ ] **Step 9: README에 도구를 추가한다**
 
@@ -1856,7 +1856,7 @@ orca terminal create --worktree active --title "JUDGE" --command "codex" --focus
 - [ ] **Step 10: 커밋**
 
 ```bash
-git add docs/inspect plan.md README.md
+git add docs/inspect 문서/plan.md README.md
 git commit -m "docs: 검출 검사 하네스 첫 실행 결과 (T14 완결)
 
 angle1~4를 레이아웃 없이 끝까지 돌렸다. 판정 파이프라인이 실제 영상에서

@@ -2026,12 +2026,12 @@ Expected: `OK`
 ./venv/bin/python calibrate.py sample_raw/cafe_1.mp4 --output layouts/cafe_1.json
 ```
 
-`README.md`와 `ONBOARDING.md`의 "유닛 테스트 171개" / "Ran 171 tests"를 실제 개수로 맞춘다. 개수는 `python -m unittest discover tests`의 출력에서 확인한다.
+`README.md`와 `문서/ONBOARDING.md`의 "유닛 테스트 171개" / "Ran 171 tests"를 실제 개수로 맞춘다. 개수는 `python -m unittest discover tests`의 출력에서 확인한다.
 
 - [ ] **Step 12: 커밋**
 
 ```bash
-git add make_labels.py verify_seatnow.py tests/test_make_labels.py tests/test_verify_seatnow.py README.md ONBOARDING.md
+git add make_labels.py verify_seatnow.py tests/test_make_labels.py tests/test_verify_seatnow.py README.md 문서/ONBOARDING.md
 git commit -m "feat: 라벨링·채점 도구를 좌석 칸/사유 코드에 맞춤"
 ```
 

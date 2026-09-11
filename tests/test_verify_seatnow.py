@@ -121,7 +121,7 @@ class MatchFixtureTests(unittest.TestCase):
 
 
 class CoverageMetricsTests(unittest.TestCase):
-    """plan.md T3: quantify the seats the camera never gets to judge."""
+    """문서/plan.md T3: quantify the seats the camera never gets to judge."""
 
     def records(self):
         def table(name, raw_state, missing=0):

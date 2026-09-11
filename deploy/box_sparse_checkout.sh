@@ -76,7 +76,7 @@ fi
 # ── 새 폴더 확인: 허용 목록에 없는 코드 폴더가 저장소에 생겼나 ────────────
 # 허용 목록 방식이라 새 폴더는 저절로 안 내려온다.  그게 기본값으로 안전하지만,
 # 박스가 돌려야 할 코드가 새로 생긴 거라면 알아야 한다.
-allowed="engine edge checks install layouts deploy results"
+allowed="engine edge checks install layouts deploy results"  # 문서/ docs/ tests/ 는 일부러 뺀다
 unknown=""
 for d in $(git -c core.quotepath=false ls-files | awk -F/ 'NF>1 {print $1}' | sort -u); do
   found=0

@@ -356,7 +356,7 @@ def render_summary(rows: List[Row], records: List[Dict[str, object]]) -> str:
     how = {
         "install": "카메라를 다시 단다 (코드로 풀지 않는다)",
         "geometry": "구제 경로·좌석 칸 다시 긋기",
-        "model": "파인튜닝 또는 imgsz 상향 (plan.md T11)",
+        "model": "파인튜닝 또는 imgsz 상향 (문서/plan.md T11)",
         "time": "기다리면 된다 — 할 일 없음",
         "settled": "판정이 끝난 것 — 문제 아님",
         "other": "어휘에 없는 코드 — 확인 필요",

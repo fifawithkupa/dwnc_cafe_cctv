@@ -1982,14 +1982,14 @@ git commit -m "feat: angle1 좌석 레이아웃 (T14 실영상 첫 실행)"
 
 ---
 
-### Task 9: `plan.md` 갱신
+### Task 9: `문서/plan.md` 갱신
 
 **Files:**
-- Modify: `plan.md`
+- Modify: `문서/plan.md`
 
 - [ ] **Step 1: 진행 상황 표 갱신**
 
-`plan.md` §0-a의 표에 다음을 반영한다.
+`문서/plan.md` §0-a의 표에 다음을 반영한다.
 
 - `T9 Quick Sync` → ✅ 완료 (Task 1~3). "엣지 도착 전에 끝냄 — 디코딩 측정이 의미를 가지려면 선행되어야 했다"
 - `T14 실영상 첫 실행` → 결과에 따라 ✅ 또는 진행 중
@@ -1997,7 +1997,7 @@ git commit -m "feat: angle1 좌석 레이아웃 (T14 실영상 첫 실행)"
 
 - [ ] **Step 2: 틀린 전제를 정정으로 남긴다**
 
-`plan.md` §2의 "카메라 즉시 구매 — ❌ 엣지 벤치 후" 항목 아래에 정정을 덧붙인다.
+`문서/plan.md` §2의 "카메라 즉시 구매 — ❌ 엣지 벤치 후" 항목 아래에 정정을 덧붙인다.
 
 ```markdown
 > **2026-08-31 정정**: "추론 벤치(`bench.py`)로 해상도를 고른다"는 틀렸다. 추론은
@@ -2014,8 +2014,8 @@ T8·T10을 "카메라 확정 후"로 명시하고, 다음 액션을 `엣지 박�
 - [ ] **Step 4: Commit**
 
 ```bash
-git add plan.md
-git commit -m "docs: plan.md 갱신 - T9/T17 완료, 카메라 선정 근거 정정"
+git add 문서/plan.md
+git commit -m "docs: 문서/plan.md 갱신 - T9/T17 완료, 카메라 선정 근거 정정"
 ```
 
 ---

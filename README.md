@@ -1,226 +1,289 @@
-# SeatNow — 카페 CCTV 좌석 점유 감지 (dwnc_cafe_cctv)
+# SitNow — 카페 CCTV 좌석 점유 감지 (dwnc_cafe_cctv)
 
-카페 CCTV 영상을 분석해 테이블별 점유 여부를 판정하고, 손님 앱에 "몇 자리 남음"을
-보여주기 위한 CV 파이프라인. YOLOv8(탐지+포즈) 기반.
+카페 천장에 카메라 1대를 달고, 매장 안의 작은 컴퓨터(엣지 박스)가 15초마다
+"어느 자리가 사용중인가"를 판정해서 손님 앱에 **빈자리 수와 자리별 색**으로 보여주는 시스템이다.
+영상은 매장 밖으로 나가지 않는다. 나가는 것은 "자리 이름 + 사용중/빈자리" 한 줄뿐이다.
 
-**전체 배경/로드맵/판정 로직은 [`문서/SEATNOW_전체정리.md`](문서/SEATNOW_전체정리.md) 를 먼저 읽어주세요.**
+> 갱신: **2026-09-11**, `main` = `b585a89` 기준. 이 문서는 "지금 코드가 실제로 하는 일"만 적는다.
+> 지난 결정과 배경은 [`문서/SEATNOW_전체정리.md`](문서/SEATNOW_전체정리.md), 다음에 할 일은
+> [`문서/다음할일.md`](문서/다음할일.md), 앱 팀과의 계약은 [`문서/앱팀할일.md`](문서/앱팀할일.md).
 
-절차·할 일·정리는 전부 [`문서/`](문서/README.md) 에 모여 있습니다. 지금 할 차례가 궁금하면 [`문서/다음할일.md`](문서/다음할일.md) 부터 보세요.
+---
 
-## 저장소 구성
+## 1. 정보가 어떻게 흐르나 — 한 장 그림
 
-폴더는 **무엇을 할 때 쓰는지**로 나뉜다.
+```
+ [카페 안]                                                    [서버]            [손님]
+ ┌──────────┐  RTSP 영상   ┌────────────────────────────┐  자리별 busy   ┌──────────┐    ┌──────┐
+ │ 카메라   │ ───────────▶ │ 엣지 박스 (미니PC, 우분투)  │ ────────────▶ │ Supabase │ ─▶ │ 앱   │
+ │ 4MP H.265│  끊임없이     │  15초마다 판정 한 번        │  15초마다     │ cafe_live│    │ 색칠 │
+ └──────────┘              │  · 최신 5장 다수결          │  한 줄 덮어씀 └──────────┘    └──────┘
+                           │  · 좌석 파일(사람이 그림)    │
+                           │  · 확정 규칙(2번/3번)       │  판정 기록(수치만)   ┌──────────────┐
+                           │  · 하루치 JSONL 로그(14일)  │ ─────────────────▶ │ seatnow_*   │
+                           └────────────────────────────┘  하루 한 번, 밤에    │ (개선용 기록) │
+                                                                             └──────────────┘
+ 나가지 않는 것: 영상, 사진, 화면 좌표.  박스 안에만 있는 것: 카메라 영상(메모리에서만), JSONL 로그.
+```
 
-| 폴더 | 언제 쓰나 |
+| 단계 | 무엇이 | 어디서 어디로 | 얼마나 자주 | 어떻게 |
+|---|---|---|---|---|
+| ① | 영상 | 카메라 → 박스 | 끊임없이 (20fps) | RTSP. 박스가 하드웨어 디코딩으로 받아 메모리 고리 버퍼에 최신 몇 장만 든다. 디스크에 쓰지 않는다 |
+| ② | 판정 | 박스 안 | **15초마다** | 최신 5장을 각각 판정하고 다수결 → 자리마다 `사용중/빈자리/모름` (§2) |
+| ③ | 확정 | 박스 안 | 판정마다 | 앉음은 2번, 떠남은 3번 연속 봐야 바뀐다. 앱에 나가는 값은 이 "확정값" (§2-3) |
+| ④ | 앱용 한 줄 | 박스 → Supabase `cafe_live` | 판정 직후, 15초마다 | 카페당 한 줄을 덮어쓴다. 자리별 `busy`, 사용중/빈자리 개수. 실패하면 버린다 — 다음 판정이 더 새롭다 (§3) |
+| ⑤ | 앱 화면 | Supabase → 앱 | 줄이 바뀔 때 (실시간 구독) | 앱은 `seat_id` 로 피그마 네모를 찾아 `busy` 로 색칠. 45초 넘게 안 바뀌면 "확인 중" |
+| ⑥ | 판정 기록 | 박스 디스크 `results/live/<날짜>.jsonl` | 판정마다 한 줄 | 자리별 상태·사유·근거·걸린 시간. 14일 뒤 자동 삭제 |
+| ⑦ | 개선용 기록 | 박스 → Supabase `seatnow_seat_ticks`/`seatnow_seat_daily` | **하루 한 번, 밤에** | ⑥ 중 "틀렸거나 갈렸거나 바뀐 순간"만 골라 수치로 보낸다 (§4). 판정 루프와 분리돼 있어 7.5초 예산을 안 건드린다 |
+
+---
+
+## 2. 판정 로직 — 지금 코드가 하는 일
+
+### 2-1. 전제: 좌석은 사람이 그린다, 카메라는 우리가 단다
+
+- 설치 당일 `install/calibrate.py` 로 카메라 화면 위에 **자리마다 네모**를 그린다. 이게 좌석 파일(`layouts/<카페>.json`)이고
+  판정의 정답 틀이다. 모델이 테이블을 찾는 게 아니라, **사람이 그린 네모 안에 근거가 있나**를 본다.
+- 네모의 종류는 둘. **테이블**(`T1` …)은 네모 하나가 판정 단위. **바/일자형 책상**(`BAR7`)은 구역 하나에 칸을 여러 개 그려
+  칸마다 판정한다 (`BAR7-1`, `BAR7-2` …). 의자도 그려서 어느 테이블 것인지 잇는다.
+- 카메라는 매장당 1대, 위치·각도는 우리가 고른다. 화각이 못 보는 자리는 코드로 보정하지 않고 카메라를 다시 단다 (`CLAUDE.md`).
+- 좌석 네모는 운영 중 가구가 조금 움직여도 따라간다 (탐지된 테이블·의자 쪽으로 천천히 미끄러진다). 재캘리브레이션은 하지 않는다.
+
+### 2-2. 한 장 안에서 — 자리 하나의 판정
+
+한 장의 사진에 모델 둘을 돌린다.
+
+| 모델 | 무엇을 찾나 | 설정 |
+|---|---|---|
+| 물체 탐지 (YOLOv8n) | 사람, 의자, 짐(노트북·컵·가방 …) | 긴 변 1280px. 테이블마다 잘라서 한 번 더 보고 작은 짐을 건진다 |
+| 자세 (YOLOv8n-pose) | 사람의 관절 17점 → **앉음/서있음/모름** | 긴 변 960px |
+
+**앉음 판정.** 엉덩이-무릎-발목 각도 또는 어깨-엉덩이-무릎 각도가 **110° 미만**이면 앉음. 관절이 안 보이면(테이블에 하반신이 가려짐)
+바로 서있음으로 넘기지 않고 **모름**으로 둔다. 모름인 사람이 의자 위에 충분히 겹쳐 있으면 앉음으로 구제한다. 지나가는 사람(직전 판정 대비
+많이 움직인 사람)은 근거에서 뺀다.
+
+**근거 세 가지.** 자리 네모(또는 이어진 의자)에 무엇이 있나.
+
+| 글자 | 근거 | 뜻 |
+|---|---|---|
+| `s` | 사람이 앉아 있다 | 가장 확실 |
+| `t` | 책상 위에 짐이 있다 | 잠깐 자리 비운 손님 |
+| `c` | 이어진 의자 위에 짐이 있다 | 위와 같음 |
+
+가구·고정물·동물처럼 짐이 될 수 없는 것은 목록으로 뺀다. 손에 들고 지나가는 물건도 뺀다.
+
+**최종 규칙.**
+
+```
+테이블:  사람 or 책상 짐 or 의자 짐  → 사용중
+         근거 없음, 그런데 모름인 사람이 옆에 있거나 사람이 자리를 절반 이상 가림 → 모름
+         근거 없음                    → 빈자리
+바 칸:   사람이 앉아 있어야만 사용중.  짐만 있으면 빈자리 (사유 belongings_only)
+         — 한 손님의 노트북·컵·가방이 옆 칸 두세 개에 퍼지기 때문. 치워 달라면 치워 준다
+바 칸:   한 사람 상자가 두 칸에 걸치면 두 칸 다 모름 — 한 명인지 두 명인지 모르므로
+```
+
+**모름을 빈자리로 반올림하지 않는다.** 이게 이 프로젝트의 첫 번째 원칙이다. 손님을 남의 자리로 보내는 게 최악의 오류다.
+
+### 2-3. 시간 축 — 흔들림을 걸러서 앱에 내보내기
+
+한 장의 판정은 흔들린다. 세 겹으로 안정시킨다.
+
+1. **5장 다수결.** 판정 시각의 최신 5장(연속 프레임)을 각각 판정하고 자리마다 투표한다. 사용중 대 빈자리로 과반이 나오면 그쪽, 동률이면 가운데 장.
+   투표가 갈린 자리는 나중에 개선용 기록으로 남는다.
+2. **비대칭 확정 (트래커).** 자리마다 "안정 상태"를 들고 있다가
+   - 빈자리 → 사용중: 사용중 판정이 **2번** 쌓여야 바뀐다. 첫 번째 판정 직후는 **모름**으로 낸다 (방금 앉은 손님 자리를 "비었다"고 안내하지 않으려고).
+   - 사용중 → 빈자리: 빈자리 판정이 **3번 연속**이어야 바뀐다. 잠깐 화장실 간 손님 자리를 지키기 위해서다.
+   - 모름 판정은 쌓아 둔 횟수를 지우지 않고 그냥 멈춘다. 사람이 지나가서 잠깐 안 보인 것 때문에 처음부터 다시 세지 않는다.
+3. **앱에 나가는 값 = 마지막으로 확정된 값.** 위 확정이 사용중/빈자리로 끝났을 때만 갱신한다. 모름·확정 대기 동안 앱은 이전 값을 그대로 본다.
+   그래서 손님 눈에는 앉은 뒤 **약 15~30초**, 떠난 뒤 **약 30~45초** 뒤에 색이 바뀐다. 깜빡이지 않는 대신 그만큼 늦다.
+
+카메라 각도가 갑자기 바뀌거나 화면이 통째로 달라지면(장면 전환) 쌓아 둔 상태를 버리고 처음부터 센다.
+
+### 2-4. 3상태와 모름 사유
+
+판정은 `occupied`(사용중) / `empty`(빈자리) / `unknown`(모름) 세 값으로 정직하게 낸다. 모름에는 **왜 모르는지** 코드가 붙고,
+사유별 분포가 곧 다음 개선 순서다. 사유는 "누가 고치나"로 묶여 있다.
+
+| 묶음 | 사유 코드 | 고치는 방법 |
+|---|---|---|
+| 설치 | `border_cropped` 자리가 화면 끝에 걸림, `scene_change` | 카메라를 다시 단다. 코드로 안 고친다 |
+| 기하·가림 | `occluded_lower_body` 하반신 가림, `ambiguous_association` 누구 자리인지 애매, `spans_multiple_seats` 한 사람이 두 칸 | 구제 경로(의자 연결·짐)나 네모 다시 그리기 |
+| 모델 | `pose_low_keypoints` 관절 부족, `table_not_detected` | 파인튜닝 또는 더 큰 입력 크기 |
+| 시간 | `pending_confirmation` 확정 대기, `track_predicted` 잠깐 안 보임, `occluded_by_person` 사람이 덮음 | 기다리면 풀린다. 할 일 없음 |
+
+`ignore`(카메라가 아예 못 보는 자리)는 앱에 나가지 않는다. 그건 판정 문제가 아니라 설치 결함이라서다.
+
+---
+
+## 3. 앱에 나가는 것 — `cafe_live` 한 줄
+
+박스는 판정마다 Supabase `cafe_live` 표의 **자기 카페 줄 하나**를 덮어쓴다. 앱이 운영 중에 읽는 건 이 표뿐이다.
+표 모양·화면 규칙·계약마다 넘길 것은 [`문서/앱팀할일.md`](문서/앱팀할일.md) 가 기준이다. 요점만:
+
+- 자리마다 `{seat_id, kind, zone, busy, state, reason_code}`. **앱은 `busy` 하나로 색칠한다.**
+- `free_tables` 는 **확정된 빈자리만** 센다. 모름·확정 대기·아직 확정 없음은 전부 사용중 쪽으로 센다.
+- `updated_at` 은 서버 시계. 앱은 45초 넘게 안 바뀌면 지도 전체를 "확인 중"으로 바꾼다.
+- 카메라가 죽어 15초 넘게 새 프레임이 없으면 박스가 `status = gap` 줄을 쓴다 (전 자리 모름, 빈자리 0). 박스 인터넷이 죽으면 줄이 멈추고 45초 규칙이 잡는다.
+- 지도(배치도)는 앱 팀이 피그마로 그려 앱 코드에 넣는다. 박스는 지도도 사진도 보내지 않는다. 배치 사진은 설치 때 사람이 폰으로 찍어 메신저로 준다.
+- 앱의 `cafes` 표는 박스가 건드리지 않는다 (앱 트리거가 채우는 표라 써도 덮어써진다).
+
+전송은 백그라운드 스레드가 한다. 판정 루프는 절대 기다리지 않는다. 실패한 값은 버리고(다음 판정이 더 새롭다) 5초→최대 60초 간격으로 다시 시도한다.
+권한은 행 단위: 박스 계정은 `boxes` 표에 적힌 자기 카페 줄만 쓸 수 있고, 앱(anon)은 읽기만 한다. 박스를 누가 가져가도 다른 카페 데이터는 못 건드린다.
+
+---
+
+## 4. 판정을 계속 좋게 만드는 루프 — 채점과 기록
+
+### 4-1. 정답지 채점 (코드를 바꿀 때마다)
+
+`results/angle1_layout/angle_answer.md` 는 사장님이 사진을 보며 손으로 쓴 **72칸 정답지**다 (시각 × 자리, `X`/`O`/`?` 와 근거 `s`/`t`/`c`).
+`checks/score_answers.py` 로 채점하면 마지막 줄이 이렇게 나온다.
+
+```
+scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidence missed=10 imagined=1
+```
+
+- **합격선 `accepted=70 wrong=2`.** 이보다 나쁘면 되돌린다. 노트북과 엣지 박스(OpenVINO) 모두 같은 점수가 나와야 한다.
+- 채점이 면제하는 모름 둘: 사람이 덮어서 낸 모름(`occluded`), 사용중↔빈자리 전이 중 확정 대기(`delayed`). 이건 맞는 판단이다.
+- 틀린 칸은 `checks/diagnose_miss.py` 가 "모델이 못 본 건가, 코드가 버린 건가"를 가른다 (로직 / 상자밖 / 임계값경계 / 가구오인 / 파인튜닝).
+- 속도 설정(모델·백엔드·해상도)을 하나 바꿀 때마다 다시 채점한다. 빨라지면서 조용히 틀리는 변화가 실제로 있었다 (`CLAUDE.md`).
+
+### 4-2. 운영 중 기록 (박스가 자동으로)
+
+- **JSONL 로그** `results/live/<날짜>.jsonl`: 판정마다 한 줄. 자리별 `raw_state`(이번 장) · `persistent_state`(확정) · `shown_state`(앱에 나간 것) · 사유 · 투표 결과 ·
+  근거 물체와 그 자리 안 비율 · 걸린 시간 · 메모리 · 디코더 상태. 14일 뒤 삭제. `edge/live_report.py` 로 하루치 요약(틱 시간, 공백, 재연결, 전송 성공/실패)을 본다.
+- **개선용 기록(텔레메트리)** — `--telemetry-dir` 를 줬을 때만. 설계는 [`문서/판정개선_데이터설계.md`](문서/판정개선_데이터설계.md).
+  - 본체 `seatnow_seat_ticks`: 모든 판정을 보내지 않는다. **앱에 나간 값이 바뀐 순간(transition)**, **어려웠던 순간(hard: 모름, 이번 장과 확정이 다름, 짐을 버림, 5장 투표가 갈림)**,
+    그리고 편향을 막는 **대조군 1%** 만. 위치는 전부 "자리를 1로 본 비율"이고 화면 좌표는 나가지 않는다.
+  - 요약 `seatnow_seat_daily`: 자리·날짜별 상태 개수와 사유 분포. 모든 판정을 센다 (고른 것만 세면 모름 비율이 틀어진다).
+  - 박스는 파일에 덧붙이기만 하고, `edge/telemetry_upload.py` 가 **하루 한 번 밤에** 올린다. 올라간 게 확인된 파일만 지운다. 인터넷이 끊겨도 밀린 날짜가 같이 올라간다.
+  - 영업시간(`--open-hours`)을 주면 문 닫은 시간의 "짐"을 장식으로 가를 수 있다.
+
+---
+
+## 5. 배포 — 엣지 박스에서 어떻게 도나
+
+| 항목 | 값 |
 |---|---|
-| `engine/` | **판정.** 영상을 보고 자리가 찼는지 정하는 코드. 여기만 매장에서 돌아간다 |
-| `install/` | **설치 당일 한 번.** 좌석을 그리고(캘리브레이션) 손님용 2D 평면도를 만든다 |
-| `checks/` | **우리가 잘 하고 있는지 채점.** 판독표·정답 대조·라벨링 |
-| `edge/` | **엣지 박스 성능 재기.** 벤치·익스포트·RTSP 재송출 |
-| `results/` | **결과는 전부 여기.** 판독표·사진·로그. 아래 참조 |
-| `layouts/` | 매장별 좌석 도면 (판정의 입력) |
+| 박스 | 중고 미니PC, Intel i3-6100T · RAM 4GB · Ubuntu 24.04 · GPU 없음 |
+| 모델 | `yolov8n` / `yolov8n-pose` 를 **OpenVINO** 로 변환한 것 (`edge/export.py`). 정확도는 노트북 PyTorch 와 동일(70/72) |
+| 카메라 | 하이크비전 4MP, H.265, 2560×1440, 20fps, PoE. 렌즈 2.8mm |
+| 디코딩 | 하드웨어(Quick Sync, vaapi). 24시간 도는 건 추론이 아니라 디코딩이라 이게 비용을 결정한다. 켜졌는지 꺼졌는지 매 판정 기록에 남는다 |
+| 판정 주기 | 15초. **판정 하나에 쓸 수 있는 시간 7.5초** (주기의 절반). 실측 추론 3.3~3.4초 |
+| 실행 | systemd 사용자 서비스 `seatnow.service` (`deploy/`). 재부팅·크래시·카메라 뽑힘 뒤 자동 복귀. 26시간 무인 시험 통과(판정 6,366번, 공백 0) |
+| 설정 | `deploy/seatnow.env` 한 파일: 카메라 주소, 좌석 파일, Supabase 다섯 값, 보관 일수. 매장별 임계값 튜닝은 없다 — 기본값 하나로 돈다 |
+| 영상 | `--no-video` 기본. 주석 영상을 디스크에 쓰지 않는다 |
 
-실행은 저장소 최상위에서 `python -m <폴더>.<파일>` 형태다.
-예: `python -m engine.seatnow ...`, `python -m install.calibrate ...`
+박스에는 저장소 전체가 아니라 박스가 돌리는 것만 내려간다 (`deploy/box_sparse_checkout.sh`, 52개 파일). `문서/` 는 박스에 없다.
+코드를 고친 뒤 박스에 넣는 순서는 [`문서/박스업데이트.md`](문서/박스업데이트.md), 박스를 처음 만드는 12단계는 [`docs/edge-setup.md`](docs/edge-setup.md).
 
-### 결과 보는 곳 — `results/`
+---
 
-한 번 돌린 결과는 **폴더 하나에 다 들어 있다.**
+## 6. 개인정보 — 무엇이 나가고 무엇이 안 나가나
 
-```
-results/
-  angle1/          ← 영상 하나를 돌린 결과
-    report.md        판독표 — 사람이 읽는 것. 여기부터 보면 된다
-    log.jsonl        원시 판정 로그 (tick마다 한 줄)
-    clean/           주석 없는 원본 사진 (세는 용도)
-    marked/          판정을 그려 넣은 사진 (진단 용도)
-    judge/           Codex가 매긴 정답지
-  angle1_layout/   ← 사람이 그린 평면도로 다시 돌린 결과 (지금 쓰는 것)
-    review/          사람 눈으로 한 장씩 넘겨보는 폴더
-  preseed/         캘리브레이션 자동 초안 미리보기
-  edge/            벤치 결과 (bench_report.json, decode_report.json, clips/)
-```
+| 나간다 | 안 나간다 |
+|---|---|
+| 자리 이름, 사용중/빈자리/모름, 모름 사유, 개수, 시각, 박스 코드 버전 | 영상 (디스크에도 안 쓴다) |
+| 개선용 수치: 상태·사유·투표 결과·근거 물체 이름과 자리 안 비율 | 사진 (2026-09-11 이름표 사진 업로드 경로를 코드째 지움) |
+| | 화면 좌표, 얼굴, 사람 수 이상의 어떤 식별 정보 |
 
-저장소에 올라가는 건 **`report.md`와 `judge/`**다. 판독표는 팀이 같이 봐야 하고,
-Codex 정답지는 다시 만들려면 Codex를 또 돌려야 하기 때문이다. 사진·로그·영상은
-용량과 개인정보 때문에 각자 컴퓨터에만 남는다.
+사전적정성 검토 신청서에 "카메라 영상·사진은 어떤 형태로도 외부로 나가지 않는다"고 적었고 코드가 그 약속을 지킨다.
+카메라는 매장 안에서만 읽는다 (포트 포워딩·DDNS 없음). 출입문 촬영 안내문은 `문서/문큐연락/`.
 
-| 파일 | 역할 |
-|------|------|
-| `engine/seatnow_core.py` | 본체: 추론·점유 판정·의자/물체/사람 연결·추적(디바운싱)·FFmpeg 영상 I/O·렌더링 |
-| `engine/seatnow.py` | CLI 진입점 (이미지/영상 → 주석 영상 + JSONL 로그) |
-| `engine/seatnow_layout.py`, `install/calibrate.py` | 수동 좌석 레이아웃(테이블·의자 존, 바 구역·자리 칸) 정의·로드 |
-| `engine/seatnow_report.py` | 앱용 좌석 가용성 계약(`seat_report`) 생성 + UNKNOWN 사유 코드 |
-| `checks/verify_seatnow.py` | 결과 JSONL을 수동 라벨 정답과 대조 검증 (영상 여러 개 동시 채점) |
-| `checks/make_labels.py` | 라벨링용 대조표 프레임 추출 + fixture 스켈레톤 생성·검사 |
-| `edge/export.py` | `.pt` → OpenVINO FP32/INT8 익스포트 (엣지 배포용) |
-| `edge/bench.py` | 추론 latency 측정 → tick 예산 산출 |
-| `edge/bench_sweep.py` | 파라미터 그리드 스윕 → 정확도 × tick 비용 표 |
-| `edge/rtsp_republish.py` | 샘플 영상을 로컬 RTSP로 재송출 (카메라 없이 라이브 검증) |
-| `engine/frame_dump.py` | 판정한 tick마다 사진 두 장 저장 (`clean/` 세는 용도, `marked/` 진단 용도) |
-| `checks/judge_frames.py` | 깨끗한 사진마다 Codex를 새로 불러 "사람 몇 명"을 세게 함 (눈가림 채점) |
-| `checks/inspect_run.py` | 검출·포즈·좌석 세 층을 한 줄에 놓은 판독표 + 층별 재현율 |
-| `checks/make_review.py` | 사람이 한 장씩 넘겨보는 `review/` 폴더 — 자리 이름·판정·근거 글자만 남긴 사진 |
-| `checks/judge_schema.json` | Codex가 답해야 하는 JSON 모양 |
-| `tests/` | 유닛 테스트 546개 (모델 없이 순수 로직 검증) |
-| `docs/superpowers/` | 설계 스펙·구현 계획 |
-| `문서/plan.md` | 작업 플랜 — **§1에 지금 하던 일**, §2에 결정 기록 |
+---
 
-## 환경 설정 (팀원용)
+## 7. 저장소 구성
 
-요구사항: **Python 3.9~3.11**, **ffmpeg** (필수 — 영상 입출력이 ffmpeg 바이너리 사용)
+폴더는 **무엇을 할 때 쓰는지**로 나뉜다. 실행은 최상위에서 `python -m <폴더>.<파일>`.
+
+| 폴더 | 언제 쓰나 | 주요 파일 |
+|---|---|---|
+| `engine/` | **판정.** 박스에서 24시간 도는 것 | `seatnow.py` 진입점·실시간 루프 / `seatnow_core.py` 판정 본체(모델 추론, 근거 연결, 5장 투표, 확정 트래커) / `seatnow_live.py` RTSP 읽기·재연결 / `seatnow_layout.py` 좌석 파일 / `seatnow_report.py` 모름 사유 어휘 / `seatnow_hwaccel.py` 하드웨어 디코더 고르기 |
+| `edge/` | **박스 전용.** 전송·기록·측정 | `publish.py` 판정 → `cafe_live` / `telemetry.py`·`telemetry_spool.py`·`telemetry_upload.py` 개선용 기록 / `live_report.py` 하루 요약 / `check_edge.py` 새 박스 검수 / `export.py` OpenVINO 변환 / `bench*.py` 속도 측정 / `rtsp_republish.py`·`fake_camera.sh` 카메라 없이 시험 |
+| `install/` | **설치 당일 한 번** | `calibrate.py` 좌석 그리기 / `seat_check.py` 앱 이름표 목록과 대조 |
+| `checks/` | **채점·진단** | `answer_key.py` 정답지 읽기 / `score_answers.py` 채점 / `diagnose_miss.py` 오답 원인 / `make_review.py` 사람이 넘겨보는 검수 폴더 / `inspect_run.py`·`judge_frames.py` 검출 검사 |
+| `deploy/` | 박스 서비스·설정·서버 표 | `seatnow.service`, `seatnow.env.example`, `install_service.sh`, `box_sparse_checkout.sh`, `supabase/schema.sql`(앱용 표), `supabase/telemetry.sql`(기록 표) |
+| `layouts/` | 매장별 좌석 파일 (판정의 입력) | `cafe_angle1.json` 지금 쓰는 것 |
+| `results/` | 결과. 저장소엔 판독표·정답지·채점표만 올라간다 | `angle1_layout/angle_answer.md` 72칸 정답지, `채점표.md`, `원인진단.md` |
+| `tests/` | 유닛 테스트 34개 파일 (모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
+| `문서/` | 절차·할 일·정리 (한국어, 비개발자 기준) | [`문서/README.md`](문서/README.md) 가 지도 |
+| `docs/` | 기술 문서·설계 스펙 | `edge-setup.md` 박스 12단계, `superpowers/specs/` 설계 |
+
+---
+
+## 8. 환경 설정 (팀원용)
+
+요구사항: **Python 3.11 또는 3.12**, **ffmpeg** (영상 입출력이 ffmpeg 바이너리를 쓴다).
 
 ```bash
 git clone https://github.com/fifawithkupa/dwnc_cafe_cctv.git
 cd dwnc_cafe_cctv
 
-# 1. ffmpeg 설치 (없다면)
-#    macOS: brew install ffmpeg   /  Windows: winget install ffmpeg  /  Ubuntu: apt install ffmpeg
+# 1. ffmpeg   macOS: brew install ffmpeg / Windows: winget install ffmpeg / Ubuntu: apt install ffmpeg
 
-# 2. 가상환경 + 의존성
+# 2. 가상환경 + 의존성 (노트북)
 python3 -m venv venv
-./venv/bin/pip install -r requirements.txt
-#    Windows: venv\Scripts\pip install -r requirements.txt
-#    Apple Silicon/Windows에서 torch 버전 충돌 시: torch 핀을 지우고 재설치 (numpy<2 는 유지)
+./venv/bin/pip install -r requirements.txt        # Windows: venv\Scripts\pip ...
+#    엣지 박스는 requirements-edge.txt (버전 전부 고정, torch CPU 판)
 
-# 3. 테스트로 환경 확인 (모델 다운로드 없이 돌아감)
+# 3. 테스트로 환경 확인 (모델 다운로드 없이 돈다)
 ./venv/bin/python -m unittest discover tests
-# 기대: Ran 514 tests ... OK
 ```
 
-**모델 가중치는 저장소에 없습니다.** 첫 실행 때 ultralytics가 자동 다운로드합니다
-(기본: `yolov8n.pt`/`yolov8n-pose.pt` 경량 모델. 정확도 검증·데모용은
-`--det-model yolov8x.pt --pose-model yolov8x-pose.pt` — 약 270MB, 역시 자동 다운로드).
+- **모델 가중치는 저장소에 없다.** 첫 실행 때 ultralytics 가 `yolov8n.pt`/`yolov8n-pose.pt` 를 내려받는다.
+- **샘플 영상(`sample_raw/`)은 저장소에 없다** (용량·개인정보). 팀 구글 드라이브 — [`문서/ONBOARDING.md`](문서/ONBOARDING.md).
+- numpy 는 2 미만을 유지한다 (torch 2.2.2 와 충돌).
 
-**샘플 영상(`sample_raw/`)은 저장소에 없습니다** (용량·개인정보).
-`results/`는 판독표(`report.md`)만 올라가고 사진·로그·영상은 빠집니다.
-팀 구글 드라이브로 공유 — 받는 방법과 **"오프라인 사용 가능" 고정이 왜 필수인지**는
-[`문서/ONBOARDING.md` §2](문서/ONBOARDING.md) 참조.
-
-## 실행
+## 9. 자주 쓰는 명령
 
 ```bash
-# 영상 분석 → 주석 영상 + JSONL (results/에 저장)
-./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_1.mp4 --debug
+# 영상 파일 판정 (결과는 results/)
+./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_angle1.mov --layout layouts/cafe_angle1.json \
+  --no-video --frame-dir results/angle1_layout --log results/angle1_layout/log.jsonl
 
-# 정확도 우선(느림, 프레임당 ~8초 on CPU)
-./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_1.mp4 --debug \
-  --det-model yolov8x.pt --pose-model yolov8x-pose.pt
+# 72칸 정답지로 채점 → 합격선 accepted=70 wrong=2
+./venv/bin/python -m checks.score_answers results/angle1_layout --answers results/angle1_layout/angle_answer.md
+./venv/bin/python -m checks.diagnose_miss results/angle1_layout        # 오답 원인
+./venv/bin/python -m checks.make_review results/angle1_layout --title angle1   # 사람이 넘겨보는 폴더
 
-# 수동 라벨 정답과 대조 (fixture 영상 결과에 대해)
-./venv/bin/python -m checks.verify_seatnow results/<결과>/log.jsonl
+# 설치 당일: 좌석 그리기 (1회) / 앱 이름표 목록 대조
+./venv/bin/python -m install.calibrate sample_raw/<10초클립>.mp4 --output layouts/<카페>.json
+#   키: [t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit
+./venv/bin/python -m install.seat_check --layout layouts/<카페>.json --app-ids <앱목록.txt>
 
-# 영상 여러 개를 한 번에 채점 (fixture는 영상 sha256으로 자동 매칭)
-./venv/bin/python -m checks.verify_seatnow results/*/log.jsonl --expectations tests/fixtures
-```
+# 실시간 (박스에서는 서비스가 이 명령을 돌린다)
+./venv/bin/python -m engine.seatnow rtsp://<카메라> --layout layouts/<카페>.json \
+  --det-model yolov8n_openvino_model --pose-model yolov8n-pose_openvino_model --no-video --log-dir results/live
 
-### 평가·벤치 도구
+# 박스 운영
+journalctl --user -u seatnow -f                          # 로그
+python3 -m edge.live_report results/live/<날짜>.jsonl    # 하루 요약
+python3 -m edge.telemetry_upload --dry-run               # 개선용 기록, 몇 줄 밀렸나
 
-```bash
-# 0. 설치 시 좌석 캘리브레이션 (1회)
-#    yolov8x가 테이블·의자를 미리 잡아주고, 사람은 잘못 잡힌 것만 지우고
-#    못 잡은 것만 추가한다. 일자형·벽 책상은 모델이 절대 못 잡으므로
-#    [z]로 바 구역을 치고 [x]로 자리마다 칸을 긋는다 (칸 수 = 자리 수).
-./venv/bin/python -m install.calibrate sample_raw/cafe_sample_angle1.mov \
-  --output layouts/cafe_angle1.json
-#    키: [t]able [c]hair [z]one seat[x] [g]en-seats [f]loor [m]ove [d]elete [u]ndo [s]ave [q]uit
-#    [f] 바닥에서 실제로 직사각형인 것의 네 귀퉁이를 시계방향 클릭 (2D 평면도용)
-#    [m] 의자 클릭 -> m -> 옮길 테이블/바 클릭. 지웠다 다시 그리지 않고 소속만 바꾼다
-#    [g] 바 구역을 선택하고 누르면 붙어 있는 의자에서 자리 칸을 그대로 만든다
-
-# 1. 새 영상 라벨링: 대조표 프레임 + fixture 스켈레톤 생성
-./venv/bin/python -m checks.make_labels sample_raw/cafe_1h.mp4 --interval 30 \
-  --contact-sheet labels/cafe_1h --layout layouts/cafe.json
-#    → labels/cafe_1h/*.jpg 를 보며 occupied/empty/ignore 를 손으로 채운 뒤
-./venv/bin/python -m checks.make_labels x --validate tests/fixtures/cafe_1h_expectations.json
-
-# 2. 엣지 배포용 익스포트 + 추론 latency/tick 예산 측정
-./venv/bin/python -m edge.export --imgsz 640 960 1280
-./venv/bin/python -m edge.bench --frames sample_raw/cafe_sample_1.mp4 --label macbook
-
-# 3. 파라미터 스윕 (라벨된 평가셋 필요)
-./venv/bin/python -m edge.bench_sweep sample_raw/*.mp4 --dry-run
-
-# 4. 카메라 없이 RTSP 파이프라인 검증
+# 카메라 없이 시험
 ./venv/bin/python -m edge.rtsp_republish sample_raw/cafe_sample_1.mp4
-
-# 5. 엣지 박스 검수 (새 박스에서 제일 먼저)
-./venv/bin/python -m edge.check_edge
-
-# 6. 디코딩 비용 측정 → 살 카메라의 해상도·코덱 결정
-./venv/bin/python -m edge.bench_decode --source sample_raw/cafe_sample_angle1.mov
-
-# 7. 검출 검사 하네스 — "모델이 이 카페를 제대로 보는가"
-#    라벨(T16) 없이 지금 돌릴 수 있다. 레이아웃도 주지 않는다 —
-#    사람이 그려준 정답을 빼고 모델만 놓고 봐야 답이 나오기 때문이다.
-./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_angle1.mov \
-  --no-video --log-detections \
-  --frame-dir results/angle1 --log results/angle1/log.jsonl
-
-#    깨끗한 사진마다 Codex가 사람 수를 센다. 우리 답은 안 보여준다
-./venv/bin/python -m checks.judge_frames results/angle1
-
-#    세 층을 한 줄에 놓고 층별 재현율을 낸다
-./venv/bin/python -m checks.inspect_run results/angle1/log.jsonl \
-  --judge results/angle1/judge --output results/angle1/report.md
-
-#    사람이 한 장씩 넘겨보는 검수 폴더 (review/) 를 만든다
-./venv/bin/python -m checks.make_review results/angle1 --title angle1
 ```
 
-> `checks/judge_frames.py`를 안 돌려도 판독표는 나온다. `실제` 칸이 `___`로 비어
-> 있을 뿐이고, 사람이 사진을 보며 손으로 채워도 같은 표가 된다.
+주요 옵션: `--sample-seconds`(판정 주기, 기본 15), `--median-frames N`(±N 장 다수결, 기본 2 → 5장), `--telemetry-dir`·`--open-hours`(개선용 기록), `--log-detections`(진단용 원본 탐지 기록). 전체는 `--help`.
 
-### 엣지 박스 세팅
+---
 
-새로 산 미니PC를 켜서 "이 박스로 어떤 카메라를 살 수 있나"를 재는 데까지의 절차는
-[`docs/edge-setup.md`](docs/edge-setup.md)에 있습니다 (Windows·Linux 양쪽).
+## 10. 현재 상태 (2026-09-11)
 
- `edge/bench.py`가 재는 **추론**은 프레임을 `imgsz`로 줄여서 넣기 때문에 카메라 해상도와
-거의 무관합니다. 카메라 해상도가 실제로 잡아먹는 것은 24시간 도는 **디코딩**이고,
-그것을 재는 것이 `edge/bench_decode.py`입니다. 두 도구의 결과가 합쳐져야 카메라를 고를
-수 있습니다.
+- ✅ 판정: 좌석 파일 기반, 5장 다수결, 비대칭 확정, 3상태 + 모름 사유. 72칸 정답지 **70/72**, 노트북과 박스 동일
+- ✅ 박스: OpenVINO · 하드웨어 디코딩 · 자동 실행 · 26시간 무인 시험 · 카메라/인터넷 끊김 시험 통과
+- ✅ 전송: `cafe_live` 15초 갱신 (집 시험 `test-001` 통과). 앱 계약 확정 (`문서/앱팀할일.md`)
+- ✅ 개인정보: 사진 업로드 경로 삭제, 영상 미저장, 개선용 기록은 수치만
+- 🚧 **사람이 할 것 셋**: Supabase 표 정리 SQL 실행, 박스 코드 갱신(`a6320ef`), 신청서 수정 요청 — [`문서/plan.md`](문서/plan.md)
+- 🚧 문큐 카페 설치 — [`문서/카페설치당일.md`](문서/카페설치당일.md)
+- 다음 개선: 버린 짐도 기록에 남기기, `novelty`(빈 상태 대비 변화량) — `문서/판정개선_데이터설계.md` §10-6
 
-디코딩은 `--hwaccel`(기본 `auto`)로 하드웨어 가속을 씁니다. **켜졌는지 꺼졌는지가
-항상 화면에 찍힙니다** — ffmpeg는 하드웨어 디코딩에 실패해도 조용히 소프트웨어로
-넘어가므로, 후보마다 실제로 프레임이 나오는지 확인하고 나온 것만 채택합니다.
-이 노트북 실측으로 하드웨어 디코딩은 비용을 3~6배 줄입니다.
+## 11. 개발 규칙
 
-진단이 필요할 때는 `--log-detections` 를 붙이면 JSONL에 detect 원본 출력과
-테이블 후보 탈락 사유가 함께 남습니다 — "모델이 못 봤나" vs "코드가 버렸나"를
-로그만으로 구분할 수 있습니다.
-
-주요 옵션: `--sample-seconds`(판단 주기, 기본 15초 고정),
-`--median-frames N`(샘플 시점 ±N 연속 프레임 다수결, 기본 2 → 5장),
-`--max-samples N`(스모크 테스트), `--no-video`(로그만). 전체는 `--help`.
-
-> 짧은 샘플 클립(대부분 15초 미만)은 기본 15초 주기로는 샘플이 1–2개뿐이므로
-> 데모 시 `--sample-seconds 5`처럼 줄여서 실행하세요.
-> 기존 단일 프레임 동작은 `--sample-seconds 1 --median-frames 0`.
-
-## 현재 상태 (2026-08-26)
-
-- ✅ 이미지/영상 점유 판정 + 시간 안정화(디바운싱·추적) — 시나리오 영상 7종 검증 통과
-- ✅ 점유판정 개선: 테이블 선별 규칙(의자 구조 기반 구제), 들고 있는 짐 오탐 차단, 의자 위 짐 점유 인식
-- ✅ **수동 좌석 캘리브레이션(레이아웃) 머지 완료** — 설계/계획:
-  - 스펙: `docs/superpowers/specs/2026-07-11-manual-seat-layout-design.md`
-  - 구현 계획(태스크 단위): `docs/superpowers/plans/2026-07-11-manual-seat-layout.md`
-- ✅ 의자→테이블 점유 전파 회귀 복구 (문서/plan.md T1). `f1f41d5`가 제거하고
-  `70a86bc`가 되살리지 않아 `seat_detections`가 항상 비어 있던 문제
-- ✅ 진단 로깅(T2), 다중 영상 평가셋·커버리지 집계(T3), OpenVINO 익스포트·벤치(T4),
-  RTSP 재송출 하네스(T5), 파라미터 스윕 하네스(T7 코드)
-- ✅ 좌석 리포트 출력 계약 `seat_report` + 바형 좌석 칸 (T13)
-- ✅ Quick Sync 하드웨어 디코딩(T9), 디코딩 벤치 `edge/bench_decode.py`,
-  엣지 박스 검수 `edge/check_edge.py`, 설치 절차 `docs/edge-setup.md`
-- 🚧 다음: 엣지 박스 도착 → `edge/check_edge.py` → `edge/bench.py` → `edge/bench_decode.py`
-  → 카메라 확정 → RTSP 리더(T8) → 배포 프로파일(T10). 파인튜닝(T11)은 조건부
-
-작업 순서와 근거는 [`문서/plan.md`](문서/plan.md) 참조.
-
-## 개발 규칙
-
-- 판정 로직 변경 시 반드시 유닛 테스트 추가 (`tests/test_seatnow_core.py` — 실패 사례의 실제 좌표로 회귀 테스트 작성하는 관례)
-- **`analyze()`의 배선을 바꿨다면 `tests/test_analyze_pipeline.py`에도 추가.**
-  헬퍼만 직접 호출하는 테스트는 "호출이 사라지는" 회귀를 못 잡는다 (T1이 그렇게 새어나갔다)
-- 커밋 전 `./venv/bin/python -m unittest discover tests` 통과 확인
-- 시나리오 영상 재실행 결과는 `results/v5_*/` 네이밍 사용
+- 판정 로직을 바꾸면 유닛 테스트를 추가한다 (`tests/test_seatnow_core.py` — 실패 사례의 실제 좌표로 회귀 테스트).
+  `analyze()` 의 배선을 바꿨다면 `tests/test_analyze_pipeline.py` 에도. 헬퍼만 부르는 테스트는 "호출이 사라지는" 회귀를 못 잡는다.
+- 커밋 전 `./venv/bin/python -m unittest discover tests` 통과. 박스에는 테스트 도구가 없으므로 노트북에서 돌린다.
+- **속도를 바꾸는 변경은 72칸 채점과 짝짓는다.** 한 번에 하나만 바꾼다.
+- 매장별 임계값 튜닝을 요구하는 설계, 2대 카메라를 전제한 기능, 주기적 재캘리브레이션은 만들지 않는다 (`CLAUDE.md`).
+- 설명은 비개발자 기준으로. 함수명·약어를 설명 없이 쓰지 않는다.

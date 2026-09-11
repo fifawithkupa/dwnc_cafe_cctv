@@ -28,3 +28,15 @@ env.local
 .env.local
 # 이름표 사진을 올린 좌석 파일의 해시 (박스가 만든다)
 layouts/*.seat_sheet.sha
+
+# 판정 개선용 기록 (판정개선_데이터설계.md).  절대 저장소에 올리지 않는다 —
+# 사람 위치가 비율 형태로 들어 있다.  박스에서 쌓였다가 Supabase 로만 간다.
+results/live/telemetry/
+*.ndjson
+*.sent
+
+# 클로드 디자인 캔버스의 빌드 결과물 (2.4MB).  편집기가 통째로 박혀 있어서
+# 저장소에 넣을 것이 아니다.  옆의 .dc.html 과 canvas.json 이 원본이고,
+# 거기서 언제든 다시 만든다 — 만드는 법은 그 폴더의 README 참조.
+문큐연락/안내문시안/*.html
+!문큐연락/안내문시안/*.dc.html

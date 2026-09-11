@@ -134,6 +134,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-samples", type=int, help="Stop after N sampled frames (smoke tests)")
     parser.add_argument("--log-dir", type=Path, help="실시간 입력용: 이 폴더에 날짜별 JSONL(YYYY-MM-DD.jsonl)로 이어 쓴다. 재시작해도 그날 파일에 붙고 자정에 새 파일로 넘어간다 (--log 와 같이 못 씀)")
     parser.add_argument("--keep-days", type=int, default=14, help="--log-dir 에서 이 날짜보다 오래된 파일은 지운다 (0 = 안 지움)")
+    parser.add_argument("--telemetry-dir", type=Path, default=None,
+                        help="판정 개선용 기록을 이 폴더에 쌓는다 (없으면 안 쌓는다). "
+                             "보내는 건 따로 돈다: python3 -m edge.telemetry_upload")
+    parser.add_argument("--open-hours", type=str, default=None,
+                        help='매장 영업시간 "09:00-22:00". 문 닫은 시간을 알아야 '
+                             '장식과 손님 짐을 구분할 수 있다 (판정개선_데이터설계.md §4-1)')
+    parser.add_argument("--telemetry-control-rate", type=float, default=0.01,
+                        help="잘 돌아간 틱 중 대조군으로 남길 비율 (기본 1%%). "
+                             "어려운 것만 모으면 배운 규칙이 편향된다")
     parser.add_argument("--run-seconds", type=float, help="실시간(rtsp://) 입력일 때 이 시간이 지나면 멈춘다 (없으면 계속 돈다)")
     parser.add_argument("--max-frame-age-seconds", type=float, default=None, help="실시간 입력에서 이보다 오래된 화면은 없는 것으로 친다 (기본: 판단 주기와 같음, 0 = 끔). 끊긴 카메라의 옛 화면으로 판정하지 않기 위한 것")
     parser.add_argument("--live-burst-seconds", type=float, default=5.0, help="실시간 입력에서 몇 초마다 프레임 묶음 하나를 변환할지 (0 = 모든 프레임 변환; 2코어 박스에서는 5초가 맞다)")
@@ -227,6 +236,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--sample-seconds must be positive")
     if args.median_frames < 0:
         raise ValueError("--median-frames cannot be negative")
+    if not 0.0 <= args.telemetry_control_rate <= 1.0:
+        raise ValueError("--telemetry-control-rate must be between 0 and 1")
+    if args.open_hours is not None:
+        from edge.telemetry import parse_open_window
+
+        if parse_open_window(args.open_hours) is None:
+            raise ValueError('--open-hours must look like "09:00-22:00"')
     if args.start_seconds < 0:
         raise ValueError("--start-seconds cannot be negative")
     if args.imgsz < 320 or args.pose_imgsz < 320 or args.crop_imgsz < 320:
@@ -321,10 +337,40 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     return 0
 
 
+def _open_telemetry(args, run_context, cafe_id: str):
+    """`--telemetry-dir` 를 줬을 때만 기록기를 만든다.  아니면 None.
+
+    설계는 `판정개선_데이터설계.md` §9·§10.  루프는 파일에 덧붙이기만 하고,
+    보내는 건 `python3 -m edge.telemetry_upload` 가 하루 한 번 따로 한다.
+    만들다 실패해도 판정은 그대로 돈다 — 기록은 판정보다 덜 중요하다.
+    """
+    directory = getattr(args, "telemetry_dir", None)
+    if directory is None:
+        return None
+    try:
+        from edge.telemetry_spool import TelemetryWriter
+
+        writer = TelemetryWriter(
+            directory,
+            cafe_id=cafe_id or "unknown",
+            run_context=run_context,
+            open_hours=getattr(args, "open_hours", None),
+            control_rate=getattr(args, "telemetry_control_rate", None),
+        )
+        print(f"판정 기록: {directory} (보내기는 edge.telemetry_upload 가 따로)", flush=True)
+        return writer
+    except Exception as error:  # noqa: BLE001 -- 기록 때문에 판정을 막지 않는다
+        print(f"판정 기록을 못 열었다(무시하고 계속): {type(error).__name__}: {error}", flush=True)
+        return None
+
+
 class _TickRunner:
     """One judgement per burst of frames — the body shared by the file loop
     and the live loop.  Holds the tracker, scene counter and the previous
     centre frame so both loops behave identically after a scene cut."""
+
+    #: 판정 개선용 기록.  `--telemetry-dir` 를 줬을 때만 채워진다.
+    telemetry = None
 
     def __init__(self, args, analyzer, new_tracker, run_context, log_file, writer):
         self.args = args
@@ -420,6 +466,10 @@ class _TickRunner:
             record.update(extra)
         record["run"] = self.run_context
         self.log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if self.telemetry is not None:
+            # 파일에 덧붙이기만 한다.  보내는 건 밤에 따로 돈다 —
+            # 7.5초 예산에 전송이 끼면 안 된다 (CLAUDE.md).
+            self.telemetry.record(record)
         self.log_file.flush()
         # Rendered once even when both outputs are on: drawing the
         # same overlay twice would inflate the tick budget for no
@@ -564,6 +614,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             "codec": info.codec,
         },
     )
+    telemetry = _open_telemetry(args, run_context, getattr(args, "cafe_id", "") or "file")
     if legacy_mode:
         print(
             f"Analyzing every {args.sample_seconds:g}s "
@@ -654,6 +705,10 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     record["run"] = run_context
                     log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
                     log_file.flush()
+                    if telemetry is not None:
+                        # 파일에 덧붙이기만 한다.  보내는 건 밤에 따로 돈다 —
+                        # 7.5초 예산에 전송이 끼면 안 된다 (CLAUDE.md).
+                        telemetry.record(record)
                     if writer is not None:
                         writer.write(render_frame(frame, analysis, update, debug=args.debug))
                     processed += 1
@@ -672,6 +727,7 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             else:
                 reader = FFmpegBurstReader(args.input, info, hwaccel_args=hwaccel.args)
                 runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer)
+                runner.telemetry = telemetry
                 center_time = args.start_seconds
                 while info.duration <= 0 or center_time <= info.duration:
                     center_index, burst = reader.read_burst(
@@ -694,10 +750,15 @@ def process_video(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     f"SeatNow cleanup warning: {cleanup_error}",
                     file=sys.stderr,
                 )
+        # 도중에 죽어도 그때까지의 요약은 남긴다.  안 그러면 그날 통계가 통째로 사라진다.
+        if telemetry is not None:
+            telemetry.close()
         raise
     else:
         if writer is not None:
             writer.close()
+        if telemetry is not None:
+            telemetry.close()
 
     elapsed = time.perf_counter() - started
     if processed == 0:
@@ -878,6 +939,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     burst_period = burst_period_frames(info.fps, args.live_burst_seconds, burst_frames)
     run_context["decode"]["burst_every_frames"] = burst_period
     run_context["decode"]["burst_frames"] = burst_frames
+    telemetry = _open_telemetry(args, run_context, cafe_id)
     print(
         f"Analyzing every {args.sample_seconds:g}s "
         f"(newest {burst_frames} frames majority vote, live"
@@ -927,6 +989,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
             log_file = log_path.open("w", encoding="utf-8")
         try:
             runner = _TickRunner(args, analyzer, new_tracker, run_context, log_file, writer=None)
+            runner.telemetry = telemetry
             while True:
                 if rotator is not None:
                     rotated = rotator.maybe_rotate()
@@ -1069,6 +1132,8 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
         reader.close()
         if publisher is not None:
             publisher.stop()
+        if telemetry is not None:
+            telemetry.close()
 
     stats = reader.stats()
     elapsed = time.perf_counter() - started

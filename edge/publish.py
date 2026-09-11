@@ -431,6 +431,42 @@ class SupabasePublisher:
             timeout=self._timeout,
         )
 
+    def send_batch(self, table: str, rows: List[Dict[str, Any]]) -> None:
+        """텔레메트리 한 묶음을 그 자리에서 보낸다 (`edge/telemetry_spool.py`).
+
+        `publish_live` 와 성질이 다르다.  저건 최신값만 중요해서 실패하면 버리지만,
+        이건 **한 줄도 버리면 안 되므로 실패를 그대로 올려보낸다** — 부르는 쪽이
+        파일을 그대로 두고 다음번에 다시 보낸다.
+
+        판정 루프에서 부르지 말 것.  기다리는 호출이다.
+        """
+        if not rows:
+            return
+        self._ensure_token()
+        response = self._insert_many(table, rows)
+        if response.status_code == 401:
+            self._token = None
+            self._ensure_token()
+            response = self._insert_many(table, rows)
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
+        self._note_success()
+
+    def _insert_many(self, table: str, rows: List[Dict[str, Any]]):
+        return self._session.post(
+            f"{self._url}/rest/v1/{table}",
+            headers={
+                "apikey": self._anon_key,
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+                # 끊겨서 같은 파일을 다시 보낼 수 있다.  기본 키가 있는 표(요약·실행)는
+                # 덮어쓰고, 틱 표는 기본 키가 bigserial 이라 그냥 들어간다.
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            data=json.dumps(rows, ensure_ascii=False, default=str).encode("utf-8"),
+            timeout=max(self._timeout, 30.0),
+        )
+
     def _upsert(self, table: str, row: Dict[str, Any]):
         return self._session.post(
             f"{self._url}/rest/v1/{table}",

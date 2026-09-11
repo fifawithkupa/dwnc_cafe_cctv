@@ -91,7 +91,7 @@ class SelectionTest(unittest.TestCase):
 
     def _selector(self, control_rate=0.0):
         return T.TelemetrySelector(
-            "moonq", "run-1", open_window=(540, 1320),
+            "moonq", box_version="abc1234", settings_hash="deadbeef", open_window=(540, 1320),
             control_rate=control_rate, rng=random.Random(0),
         )
 
@@ -158,7 +158,7 @@ class PayloadTest(unittest.TestCase):
         pose = {"box": [110, 110, 160, 195], "state": "seated",
                 "reason": "left_hka=95.0<110", "confidence": 0.9,
                 "angles": {"left_hka": 95.0}}
-        rows = T.TelemetrySelector("moonq", "run-1", rng=random.Random(0)).observe(
+        rows = T.TelemetrySelector("moonq", rng=random.Random(0)).observe(
             _record([_table(state="unknown", objects=[
                 {"class": "handbag", "confidence": 0.5,
                  "box": [120, 120, 150, 150], "share": 0.3},
@@ -175,7 +175,7 @@ class PayloadTest(unittest.TestCase):
 
     def test_person_must_touch_the_seat(self):
         far = {"box": [900, 900, 950, 990], "state": "seated", "angles": {}}
-        rows = T.TelemetrySelector("moonq", "run-1", rng=random.Random(0)).observe(
+        rows = T.TelemetrySelector("moonq", rng=random.Random(0)).observe(
             _record([_table(state="unknown")], poses=[far])
         )
         self.assertEqual(rows[0]["persons"], [])
@@ -184,7 +184,7 @@ class PayloadTest(unittest.TestCase):
 class DailyTest(unittest.TestCase):
     def test_summary_counts_every_tick_not_just_the_kept_ones(self):
         """여기가 틀리면 모름 비율이 통째로 거짓말이 된다."""
-        selector = T.TelemetrySelector("moonq", "run-1", control_rate=0.0,
+        selector = T.TelemetrySelector("moonq", control_rate=0.0,
                                        rng=random.Random(0))
         for _ in range(8):
             selector.observe(_record())                       # 안 보냄
@@ -200,7 +200,7 @@ class DailyTest(unittest.TestCase):
         self.assertEqual(daily[0]["reason_counts"], {"insufficient_keypoints": 2})
 
     def test_ignore_rate_is_tracked_separately(self):
-        selector = T.TelemetrySelector("moonq", "run-1", rng=random.Random(0))
+        selector = T.TelemetrySelector("moonq", rng=random.Random(0))
         selector.observe(_record([_table(state="ignore", reason="border_cropped")]))
         self.assertEqual(selector.daily_rows()[0]["ignore_rate"], 1.0)
 
@@ -213,17 +213,15 @@ class RunRowTest(unittest.TestCase):
         self.assertEqual(T.settings_fingerprint(a), T.settings_fingerprint(b))
         self.assertNotEqual(T.settings_fingerprint(a), T.settings_fingerprint(c))
 
-    def test_run_row_shape(self):
-        row = T.run_row(
-            {"profile": "accuracy_default",
-             "models": {"detector": "yolov8n", "detector_sha256": "abc"},
-             "settings": {"imgsz": 1280, "median_frames": 2},
-             "input": {"width": 1920, "height": 1080}},
-            run_id="r1", cafe_id="moonq", started_at="2026-09-11T09:00:00+09:00",
-        )
-        self.assertEqual(row["imgsz"], 1280)
-        self.assertEqual(row["frame_width"], 1920)
-        self.assertEqual(len(row["settings_hash"]), 16)
+    def test_every_tick_row_carries_the_box_version_and_settings_hash(self):
+        # 실행 정보 표를 따로 두지 않는다 (2026-09-11).  지난주와 비교할 열쇠는 줄마다 싣는다.
+        selector = T.TelemetrySelector("moonq", box_version="abc1234", settings_hash="deadbeef",
+                                       control_rate=1.0, rng=random.Random(0))
+        rows = selector.observe(_record())
+        self.assertTrue(rows)
+        self.assertEqual(rows[0]["box_version"], "abc1234")
+        self.assertEqual(rows[0]["settings_hash"], "deadbeef")
+        self.assertNotIn("run_id", rows[0])
 
 
 if __name__ == "__main__":

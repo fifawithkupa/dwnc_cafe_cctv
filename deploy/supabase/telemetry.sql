@@ -4,34 +4,24 @@
 -- 손님 앱 표(cafes, cafe_live, seats ...)와 완전히 분리된 seatnow_ 접두사 표다.
 -- 앱 동작에 영향을 주지 않는다.
 --
--- ⚠️ 실행 순서가 중요하다: runs 를 먼저 만들어야 seat_ticks 의 참조가 걸린다.
--- Supabase 대시보드 → SQL Editor 에 이 파일을 통째로 붙여넣으면 순서대로 돈다.
+-- Supabase 대시보드 → SQL Editor 에 이 파일을 통째로 붙여넣으면 된다.
 
--- ---------------------------------------------------------------------------
--- ③ 무엇과 비교하는지 — 박스가 한 번 켜져서 도는 동안 (아주 작다, 영구 보관)
--- 이게 없으면 "이번 주가 지난주보다 나아졌다" 를 말할 수 없다.
--- ---------------------------------------------------------------------------
-create table if not exists seatnow_runs (
-  run_id          uuid        primary key,
-  cafe_id         text        not null,
-  started_at      timestamptz not null,
-  ended_at        timestamptz,
-  schema_version  smallint    not null,
-  box_version     text,
-  profile         text,                  -- accuracy_default | fast | custom
-  det_model       text,
-  det_sha256      text,
-  pose_model      text,
-  imgsz           int,
-  pose_imgsz      int,
-  tick_seconds    real,
-  median_frames   smallint,
-  settings_hash   text        not null,  -- 판정 설정 전체의 지문
-  layout_version  text,
-  frame_width     int,
-  frame_height    int
-);
-create index if not exists seatnow_runs_cafe_idx on seatnow_runs (cafe_id, started_at desc);
+-- 실행 정보(seatnow_runs)·장식 지도(seatnow_scenery) 표는 쓰지 않는다 (2026-09-11).
+-- 카메라가 굳이 서버로 보낼 자료가 아니다 — 지난주와 비교할 열쇠(박스 버전·설정 지문)는
+-- 순간 기록 줄마다 두 칸으로 싣고, 장식 지도는 필요해지면 박스 안에서만 만든다.
+-- 먼저 만들어 둔 표가 있으면 지운다.  순간 기록 표는 **옛 모양(run_id 칸이 있는 것)일 때만**
+-- 지운다 — 이 파일은 여러 번 실행해도 안전해야 하고, 모아 둔 기록을 날리면 안 된다.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'seatnow_seat_ticks' and column_name = 'run_id'
+  ) then
+    drop table seatnow_seat_ticks;
+  end if;
+end $$;
+drop table if exists seatnow_runs;
+drop table if exists seatnow_scenery;
 
 -- ---------------------------------------------------------------------------
 -- ① 학습 자료 본체 — 한 줄 = 한 자리의 한 순간
@@ -43,8 +33,9 @@ create table if not exists seatnow_seat_ticks (
   cafe_id        text        not null,
   seat_id        text        not null,
   tick_at        timestamptz not null,
-  run_id         uuid        not null references seatnow_runs(run_id),
   schema_version smallint    not null,
+  box_version    text,                   -- 어떤 코드로 돌 때였나 (git 커밋)
+  settings_hash  text,                   -- 판정 설정 전체의 지문. 바뀌면 지난주와 비교 불가
 
   seat_kind      text        not null,   -- table | bar_seat
   capacity       smallint,
@@ -74,8 +65,6 @@ create index if not exists seatnow_ticks_cafe_time_idx
   on seatnow_seat_ticks (cafe_id, tick_at desc);
 create index if not exists seatnow_ticks_reason_idx
   on seatnow_seat_ticks (reason_code) where reason_code is not null;
-create index if not exists seatnow_ticks_run_idx
-  on seatnow_seat_ticks (run_id);
 
 -- ---------------------------------------------------------------------------
 -- ② 요약 — 한 줄 = 한 자리의 하루 (아주 작다, 영구 보관)
@@ -98,39 +87,24 @@ create table if not exists seatnow_seat_daily (
 );
 
 -- ---------------------------------------------------------------------------
--- ④ 장식 지도 — 한 줄 = 한 매장의 하루치 "원래 거기 있는 것"
--- 박스가 문 닫은 시간에 스스로 만든다.  원본 화면은 올라오지 않고 결과만 올라온다.
--- ---------------------------------------------------------------------------
-create table if not exists seatnow_scenery (
-  cafe_id text  not null,
-  day     date  not null,
-  items   jsonb not null default '[]'::jsonb,  -- [{seat_id, class, cx, cy, w, h, days_seen}]
-  primary key (cafe_id, day)
-);
-
--- ---------------------------------------------------------------------------
 -- 접근 제한 — 이걸 안 하면 손님 앱에 박힌 공개 키로 사람 위치 기록이 읽힌다.
 -- 앱과 같은 프로젝트를 쓰므로 표를 나눈 것만으로는 부족하다.
 --   · anon (앱)            : 아무 권한 없음
---   · authenticated (박스) : insert 만.  읽기도 없다 (박스는 읽을 일이 없다)
+--   · authenticated (박스) : insert 만 (요약은 덮어쓰기용 update 도).  읽기는 없다
 -- 분석은 service_role 키로 한다 — service_role 은 RLS 를 우회한다.
 -- ---------------------------------------------------------------------------
-alter table seatnow_runs       enable row level security;
 alter table seatnow_seat_ticks enable row level security;
 alter table seatnow_seat_daily enable row level security;
-alter table seatnow_scenery    enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array[
-    'seatnow_runs', 'seatnow_seat_ticks', 'seatnow_seat_daily', 'seatnow_scenery'
-  ] loop
+  foreach t in array array['seatnow_seat_ticks', 'seatnow_seat_daily'] loop
     execute format('drop policy if exists box_insert on %I', t);
     execute format('drop policy if exists box_upsert on %I', t);
     execute format(
       'create policy box_insert on %I for insert to authenticated with check (true)', t);
-    -- 요약·장식 지도·실행 종료시각은 덮어써야 하므로 update 도 연다.
+    -- 요약은 덮어써야 하므로 update 도 연다.
     if t <> 'seatnow_seat_ticks' then
       execute format(
         'create policy box_upsert on %I for update to authenticated using (true) with check (true)', t);
@@ -138,4 +112,4 @@ begin
   end loop;
 end $$;
 
-revoke all on seatnow_runs, seatnow_seat_ticks, seatnow_seat_daily, seatnow_scenery from anon;
+revoke all on seatnow_seat_ticks, seatnow_seat_daily from anon;

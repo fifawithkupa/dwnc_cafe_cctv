@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence
 
-from edge.telemetry import DAILY_TABLE, RUNS_TABLE, TICKS_TABLE
+from edge.telemetry import DAILY_TABLE, TICKS_TABLE
 
 #: 한 번에 이만큼씩 끊어 보낸다.  4GB 박스에서 통째로 메모리에 올리지 않기 위한 값이고,
 #: PostgREST 한 요청이 너무 커지는 것도 막는다.
@@ -132,14 +132,14 @@ def flush_spool(
     """쌓인 것을 묶어서 보낸다.  **파일 하나가 다 들어가야 그 파일을 지운다.**
 
     중간에 실패하면 그 파일은 그대로 두고 멈춘다.  다음번에 처음부터 다시
-    보낸다 — 표는 같은 줄이 두 번 들어갈 수 있으므로, 중복이 곤란한 표(요약·
-    실행)는 기본 키로 덮어쓰게 되어 있다 (`deploy/supabase/telemetry.sql`).
+    보낸다 — 표는 같은 줄이 두 번 들어갈 수 있으므로, 중복이 곤란한 표(요약)는
+    기본 키로 덮어쓰게 되어 있다 (`deploy/supabase/telemetry.sql`).
     """
     sent_rows = 0
     sent_files = 0
     for path in spool.pending(before_day=before_day):
         table = spool.table_of(path)
-        if table not in (TICKS_TABLE, DAILY_TABLE, RUNS_TABLE):
+        if table not in (TICKS_TABLE, DAILY_TABLE):
             continue
         try:
             for batch in _chunks(spool.read_rows(path), batch_size):
@@ -166,7 +166,7 @@ def _chunks(rows: Iterable[Dict[str, Any]], size: int) -> Iterator[List[Dict[str
 
 def _day_of(row: Mapping[str, Any]) -> str:
     """줄이 어느 날 것인지.  파일을 날짜로 가르는 기준."""
-    for key in ("day", "tick_at", "started_at"):
+    for key in ("day", "tick_at"):
         value = row.get(key)
         if value:
             return str(value)[:10]
@@ -199,39 +199,32 @@ class TelemetryWriter:
         run_context: Optional[Mapping[str, Any]] = None,
         open_hours: Optional[str] = None,
         control_rate: Optional[float] = None,
-        started_at: Optional[str] = None,
         log: Callable[[str], None] = print,
     ) -> None:
         from edge.telemetry import (
             DEFAULT_CONTROL_RATE,
             TelemetrySelector,
-            new_run_id,
             parse_open_window,
-            run_row,
+            settings_fingerprint,
         )
 
         self._log = log
-        self.run_id = new_run_id()
+        context = dict(run_context or {})
         self.spool = TelemetrySpool(directory, log=log)
         self._selector = TelemetrySelector(
             cafe_id,
-            self.run_id,
+            box_version=context.get("box_version") or context.get("version"),
+            settings_hash=settings_fingerprint(context),
             open_window=parse_open_window(open_hours),
             control_rate=DEFAULT_CONTROL_RATE if control_rate is None else control_rate,
         )
-        self._started_at = started_at or _now_iso()
-        self._run_context = dict(run_context or {})
         self._cafe_id = cafe_id
-        self._run_row_written = False
         self._ticks = 0
         self._kept = 0
-        self._make_run_row = run_row
 
     def record(self, record: Mapping[str, Any]) -> None:
         """틱 하나.  고를 게 있으면 쌓고, 없으면 요약만 세고 끝난다."""
         try:
-            if not self._run_row_written:
-                self._write_run_row()
             self._ticks += 1
             rows = self._selector.observe(record)
             if rows:
@@ -239,28 +232,9 @@ class TelemetryWriter:
         except Exception as error:  # noqa: BLE001 -- 판정을 지키는 게 우선
             self._log(f"텔레메트리 실패(무시하고 계속): {type(error).__name__}: {error}")
 
-    def _write_run_row(self) -> None:
-        row = self._make_run_row(
-            self._run_context,
-            run_id=self.run_id,
-            cafe_id=self._cafe_id,
-            started_at=self._started_at,
-        )
-        self.spool.append(RUNS_TABLE, [row])
-        self._run_row_written = True
-
     def close(self) -> None:
-        """요약과 실행 종료 시각을 쌓고 파일을 닫는다.  여기서도 안 죽는다."""
+        """요약을 쌓고 파일을 닫는다.  여기서도 안 죽는다."""
         try:
-            if self._run_row_written:
-                row = self._make_run_row(
-                    self._run_context,
-                    run_id=self.run_id,
-                    cafe_id=self._cafe_id,
-                    started_at=self._started_at,
-                    ended_at=_now_iso(),
-                )
-                self.spool.append(RUNS_TABLE, [row])
             daily = self._selector.daily_rows()
             if daily:
                 self.spool.append(DAILY_TABLE, daily)
@@ -279,9 +253,3 @@ class TelemetryWriter:
 
     def __exit__(self, *_exc: Any) -> None:
         self.close()
-
-
-def _now_iso() -> str:
-    from datetime import datetime
-
-    return datetime.now().astimezone().isoformat(timespec="seconds")

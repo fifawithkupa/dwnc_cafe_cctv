@@ -11,24 +11,16 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 from edge.publish import (
     ENV_KEYS,
     GAP_REASON,
-    SEAT_SHEET_BUCKET,
     SEATS_SCHEMA_VERSION,
-    SeatSheetNeed,
     SupabasePublisher,
     box_version,
     gap_payload,
     live_payload,
     publisher_from_env,
     seat_index_from_layout,
-    seat_sheet_image,
-    seat_sheet_label_rects,
-    seat_sheet_row,
 )
 from engine.seatnow_layout import LayoutChair, LayoutSeat, LayoutTable, SeatLayout
 
@@ -200,83 +192,6 @@ class SeatIndexTest(unittest.TestCase):
                 {"seat_id": "BAR7-2", "kind": "bar_seat", "zone": "BAR7"},
             ],
         )
-
-
-class SeatSheetTest(unittest.TestCase):
-    def test_image_is_a_jpeg_of_the_frame_size_with_the_boxes_drawn(self):
-        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
-        jpeg = seat_sheet_image(frame, _layout())
-        self.assertEqual(jpeg[:2], b"\xff\xd8")
-        decoded = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
-        self.assertEqual(decoded.shape, (1080, 1920, 3))
-        # T1 네모의 윗변(y=700, x 800..1000)과 BAR7-2 의 윗변에 선이 그어져 있다.
-        self.assertGreater(int(decoded[700, 800:1000].sum()), 0)
-        self.assertGreater(int(decoded[620, 1300:1500].sum()), 0)
-        # 네모 밖 먼 곳은 그대로 검다 (상태 색·머리글 같은 걸 덧칠하지 않는다).
-        self.assertEqual(int(decoded[1000, 100:300].sum()), 0)
-
-    def test_labels_of_narrow_neighbouring_bar_slots_do_not_cover_each_other(self):
-        # 바 칸은 이름표보다 좁다. 옆 칸 이름표가 앞 것을 덮으면 앱 팀이 못 읽는다.
-        units = _layout().judgement_units()
-        rects = seat_sheet_label_rects(units, lambda text: (len(text) * 30, 24), (1920, 1080))
-        self.assertEqual([r[0] for r in rects], ["T1", "BAR7-1", "BAR7-2"])
-        boxes = [r[1:] for r in rects]
-        for i, a in enumerate(boxes):
-            for b in boxes[i + 1 :]:
-                overlap = a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
-                self.assertFalse(overlap, f"{a} 와 {b} 가 겹친다")
-        # 전부 화면 안에 있다.
-        for _name, x, y, w, h in rects:
-            self.assertGreaterEqual(x, 0)
-            self.assertGreaterEqual(y, 0)
-            self.assertLessEqual(x + w, 1920)
-
-    def test_row_lists_the_seat_ids_and_where_the_picture_is(self):
-        index = seat_index_from_layout(_layout())
-        row = seat_sheet_row("dwnc", index, "2026-09-10T14:00:00+0900", "abc1234")
-        self.assertEqual(
-            row,
-            {
-                "cafe_id": "dwnc",
-                "seat_ids": index,
-                "image_path": f"{SEAT_SHEET_BUCKET}/dwnc.jpg",
-                "taken_at": "2026-09-10T14:00:00+0900",
-                "box_version": "abc1234",
-            },
-        )
-
-
-class SeatSheetNeedTest(unittest.TestCase):
-    def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.layout = Path(self.folder.name) / "cafe.json"
-        self.layout.write_text('{"tables": []}', encoding="utf-8")
-        self.now = 1000.0
-        self.need = SeatSheetNeed(self.layout, clock=lambda: self.now, in_flight_s=120.0)
-
-    def tearDown(self):
-        self.folder.cleanup()
-
-    def test_a_new_layout_needs_a_sheet_until_one_is_uploaded(self):
-        self.assertTrue(self.need.pending())
-        self.need.mark_done()
-        self.assertFalse(self.need.pending())
-        # 재시작해도 (새 객체) 마커 파일이 기억한다.
-        self.assertFalse(SeatSheetNeed(self.layout).pending())
-
-    def test_editing_the_layout_asks_for_a_new_sheet(self):
-        self.need.mark_done()
-        self.layout.write_text('{"tables": [1]}', encoding="utf-8")
-        self.assertTrue(self.need.pending())
-
-    def test_while_an_upload_is_in_flight_it_is_not_asked_again_until_a_timeout(self):
-        self.need.handed_off()
-        self.assertFalse(self.need.pending())
-        self.now += 121.0  # 올리기가 실패해서 mark_done 이 안 왔다 → 다시 시도
-        self.assertTrue(self.need.pending())
-
-    def test_missing_layout_file_never_needs_a_sheet(self):
-        self.assertFalse(SeatSheetNeed(self.layout.with_name("nope.json")).pending())
 
 
 class _FakeSupabase:
@@ -470,32 +385,6 @@ class PublisherTest(unittest.TestCase):
         self.assertGreater(stats["backoff_s"], 0.0)
         self.assertTrue(any("전송 실패" in line for line in self.logs))
         dead.stop()
-
-    def test_seat_sheet_goes_to_storage_first_then_to_cafe_seat_sheets(self):
-        self.publisher.start()
-        done = []
-        row = {"cafe_id": "dwnc", "seat_ids": [], "image_path": "seat-sheets/dwnc.jpg"}
-        self.publisher.publish_seat_sheet(b"\xff\xd8jpeg", row, on_done=lambda: done.append(1))
-        self.assertTrue(_wait(lambda: len(self.fake.upserts("cafe_seat_sheets")) == 1))
-        self.assertTrue(_wait(lambda: done == [1]))
-        paths = [r["path"] for r in self.fake.requests if not r["path"].startswith("/auth")]
-        self.assertEqual(paths, ["/storage/v1/object/seat-sheets/dwnc.jpg", "/rest/v1/cafe_seat_sheets"])
-        upload = self.fake.requests[1]
-        self.assertEqual(upload["headers"]["content-type"], "image/jpeg")
-        self.assertEqual(upload["headers"]["x-upsert"], "true")
-        self.assertEqual(upload["headers"]["authorization"], "Bearer tok1")
-        self.assertEqual(upload["raw"], b"\xff\xd8jpeg")
-        self.assertEqual(self.fake.upserts("cafe_seat_sheets")[0]["body"], row)
-
-    def test_a_failed_sheet_upload_does_not_call_on_done_and_counts_as_a_failure(self):
-        self.fake.unauthorized_left = 3  # 재로그인 한 번으로도 못 넘긴다
-        self.publisher.start()
-        done = []
-        self.publisher.publish_seat_sheet(b"x", {"cafe_id": "dwnc"}, on_done=lambda: done.append(1))
-        self.assertTrue(_wait(lambda: self.publisher.stats()["failed"] >= 1))
-        time.sleep(0.2)
-        self.assertEqual(done, [])
-        self.assertEqual(self.fake.upserts("cafe_seat_sheets"), [])
 
     def test_the_app_owned_cafes_table_is_never_touched(self):
         # 앱의 `cafes` 는 앱 자체 트리거가 채우고, congestion 은 우리 낱말을 거부한다.

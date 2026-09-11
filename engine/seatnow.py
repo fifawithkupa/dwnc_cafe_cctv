@@ -50,15 +50,12 @@ from engine.seatnow_live import (
     process_rss_mb,
 )
 from edge.publish import (
-    SeatSheetNeed,
     _publish_stats_for_record,
     box_version,
     gap_payload,
     live_payload,
     publisher_from_env,
     seat_index_from_layout,
-    seat_sheet_image,
-    seat_sheet_row,
 )
 
 
@@ -835,37 +832,6 @@ def _publish_gap(publisher, seat_index: list, cafe_id: str, version: str, wall_c
         _publish_warn(error)
 
 
-_SHEET_WAIT_LOG_EVERY = 20  # 틱.  15초 × 20 = 5분에 한 번만 "대기 중" 로그
-
-
-def _maybe_seat_sheet(
-    need, publisher, layout, frame, record: dict, seat_index: list, version: str, waited: int
-) -> int:
-    """좌석 파일이 새것이고 화면에 사람이 없으면 이름표 사진을 올린다 (문서/앱팀할일.md).
-
-    돌려주는 값은 "사람 때문에 기다린 틱 수" — 로그를 5분에 한 번으로 줄이는 데만 쓴다.
-    여기서는 아무것도 raise 하지 않는다.
-    """
-    if need is None or publisher is None or layout is None or frame is None:
-        return 0
-    try:
-        if not need.pending():
-            return 0
-        people = len(record.get("poses") or [])
-        if people > 0:
-            if waited % _SHEET_WAIT_LOG_EVERY == 0:
-                print(f"이름표 사진 대기 중 (사람 {people}명 — 아무도 없을 때 찍는다)", flush=True)
-            return waited + 1
-        jpeg = seat_sheet_image(frame, layout)
-        row = seat_sheet_row(publisher.cafe_id, seat_index, str(record.get("wall_clock", "")), version)
-        need.handed_off()
-        publisher.publish_seat_sheet(jpeg, row, on_done=need.mark_done)
-        print(f"이름표 사진 올리는 중: {row['image_path']} ({len(seat_index)}자리)", flush=True)
-    except Exception as error:  # noqa: BLE001 -- 판정을 지키는 게 우선
-        _publish_warn(error)
-    return 0
-
-
 def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     """Judge a camera stream on a wall-clock schedule until told to stop.
 
@@ -903,14 +869,9 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     version = box_version()
     cafe_id = publisher.cafe_id if publisher is not None else ""
     seat_index = seat_index_from_layout(analyzer.layout) if analyzer.layout is not None else []
-    seat_sheet: Optional[SeatSheetNeed] = None
-    sheet_wait_ticks = 0
     print(f"Supabase 전송: {publish_state}", flush=True)
     if publisher is not None:
         publisher.start()
-        if args.layout is not None:
-            seat_sheet = SeatSheetNeed(args.layout)
-            print(f"이름표 사진: {seat_sheet.describe()}", flush=True)
     if hwaccel.fallback:
         print(
             "⚠️  하드웨어 디코딩이 잡히지 않았습니다 — 소프트웨어로 돕니다. "
@@ -1100,16 +1061,6 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                         pass
                 record = runner.judge(burst, center_index, center_time, extra=extra)
                 _publish_tick(publisher, record, cafe_id, version)
-                sheet_wait_ticks = _maybe_seat_sheet(
-                    seat_sheet,
-                    publisher,
-                    analyzer.layout,
-                    burst[center_index][1],
-                    record,
-                    seat_index,
-                    version,
-                    sheet_wait_ticks,
-                )
                 tick_durations.append(record["tick"]["duration_s"])
                 inference_ms.append(record.get("inference_ms", 0.0))
                 late_seconds.append(late)

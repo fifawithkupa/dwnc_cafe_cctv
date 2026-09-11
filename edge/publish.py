@@ -8,20 +8,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from engine.seatnow_layout import COUNTED_ZONE_KIND, SeatLayout
 from engine.seatnow_report import classify_reason
 
 SEATS_SCHEMA_VERSION = 2  # 2: busy / busy_tables 추가 (2026-09-10)
-SEAT_SHEET_BUCKET = "seat-sheets"
-SEAT_SHEET_IN_FLIGHT_S = 120.0
 GAP_REASON = "no_fresh_frames"
 _COUNTABLE = ("occupied", "empty", "unknown")
 
@@ -135,146 +132,6 @@ def gap_payload(
     return _row(cafe_id, "gap", seats, wall_clock, box_version)
 
 
-# ── 이름표 사진 ─────────────────────────────────────────────────────────────
-# 앱 팀은 지도를 피그마로 그려 앱 코드에 넣는다 (문서/앱팀할일.md).  그러려면 네모마다
-# 어떤 이름표(seat_id)를 붙일지 알아야 하므로, 설치 때 카메라 화면 위에 판정 단위
-# 마다 네모와 이름표만 그린 사진 한 장을 올린다.  상태 색은 일부러 없다.
-
-
-def _rects_overlap(a, b) -> bool:
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
-
-
-def seat_sheet_label_rects(units, text_size, frame_size) -> List[Tuple[str, int, int, int, int]]:
-    """이름표를 놓을 자리 (name, x, y, w, h).  겹치면 위로 한 줄씩 밀어 올린다.
-
-    바 칸은 좁아서 이름표가 칸보다 넓다.  그대로 두면 옆 칸 이름표가 앞 이름표를
-    덮어 앱 팀이 못 읽는다.  ``text_size(text) -> (w, h)`` 는 글자 크기를 잰다.
-    """
-    width, height = frame_size
-    placed: List[Tuple[str, int, int, int, int]] = []
-    for unit in units:
-        x1, y1, _x2, _y2 = [int(round(value)) for value in unit.box]
-        text_w, text_h = text_size(unit.name)
-        w, h = text_w + 10, text_h + 8
-        x = max(0, min(x1, width - w))
-        y = y1 - h - 2
-        if y < 0:
-            y = y1 + 2
-        rect = (unit.name, x, y, w, h)
-        for _ in range(12):
-            if not any(_rects_overlap(rect[1:], other[1:]) for other in placed):
-                break
-            y -= h + 2
-            if y < 0:  # 위로 갈 데가 없으면 칸 안쪽으로 내려간다
-                y = rect[2] + h + 2
-            rect = (unit.name, x, y, w, h)
-        placed.append(rect)
-    return placed
-
-
-def seat_sheet_image(frame, layout: SeatLayout, quality: int = 90) -> bytes:
-    """카메라 원본 위에 판정 단위마다 네모 + 이름표.  JPEG 바이트를 돌려준다."""
-    import cv2
-
-    output = frame.copy()
-    height, width = output.shape[:2]
-    scale = max(0.6, min(width, height) / 1100.0)
-    thickness = max(2, int(round(scale * 2)))
-    color = (60, 220, 255)  # BGR.  상태 색(빨강/초록/회색)과 겹치지 않는 노랑
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.9 * scale
-    font_thickness = max(1, int(round(2 * scale)))
-
-    def text_size(text: str) -> Tuple[int, int]:
-        (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, font_thickness)
-        return text_w, text_h + baseline
-
-    units = layout.judgement_units()
-    for unit in units:
-        x1, y1, x2, y2 = [int(round(value)) for value in unit.box]
-        cv2.rectangle(output, (x1, y1), (x2, y2), color, thickness)
-    for name, x, y, w, h in seat_sheet_label_rects(units, text_size, (width, height)):
-        cv2.rectangle(output, (x, y), (x + w, y + h), color, -1)
-        (_tw, text_h), baseline = cv2.getTextSize(name, font, font_scale, font_thickness)
-        cv2.putText(output, name, (x + 5, y + 4 + text_h), font, font_scale, (20, 20, 20), font_thickness, cv2.LINE_AA)
-    ok, encoded = cv2.imencode(".jpg", output, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
-    if not ok:
-        raise RuntimeError("이름표 사진 JPEG 인코딩 실패")
-    return encoded.tobytes()
-
-
-def seat_sheet_row(
-    cafe_id: str, seat_index: List[Dict[str, Any]], taken_at: str, box_version: str
-) -> Dict[str, Any]:
-    """`cafe_seat_sheets` 한 줄: 사진의 이름표 목록과 사진이 있는 곳."""
-    return {
-        "cafe_id": cafe_id,
-        "seat_ids": list(seat_index),
-        "image_path": f"{SEAT_SHEET_BUCKET}/{cafe_id}.jpg",
-        "taken_at": taken_at,
-        "box_version": box_version,
-    }
-
-
-class SeatSheetNeed:
-    """좌석 파일이 바뀌었는데 아직 이름표 사진을 못 올렸는지 기억한다.
-
-    마커 파일(`<카페>.seat_sheet.sha`)에는 올리기에 *성공한* 좌석 파일의 해시가 있다.
-    그래서 재시작해도 다시 안 찍고, 올리기가 실패했으면 다음 틱에 다시 시도한다.
-    넘긴 뒤 답이 없으면 ``in_flight_s`` 뒤에 다시 시도한다.
-    """
-
-    def __init__(self, layout_path, clock=time.time, in_flight_s: float = SEAT_SHEET_IN_FLIGHT_S) -> None:
-        self.layout_path = Path(layout_path)
-        self.marker_path = self.layout_path.with_name(self.layout_path.stem + ".seat_sheet.sha")
-        self._clock = clock
-        self._in_flight_s = in_flight_s
-        self._handed_off_at: Optional[float] = None
-        self._handed_off_hash: Optional[str] = None
-
-    def _layout_hash(self) -> Optional[str]:
-        try:
-            return hashlib.sha256(self.layout_path.read_bytes()).hexdigest()
-        except OSError:
-            return None
-
-    def _done_hash(self) -> Optional[str]:
-        try:
-            return self.marker_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return None
-
-    def pending(self) -> bool:
-        current = self._layout_hash()
-        if current is None or current == self._done_hash():
-            return False
-        if self._handed_off_at is not None and self._clock() - self._handed_off_at < self._in_flight_s:
-            return False
-        return True
-
-    def handed_off(self) -> None:
-        self._handed_off_at = self._clock()
-        self._handed_off_hash = self._layout_hash()
-
-    def mark_done(self) -> None:
-        digest = self._handed_off_hash or self._layout_hash()
-        if digest is not None:
-            self.marker_path.write_text(digest, encoding="utf-8")
-        self._handed_off_at = None
-        self._handed_off_hash = None
-
-    def describe(self) -> str:
-        """시작 화면 한 줄."""
-        if self._layout_hash() is None:
-            return f"좌석 파일 없음 ({self.layout_path})"
-        if self.pending():
-            return "올려야 함 — 화면에 사람이 없는 첫 판정 때 찍는다"
-        return "이미 올림 (좌석 파일이 바뀌면 다시 찍는다)"
-
-
 MAX_BACKOFF_S = 60.0
 _FIRST_BACKOFF_S = 5.0
 _TOKEN_MARGIN_S = 60.0
@@ -319,7 +176,6 @@ class SupabasePublisher:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._latest_live: Optional[Dict[str, Any]] = None
-        self._pending_sheet: Optional[Tuple[bytes, Dict[str, Any], Optional[Callable[[], None]]]] = None
         self._token: Optional[str] = None
         self._token_expires_at: float = 0.0
         self._backoff_s: float = 0.0
@@ -348,14 +204,6 @@ class SupabasePublisher:
             self._latest_live = payload
         self._wake.set()
 
-    def publish_seat_sheet(
-        self, jpeg: bytes, row: Dict[str, Any], on_done: Optional[Callable[[], None]] = None
-    ) -> None:
-        """이름표 사진 하나를 올린다.  성공했을 때만 ``on_done`` 을 (스레드에서) 부른다."""
-        with self._lock:
-            self._pending_sheet = (jpeg, row, on_done)
-        self._wake.set()
-
     def stats(self) -> Dict[str, Any]:
         with self._lock:
             return {
@@ -377,20 +225,10 @@ class SupabasePublisher:
                 break
             with self._lock:
                 live, self._latest_live = self._latest_live, None
-                sheet, self._pending_sheet = self._pending_sheet, None
-            if live is None and sheet is None:
+            if live is None:
                 continue
             try:
-                if live is not None:
-                    self._send("cafe_live", live)
-                if sheet is not None:
-                    jpeg, row, on_done = sheet
-                    # 사진 먼저, 표 나중 — 표에 줄이 있으면 사진도 있다는 뜻이 되게.
-                    self._upload_object(SEAT_SHEET_BUCKET, f"{self.cafe_id}.jpg", jpeg, "image/jpeg")
-                    self._send("cafe_seat_sheets", row)
-                    self._log(f"이름표 사진 올림: {row.get('image_path')}")
-                    if on_done is not None:
-                        on_done()
+                self._send("cafe_live", live)
             except Exception as error:  # noqa: BLE001 -- 판정을 지키는 게 우선
                 self._note_failure(f"{type(error).__name__}: {error}")
                 # 실패한 값은 버린다. 다음 틱이 더 새롭다. 백오프 동안은 잔다.
@@ -406,66 +244,6 @@ class SupabasePublisher:
         if not 200 <= response.status_code < 300:
             raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
         self._note_success()
-
-    def _upload_object(self, bucket: str, name: str, data: bytes, content_type: str) -> None:
-        """Storage 에 파일 하나를 덮어쓴다 (x-upsert).  401 이면 한 번 다시 로그인."""
-        self._ensure_token()
-        response = self._put_object(bucket, name, data, content_type)
-        if response.status_code == 401:
-            self._token = None
-            self._ensure_token()
-            response = self._put_object(bucket, name, data, content_type)
-        if not 200 <= response.status_code < 300:
-            raise RuntimeError(f"storage {bucket}/{name} HTTP {response.status_code}: {response.text[:200]}")
-
-    def _put_object(self, bucket: str, name: str, data: bytes, content_type: str):
-        return self._session.post(
-            f"{self._url}/storage/v1/object/{bucket}/{name}",
-            headers={
-                "apikey": self._anon_key,
-                "Authorization": f"Bearer {self._token}",
-                "Content-Type": content_type,
-                "x-upsert": "true",
-            },
-            data=data,
-            timeout=self._timeout,
-        )
-
-    def send_batch(self, table: str, rows: List[Dict[str, Any]]) -> None:
-        """텔레메트리 한 묶음을 그 자리에서 보낸다 (`edge/telemetry_spool.py`).
-
-        `publish_live` 와 성질이 다르다.  저건 최신값만 중요해서 실패하면 버리지만,
-        이건 **한 줄도 버리면 안 되므로 실패를 그대로 올려보낸다** — 부르는 쪽이
-        파일을 그대로 두고 다음번에 다시 보낸다.
-
-        판정 루프에서 부르지 말 것.  기다리는 호출이다.
-        """
-        if not rows:
-            return
-        self._ensure_token()
-        response = self._insert_many(table, rows)
-        if response.status_code == 401:
-            self._token = None
-            self._ensure_token()
-            response = self._insert_many(table, rows)
-        if not 200 <= response.status_code < 300:
-            raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
-        self._note_success()
-
-    def _insert_many(self, table: str, rows: List[Dict[str, Any]]):
-        return self._session.post(
-            f"{self._url}/rest/v1/{table}",
-            headers={
-                "apikey": self._anon_key,
-                "Authorization": f"Bearer {self._token}",
-                "Content-Type": "application/json",
-                # 끊겨서 같은 파일을 다시 보낼 수 있다.  기본 키가 있는 표(요약·실행)는
-                # 덮어쓰고, 틱 표는 기본 키가 bigserial 이라 그냥 들어간다.
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            data=json.dumps(rows, ensure_ascii=False, default=str).encode("utf-8"),
-            timeout=max(self._timeout, 30.0),
-        )
 
     def _upsert(self, table: str, row: Dict[str, Any]):
         return self._session.post(

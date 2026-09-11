@@ -21,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -30,8 +29,6 @@ SCHEMA_VERSION = 1
 
 TICKS_TABLE = "seatnow_seat_ticks"
 DAILY_TABLE = "seatnow_seat_daily"
-RUNS_TABLE = "seatnow_runs"
-SCENERY_TABLE = "seatnow_scenery"
 
 #: 잘 돌아간 틱 중 이 비율만큼을 대조군으로 남긴다.  어려운 것만 모으면
 #: 그 데이터로 배운 규칙이 편향된다 (§10-3).
@@ -185,7 +182,8 @@ def aspect_ratio(box: Any) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
-# 실행 설정 — 이게 없으면 지난주와 비교할 수 없다
+# 실행 설정 — 이게 없으면 지난주와 비교할 수 없다.  표를 따로 두지 않고 (2026-09-11)
+# 순간 기록 한 줄마다 박스 버전과 설정 지문 두 칸으로 싣는다
 # ---------------------------------------------------------------------------
 
 #: 매번 달라지지만 판정에는 영향이 없는 것들.  지문에서 뺀다.
@@ -201,44 +199,6 @@ def settings_fingerprint(run_context: Optional[Mapping[str, Any]]) -> str:
     }
     canonical = json.dumps(stable, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
-
-
-def new_run_id() -> str:
-    return str(uuid.uuid4())
-
-
-def run_row(
-    run_context: Optional[Mapping[str, Any]],
-    *,
-    run_id: str,
-    cafe_id: str,
-    started_at: str,
-    ended_at: Optional[str] = None,
-) -> Dict[str, Any]:
-    context = dict(run_context or {})
-    models = dict(context.get("models") or {})
-    settings = dict(context.get("settings") or {})
-    source = dict(context.get("input") or {})
-    return {
-        "run_id": run_id,
-        "cafe_id": cafe_id,
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "schema_version": SCHEMA_VERSION,
-        "box_version": context.get("box_version") or context.get("version"),
-        "profile": context.get("profile"),
-        "det_model": models.get("detector"),
-        "det_sha256": models.get("detector_sha256"),
-        "pose_model": models.get("pose"),
-        "imgsz": settings.get("imgsz"),
-        "pose_imgsz": settings.get("pose_imgsz"),
-        "tick_seconds": settings.get("sample_seconds"),
-        "median_frames": settings.get("median_frames"),
-        "settings_hash": settings_fingerprint(context),
-        "layout_version": context.get("layout_version"),
-        "frame_width": source.get("width"),
-        "frame_height": source.get("height"),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -351,14 +311,16 @@ class TelemetrySelector:
     def __init__(
         self,
         cafe_id: str,
-        run_id: str,
         *,
+        box_version: Optional[str] = None,
+        settings_hash: Optional[str] = None,
         open_window: Optional[Tuple[int, int]] = None,
         control_rate: float = DEFAULT_CONTROL_RATE,
         rng: Optional[random.Random] = None,
     ) -> None:
         self.cafe_id = cafe_id
-        self.run_id = run_id
+        self.box_version = box_version
+        self.settings_hash = settings_hash
         self.open_window = open_window
         self.control_rate = max(0.0, min(1.0, float(control_rate)))
         self._rng = rng or random.Random()
@@ -401,8 +363,9 @@ class TelemetrySelector:
                     "cafe_id": self.cafe_id,
                     "seat_id": seat_id,
                     "tick_at": tick_at,
-                    "run_id": self.run_id,
                     "schema_version": SCHEMA_VERSION,
+                    "box_version": self.box_version,
+                    "settings_hash": self.settings_hash,
                     "seat_kind": _seat_kind(table.get("layout_kind")),
                     "capacity": table.get("layout_capacity"),
                     "zone": table.get("layout_zone_name"),
@@ -516,7 +479,8 @@ def rows_from_records(
     records: Iterable[Mapping[str, Any]],
     *,
     cafe_id: str,
-    run_id: str,
+    box_version: Optional[str] = None,
+    settings_hash: Optional[str] = None,
     open_window: Optional[Tuple[int, int]] = None,
     control_rate: float = DEFAULT_CONTROL_RATE,
     rng: Optional[random.Random] = None,
@@ -526,7 +490,12 @@ def rows_from_records(
     지난 기록을 다시 훑을 때 쓰는 입구다.  박스 없이 돈다.
     """
     selector = TelemetrySelector(
-        cafe_id, run_id, open_window=open_window, control_rate=control_rate, rng=rng
+        cafe_id,
+        box_version=box_version,
+        settings_hash=settings_hash,
+        open_window=open_window,
+        control_rate=control_rate,
+        rng=rng,
     )
     ticks: List[Dict[str, Any]] = []
     for record in records:

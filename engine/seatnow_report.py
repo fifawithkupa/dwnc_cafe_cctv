@@ -40,6 +40,9 @@ class ReasonCode(str, Enum):
 
     # settled judgements
     PERSON_SEATED = "person_seated"
+    # 45초 규칙: 사람 때문에 모름이 3판정 연속이라 앉은 것으로 확정 (2026-09-14).
+    # 따로 세는 이유 — 이 판정들만 모아 사람이 정답을 매기면 파인튜닝 재료가 된다.
+    OCCLUDED_STREAK = "occluded_streak"
     BELONGINGS = "belongings"
     OCCUPIED_CHAIR = "occupied_chair"
     NO_CUSTOMER_EVIDENCE = "no_customer_evidence"
@@ -64,6 +67,7 @@ REASON_GROUPS: Dict[str, Tuple[ReasonCode, ...]] = {
     ),
     "settled": (
         ReasonCode.PERSON_SEATED,
+        ReasonCode.OCCLUDED_STREAK,
         ReasonCode.BELONGINGS,
         ReasonCode.OCCUPIED_CHAIR,
         ReasonCode.NO_CUSTOMER_EVIDENCE,
@@ -93,6 +97,8 @@ def classify_reason(raw_state: str, reason: str, predicted: bool) -> ReasonCode:
     # 백로그가 아니다 — "time" 그룹으로 간다.
     if text.startswith("awaiting_confirmation:"):
         return ReasonCode.PENDING_CONFIRMATION
+    if text.startswith("occluded_streak_occupied:"):
+        return ReasonCode.OCCLUDED_STREAK
     # The table layer prefixes the pose-level cause; unwrap it so the cause
     # is what gets classified rather than the wrapper.
     if text.startswith("nearby_person_pose_unknown:"):

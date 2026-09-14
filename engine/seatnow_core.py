@@ -224,6 +224,14 @@ class Track:
     # 모름·확정 대기 동안에는 바뀌지 않는다 (2026-09-10 결정: 앱은 확정된 것만
     # 보여준다 — 앉은 뒤 2번, 떠난 뒤 3번 연속 봐야 색이 바뀐다).
     confirmed_state: Optional[OccupancyState] = None
+    # 45초 규칙 (2026-09-14 결정): "사람 때문에 모름"이 연속 몇 번째인지.
+    # 앉은 손님은 하반신이 테이블에 가려 판정이 영영 안 풀릴 수 있다.  사람이
+    # 자리 위에 45초(3판정) 내내 있으면 앉은 것으로 보고 사용중으로 확정한다.
+    person_unknown_count: int = 0
+    # 위 규칙으로 사용중이 된 상태인가.  로그 사유에 이름표를 붙여 나중에
+    # 이 판정만 골라 모을 수 있게 한다 (파인튜닝 재료).  비어 보이는 판정
+    # 한 번이면 바로 빈자리로 돌아간다 — 근거 없이 올린 상태라 오래 붙들지 않는다.
+    occlusion_confirmed: bool = False
 
     @property
     def label(self) -> str:
@@ -241,6 +249,10 @@ class Track:
         frame, but it must not mutate a previously occupied table into EMPTY.
         """
         raw = self.last_observation.raw_state
+        if raw == OccupancyState.UNKNOWN and self.occlusion_confirmed:
+            # 45초 규칙으로 사용중이 된 자리.  이번 판정도 모름이지만 채점과
+            # 앱 둘 다에 사용중으로 드러나야 한다 — 숨기면 회귀를 못 본다.
+            return OccupancyState.OCCUPIED
         if raw in (OccupancyState.IGNORE, OccupancyState.UNKNOWN):
             return raw
         return self.stable_state
@@ -2171,6 +2183,29 @@ def aggregate_burst_observations(
     return center_tables
 
 
+# 45초 규칙: 판정 주기 15초 × 3.  "사람 때문에 모름"이 이만큼 연속되면
+# 서 있다 간 사람이 아니라 앉은 손님이다.  매장별로 바꾸지 않는다 (CLAUDE.md).
+OCCLUDED_CONFIRMATIONS = 3
+OCCLUDED_STREAK_PREFIX = "occluded_streak_occupied"
+# 모름 사유 중 "자리 위에 사람이 있다"는 뜻인 것들.  짐이나 화각 문제로
+# 나온 모름은 사람이 앉았다는 근거가 아니므로 세지 않는다.
+_PERSON_UNKNOWN_PREFIXES = (
+    "occluded_by_person",
+    "spans_multiple_seats",
+    "nearby_person_pose_unknown",
+    "compact_occluded_pose",
+    "insufficient_keypoints",
+)
+
+
+def is_person_unknown(reason: str) -> bool:
+    return (reason or "").startswith(_PERSON_UNKNOWN_PREFIXES)
+
+
+def _is_person_unknown_observation(observation: TableObservation) -> bool:
+    return observation.raw_state == OccupancyState.UNKNOWN and is_person_unknown(observation.reason)
+
+
 def _remember_confirmed(track: Track) -> None:
     """stable_state 가 사용중/빈자리로 정해졌을 때만 앱용 값을 갱신한다."""
     if track.stable_state in (OccupancyState.OCCUPIED, OccupancyState.EMPTY):
@@ -2185,6 +2220,7 @@ class TableTracker:
         occupy_confirmations: int = 2,
         empty_confirmations: int = 3,
         max_missed: int = 3,
+        occluded_confirmations: int = OCCLUDED_CONFIRMATIONS,
         maximum_center_distance: float = 0.16,
         layout_add_confirmations: int = 3,
         layout_move_confirmations: int = 3,
@@ -2197,6 +2233,7 @@ class TableTracker:
     ):
         self.occupy_confirmations = max(1, occupy_confirmations)
         self.empty_confirmations = max(1, empty_confirmations)
+        self.occluded_confirmations = max(1, occluded_confirmations)
         self.max_missed = max(0, max_missed)
         self.maximum_center_distance = maximum_center_distance
         self.layout_add_confirmations = max(1, layout_add_confirmations)
@@ -2261,6 +2298,8 @@ class TableTracker:
             confirmed_state=(
                 initial_state if initial_state in (OccupancyState.OCCUPIED, OccupancyState.EMPTY) else None
             ),
+            # 45초 규칙: 처음 본 순간부터 센다 (사람 때문에 모름이면 1회째).
+            person_unknown_count=1 if _is_person_unknown_observation(observation) else 0,
         )
         self.next_id += 1
         self.tracks.append(track)
@@ -2380,6 +2419,8 @@ class TableTracker:
         track.stable_state = initial_state
         track.pending_state = pending_state
         track.pending_count = pending_count
+        track.person_unknown_count = 1 if _is_person_unknown_observation(observation) else 0
+        track.occlusion_confirmed = False
         _remember_confirmed(track)
         track.layout_version = self.layout_version
         track.layout_state = "ACTIVE"
@@ -2626,6 +2667,29 @@ class TableTracker:
         if raw in (OccupancyState.UNKNOWN, OccupancyState.IGNORE):
             # 판단을 멈추기만 한다.  사람이 잠깐 지나갔다는 이유로 쌓아둔
             # 근거를 지우면, 비킨 뒤 처음부터 다시 모아야 한다.
+            if raw == OccupancyState.UNKNOWN and is_person_unknown(observation.reason):
+                return self._count_person_unknown(track, timestamp)
+            track.person_unknown_count = 0
+            return None
+        track.person_unknown_count = 0
+        if track.occlusion_confirmed:
+            # 45초 규칙으로 올린 사용중은 실제 근거가 아니다.  비어 보이면
+            # 한 번(15초)에 바로 빈자리로, 앉은 게 보이면 그대로 사용중으로.
+            # (2026-09-14 결정: 3번 연속 빈 것을 기다리지 않는다)
+            track.occlusion_confirmed = False
+            track.stable_state = raw
+            track.pending_state = None
+            track.pending_count = 0
+            _remember_confirmed(track)
+            if track.stable_state != previous:
+                return {
+                    "type": "state_change",
+                    "table_id": track.track_id,
+                    "from": previous.value,
+                    "to": track.stable_state.value,
+                    "timestamp": timestamp,
+                    "rule": OCCLUDED_STREAK_PREFIX,
+                }
             return None
         was_unresolved = previous in (OccupancyState.UNKNOWN, OccupancyState.IGNORE)
         if was_unresolved:
@@ -2680,6 +2744,37 @@ class TableTracker:
                 "timestamp": timestamp,
             }
         return None
+
+    def _count_person_unknown(self, track: Track, timestamp: float) -> Optional[Dict[str, object]]:
+        """45초 규칙.  자리 위의 사람 때문에 모름이 연속되면 앉은 것으로 본다.
+
+        앉은 손님은 하반신이 테이블에 가려 "서 있음/모름"으로만 보이고, 그
+        사이 앱에는 마지막 확정값(빈자리)이 그대로 나간다.  지나가는 사람은
+        45초 내내 같은 자리 위에 있지 않는다는 전제로 사용중으로 확정한다.
+        단점: 카운터 옆 자리처럼 사람이 서서 기다리는 자리는 빈자리인데도
+        사용중이 될 수 있다 — 그 방향은 손님을 남의 자리로 보내지는 않는다.
+        """
+        track.person_unknown_count += 1
+        previous = track.stable_state
+        if (
+            previous == OccupancyState.OCCUPIED
+            or track.person_unknown_count < self.occluded_confirmations
+        ):
+            return None
+        track.stable_state = OccupancyState.OCCUPIED
+        track.occlusion_confirmed = True
+        track.pending_state = None
+        track.pending_count = 0
+        _remember_confirmed(track)
+        return {
+            "type": "state_resolved" if previous == OccupancyState.UNKNOWN else "state_change",
+            "table_id": track.track_id,
+            "from": previous.value,
+            "to": track.stable_state.value,
+            "timestamp": timestamp,
+            "rule": OCCLUDED_STREAK_PREFIX,
+            "streak": track.person_unknown_count,
+        }
 
     def update(
         self,
@@ -3611,6 +3706,10 @@ def logged_reason(track: Track) -> str:
         and observation.raw_state == OccupancyState.OCCUPIED
     ):
         return f"awaiting_confirmation:{observation.reason}"
+    if track.occlusion_confirmed and observation.raw_state == OccupancyState.UNKNOWN:
+        # 45초 규칙으로 사용중.  이 접두어로 로그를 골라내면 "가려진 채 앉은
+        # 사람" 후보 사진만 모인다 — 파인튜닝 재료.
+        return f"{OCCLUDED_STREAK_PREFIX}:{track.person_unknown_count}:{observation.reason}"
     return observation.reason
 
 

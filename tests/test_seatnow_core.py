@@ -36,6 +36,7 @@ from engine.seatnow_core import (
     frame_log_record,
     evidence_code_from_log,
     is_scene_change,
+    logged_reason,
     object_seat_share,
     occupancy_evidence_code,
     seat_person_coverage,
@@ -1715,3 +1716,97 @@ class OcclusionPausesTheDecisionTests(unittest.TestCase):
         self.assertEqual(
             cleared.visible_tracks[0].stable_state, OccupancyState.OCCUPIED
         )
+
+
+class OccludedStreakRuleTests(unittest.TestCase):
+    """45초 규칙: 사람 때문에 모름이 3판정 연속이면 앉은 것으로 본다 (2026-09-14)."""
+
+    FRAME_SHAPE = (720, 1280)
+
+    def _tracker(self):
+        return TableTracker(occupy_confirmations=2, empty_confirmations=3, occluded_confirmations=3)
+
+    def _person_unknown(self, share="0.58"):
+        return table_observation(OccupancyState.UNKNOWN, reason=f"occluded_by_person:{share}")
+
+    def _run(self, tracker, observations):
+        result = None
+        for index, observation in enumerate(observations):
+            result = tracker.update([observation], float(index), self.FRAME_SHAPE)
+        return result.visible_tracks[0]
+
+    def test_three_person_unknowns_on_an_empty_seat_confirm_occupied(self):
+        track = self._run(
+            self._tracker(),
+            [table_observation(OccupancyState.EMPTY)] + [self._person_unknown()] * 3,
+        )
+        self.assertEqual(track.stable_state, OccupancyState.OCCUPIED)
+        self.assertEqual(track.confirmed_state, OccupancyState.OCCUPIED)  # 앱: busy
+        self.assertEqual(track.visible_state, OccupancyState.OCCUPIED)  # 채점: state
+        self.assertTrue(logged_reason(track).startswith("occluded_streak_occupied:3:occluded_by_person"))
+
+    def test_two_person_unknowns_keep_the_seat_empty(self):
+        track = self._run(
+            self._tracker(),
+            [table_observation(OccupancyState.EMPTY)] + [self._person_unknown()] * 2,
+        )
+        self.assertEqual(track.stable_state, OccupancyState.EMPTY)
+        self.assertEqual(track.confirmed_state, OccupancyState.EMPTY)
+        self.assertEqual(track.visible_state, OccupancyState.UNKNOWN)
+        self.assertEqual(logged_reason(track), "occluded_by_person:0.58")
+
+    def test_a_clear_look_in_between_resets_the_streak(self):
+        track = self._run(
+            self._tracker(),
+            [
+                table_observation(OccupancyState.EMPTY),
+                self._person_unknown(),
+                self._person_unknown(),
+                table_observation(OccupancyState.EMPTY),
+                self._person_unknown(),
+            ],
+        )
+        self.assertEqual(track.stable_state, OccupancyState.EMPTY)
+        self.assertEqual(track.person_unknown_count, 1)
+
+    def test_unknowns_without_a_person_do_not_count(self):
+        no_person = table_observation(OccupancyState.UNKNOWN, reason="border_cropped")
+        track = self._run(
+            self._tracker(),
+            [table_observation(OccupancyState.EMPTY), no_person, no_person, no_person],
+        )
+        self.assertEqual(track.stable_state, OccupancyState.EMPTY)
+        self.assertEqual(track.person_unknown_count, 0)
+
+    def test_promoted_seat_returns_to_empty_after_a_single_empty_look(self):
+        # 2026-09-14 결정: 45초 규칙으로 올린 사용중은 비어 보이면 15초(1판정)에 푼다.
+        tracker = self._tracker()
+        track = self._run(
+            tracker, [table_observation(OccupancyState.EMPTY)] + [self._person_unknown()] * 3
+        )
+        self.assertEqual(track.stable_state, OccupancyState.OCCUPIED)
+        track = tracker.update([table_observation(OccupancyState.EMPTY)], 10.0, self.FRAME_SHAPE).visible_tracks[0]
+        self.assertEqual(track.stable_state, OccupancyState.EMPTY)
+        self.assertEqual(track.confirmed_state, OccupancyState.EMPTY)
+        self.assertFalse(track.occlusion_confirmed)
+        self.assertEqual(logged_reason(track), "fixture")
+
+    def test_promoted_seat_with_real_seated_evidence_stays_occupied_and_keeps_it(self):
+        tracker = self._tracker()
+        track = self._run(
+            tracker, [table_observation(OccupancyState.EMPTY)] + [self._person_unknown()] * 3
+        )
+        seated = table_observation(OccupancyState.OCCUPIED, reason="seated:1")
+        track = tracker.update([seated], 10.0, self.FRAME_SHAPE).visible_tracks[0]
+        self.assertEqual(track.stable_state, OccupancyState.OCCUPIED)
+        self.assertFalse(track.occlusion_confirmed)
+        # 이제 실제 근거로 사용중이므로 빈자리로 가려면 평소처럼 3번 연속 비어야 한다.
+        empty = table_observation(OccupancyState.EMPTY)
+        track = tracker.update([empty], 11.0, self.FRAME_SHAPE).visible_tracks[0]
+        self.assertEqual(track.stable_state, OccupancyState.OCCUPIED)
+
+    def test_streak_also_resolves_a_seat_that_was_never_confirmed(self):
+        # 박스를 켠 직후: 확정된 적 없는 자리 위에 사람이 45초 있으면 사용중.
+        track = self._run(self._tracker(), [self._person_unknown()] * 3)
+        self.assertEqual(track.stable_state, OccupancyState.OCCUPIED)
+        self.assertEqual(track.confirmed_state, OccupancyState.OCCUPIED)

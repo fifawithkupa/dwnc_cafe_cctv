@@ -119,8 +119,15 @@ def judging_verdict(ticks: Sequence[Tick], hwaccel: Optional[str]) -> Tuple[bool
     ok = True
 
     judged = list(ticks[WARMUP_TICKS:]) or list(ticks)
-    slowest = max(tick.inference_ms for tick in judged)
-    lines.append(f"  판정 한 번 {slowest / 1000:.1f}초 (한도 {TICK_BUDGET_S}초)")
+    times = sorted(tick.inference_ms for tick in judged)
+    slowest = times[-1]
+    usual = times[len(times) // 2]
+    # 보통값을 같이 보여준다.  재시작 직후 모델을 처음 읽는 판정 하나가 느린데,
+    # 가장 느린 값만 보여주면 현장에서 "느려졌다"고 오해한다 (2026-10-13).
+    lines.append(
+        f"  판정 한 번 보통 {usual / 1000:.1f}초, 가장 느렸을 때 {slowest / 1000:.1f}초"
+        f" (한도 {TICK_BUDGET_S}초)"
+    )
     if slowest / 1000.0 > TICK_BUDGET_S:
         ok = False
         lines.append(

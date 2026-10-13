@@ -63,6 +63,13 @@ class TickParsingTest(unittest.TestCase):
         ok, _ = judging_verdict(parse_tick_lines(self.LOG), hwaccel="vaapi")
         self.assertTrue(ok)
 
+    def test_shows_usual_time_not_just_the_worst(self):
+        """가장 느린 값만 보여주면 재시작 직후 숫자를 보고 느려졌다고 오해한다."""
+        ok, lines = judging_verdict(parse_tick_lines(self.LOG), hwaccel="vaapi")
+        text = " ".join(lines)
+        self.assertIn("보통", text)
+        self.assertIn("3.3", text)  # 3299ms·3338ms 가 보통값
+
     def test_slow_ticks_fail(self):
         log = list(self.LOG) + [
             "[ 50.6s] tables=12 occupied=0 empty=12 ignore=0 poses(seated/standing/unknown)=0/0/0 inference=9000ms",

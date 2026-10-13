@@ -110,8 +110,15 @@ class SpoolTest(unittest.TestCase):
         self.assertTrue(self.spool.path_for(DAILY_TABLE, "2026-09-09").exists())
 
     def test_write_failure_never_raises(self):
-        """기록이 실패해도 판정 루프는 멈추지 않는다."""
-        blocked = TelemetrySpool(Path("/dev/null/nope"), log=lambda _msg: None)
+        """기록이 실패해도 판정 루프는 멈추지 않는다.
+
+        쓸 수 없는 경로를 만드는 법은 운영체제마다 다르다.  `/dev/null/nope` 는
+        윈도우에서 그냥 만들어져 시험이 뜻을 잃고 `C:\\dev` 쓰레기까지 남겼다
+        (2026-10-13).  **이미 있는 파일을 부모로 주면** 어디서나 실패한다.
+        """
+        file_as_parent = self.root.parent / "not-a-directory"
+        file_as_parent.write_text("", encoding="utf-8")
+        blocked = TelemetrySpool(file_as_parent / "nope", log=lambda _msg: None)
         self.assertEqual(blocked.append(TICKS_TABLE, [_tick()]), 0)
 
     def test_markers_are_pruned(self):

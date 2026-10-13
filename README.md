@@ -4,9 +4,10 @@
 "어느 자리가 사용중인가"를 판정해서 손님 앱에 **빈자리 수와 자리별 색**으로 보여주는 시스템이다.
 영상은 매장 밖으로 나가지 않는다. 나가는 것은 "자리 이름 + 사용중/빈자리" 한 줄뿐이다.
 
-> 갱신: **2026-09-11**, `main` = `b585a89` 기준. 이 문서는 "지금 코드가 실제로 하는 일"만 적는다.
+> 갱신: **2026-10-13**, `main` = `21f307c` 기준. 이 문서는 "지금 코드가 실제로 하는 일"만 적는다.
 > 지난 결정과 배경은 [`문서/SEATNOW_전체정리.md`](문서/SEATNOW_전체정리.md), 다음에 할 일은
 > [`문서/다음할일.md`](문서/다음할일.md), 앱 팀과의 계약은 [`문서/앱팀할일.md`](문서/앱팀할일.md).
+> 카페 설치는 [`문서/카페설치당일.md`](문서/카페설치당일.md).
 
 ---
 
@@ -141,10 +142,11 @@
 `checks/score_answers.py` 로 채점하면 마지막 줄이 이렇게 나온다.
 
 ```
-scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidence missed=10 imagined=1
+scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidence missed=10 imagined=1
 ```
 
-- **합격선 `accepted=70 wrong=2`.** 이보다 나쁘면 되돌린다. 노트북과 엣지 박스(OpenVINO) 모두 같은 점수가 나와야 한다.
+- **합격선 `accepted=68 wrong=4`** (2026-09-14, 45초 가림 규칙 뒤). 이보다 나쁘면 되돌린다. 노트북과 엣지 박스(OpenVINO) 모두 같은 점수가 나와야 한다.
+  그 전 기준은 70/2 였다. 새 오답 2칸은 시험 영상에서 자리 옆에 서성이던 사람이 규칙대로 사용중이 된 것이라 감수한 값이다 (`CLAUDE.md`).
 - 채점이 면제하는 모름 둘: 사람이 덮어서 낸 모름(`occluded`), 사용중↔빈자리 전이 중 확정 대기(`delayed`). 이건 맞는 판단이다.
 - 틀린 칸은 `checks/diagnose_miss.py` 가 "모델이 못 본 건가, 코드가 버린 건가"를 가른다 (로직 / 상자밖 / 임계값경계 / 가구오인 / 파인튜닝).
 - 속도 설정(모델·백엔드·해상도)을 하나 바꿀 때마다 다시 채점한다. 빨라지면서 조용히 틀리는 변화가 실제로 있었다 (`CLAUDE.md`).
@@ -167,7 +169,7 @@ scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidenc
 | 항목 | 값 |
 |---|---|
 | 박스 | 중고 미니PC, Intel i3-6100T · RAM 4GB · Ubuntu 24.04 · GPU 없음 |
-| 모델 | `yolov8n` / `yolov8n-pose` 를 **OpenVINO** 로 변환한 것 (`edge/export.py`). 정확도는 노트북 PyTorch 와 동일(70/72) |
+| 모델 | `yolov8n` / `yolov8n-pose` 를 **OpenVINO** 로 변환한 것 (`edge/export.py`). 정확도는 노트북 PyTorch 와 동일(68/72) |
 | 카메라 | 하이크비전 4MP, H.265, 2560×1440, 20fps, PoE. 렌즈 2.8mm |
 | 디코딩 | 하드웨어(Quick Sync, vaapi). 24시간 도는 건 추론이 아니라 디코딩이라 이게 비용을 결정한다. 켜졌는지 꺼졌는지 매 판정 기록에 남는다 |
 | 판정 주기 | 15초. **판정 하나에 쓸 수 있는 시간 7.5초** (주기의 절반). 실측 추론 3.3~3.4초 |
@@ -201,12 +203,12 @@ scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidenc
 |---|---|---|
 | `engine/` | **판정.** 박스에서 24시간 도는 것 | `seatnow.py` 진입점·실시간 루프 / `seatnow_core.py` 판정 본체(모델 추론, 근거 연결, 5장 투표, 확정 트래커) / `seatnow_live.py` RTSP 읽기·재연결 / `seatnow_layout.py` 좌석 파일 / `seatnow_report.py` 모름 사유 어휘 / `seatnow_hwaccel.py` 하드웨어 디코더 고르기 |
 | `edge/` | **박스 전용.** 전송·기록·측정 | `publish.py` 판정 → `cafe_live` / `telemetry.py`·`telemetry_spool.py`·`telemetry_upload.py` 개선용 기록 / `live_report.py` 하루 요약 / `check_edge.py` 새 박스 검수 / `export.py` OpenVINO 변환 / `bench*.py` 속도 측정 / `rtsp_republish.py`·`fake_camera.sh` 카메라 없이 시험 |
-| `install/` | **설치 당일 한 번** | `calibrate.py` 좌석 그리기 / `seat_check.py` 앱 이름표 목록과 대조 |
+| `install/` | **설치 당일 한 번** | `check_install.py` 연결 확인 3종 / `calibrate.py` 좌석 그리기 / `seat_check.py` 앱 이름표 목록과 대조 |
 | `checks/` | **채점·진단** | `answer_key.py` 정답지 읽기 / `score_answers.py` 채점 / `diagnose_miss.py` 오답 원인 / `make_review.py` 사람이 넘겨보는 검수 폴더 / `inspect_run.py`·`judge_frames.py` 검출 검사 |
 | `deploy/` | 박스 서비스·설정·서버 표 | `seatnow.service`, `seatnow.env.example`, `install_service.sh`, `box_sparse_checkout.sh`, `supabase/schema.sql`(앱용 표), `supabase/telemetry.sql`(기록 표) |
 | `layouts/` | 매장별 좌석 파일 (판정의 입력) | `cafe_angle1.json` 지금 쓰는 것 |
 | `results/` | 결과. 저장소엔 판독표·정답지·채점표만 올라간다 | `angle1_layout/angle_answer.md` 72칸 정답지, `채점표.md`, `원인진단.md` |
-| `tests/` | 유닛 테스트 34개 파일 (모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
+| `tests/` | 유닛 테스트 **763개** (파일 35개, 모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
 | `문서/` | 절차·할 일·정리 (한국어, 비개발자 기준) | [`문서/README.md`](문서/README.md) 가 지도 |
 | `docs/` | 기술 문서·설계 스펙 | `edge-setup.md` 박스 12단계, `superpowers/specs/` 설계 |
 
@@ -242,10 +244,13 @@ python3 -m venv venv
 ./venv/bin/python -m engine.seatnow sample_raw/cafe_sample_angle1.mov --layout layouts/cafe_angle1.json \
   --no-video --frame-dir results/angle1_layout --log results/angle1_layout/log.jsonl
 
-# 72칸 정답지로 채점 → 합격선 accepted=70 wrong=2
+# 72칸 정답지로 채점 → 합격선 accepted=68 wrong=4
 ./venv/bin/python -m checks.score_answers results/angle1_layout --answers results/angle1_layout/angle_answer.md
 ./venv/bin/python -m checks.diagnose_miss results/angle1_layout        # 오답 원인
 ./venv/bin/python -m checks.make_review results/angle1_layout --title angle1   # 사람이 넘겨보는 폴더
+
+# 설치 당일: 연결 확인 3종 (박스에서) — 카메라·판정·서버 전송을 한 번에
+python3 -m install.check_install --shot /tmp/shot.jpg
 
 # 설치 당일: 좌석 그리기 (1회) / 앱 이름표 목록 대조
 ./venv/bin/python -m install.calibrate sample_raw/<10초클립>.mp4 --output layouts/<카페>.json
@@ -269,14 +274,15 @@ python3 -m edge.telemetry_upload --dry-run               # 개선용 기록, 몇
 
 ---
 
-## 10. 현재 상태 (2026-09-11)
+## 10. 현재 상태 (2026-10-13)
 
-- ✅ 판정: 좌석 파일 기반, 5장 다수결, 비대칭 확정, 3상태 + 모름 사유. 72칸 정답지 **70/72**, 노트북과 박스 동일
+- ✅ 판정: 좌석 파일 기반, 5장 다수결, 비대칭 확정, 3상태 + 모름 사유, 45초 가림 규칙. 72칸 정답지 **68/72**, 노트북과 박스 동일
 - ✅ 박스: OpenVINO · 하드웨어 디코딩 · 자동 실행 · 26시간 무인 시험 · 카메라/인터넷 끊김 시험 통과
-- ✅ 전송: `cafe_live` 15초 갱신 (집 시험 `test-001` 통과). 앱 계약 확정 (`문서/앱팀할일.md`)
+- ✅ 전송: `cafe_live` 15초 갱신. 앱 계약 확정 (`문서/앱팀할일.md`)
 - ✅ 개인정보: 사진 업로드 경로 삭제, 영상 미저장, 개선용 기록은 수치만
-- 🚧 **사람이 할 것 셋**: Supabase 표 정리 SQL 실행, 박스 코드 갱신(`a6320ef`), 신청서 수정 요청 — [`문서/plan.md`](문서/plan.md)
-- 🚧 문큐 카페 설치 — [`문서/카페설치당일.md`](문서/카페설치당일.md)
+- ✅ 집에서 연결 확인 통과 (2026-10-13) — `python3 -m install.check_install` 셋 다 합격
+- 🚧 **첫 매장 문큐 설치** (카페 id `moonq`) — [`문서/카페설치당일.md`](문서/카페설치당일.md)
+- 🚧 사람이 할 것: 앱 팀에 영업시간·주소·이름표 요청, 학교 허가 문의, 신청서 수정 요청 — [`문서/plan.md`](문서/plan.md)
 - 다음 개선: 버린 짐도 기록에 남기기, `novelty`(빈 상태 대비 변화량) — `문서/판정개선_데이터설계.md` §10-6
 
 ## 11. 개발 규칙

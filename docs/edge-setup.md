@@ -405,10 +405,10 @@ grep -A7 "^args:" yolov8n-pose_openvino_model/metadata.yaml | grep dynamic
   --answers results/angle1_layout/angle_answer.md --title "엣지 박스"
 ```
 
-→ 마지막 줄에 **`accepted=70`** · **`wrong=2`**
+→ 마지막 줄에 **`accepted=68`** · **`wrong=4`** (2026-09-14, 45초 가림 규칙 뒤. 그 전엔 70/2)
 
 ```
-scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidence missed=10 imagined=1
+scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidence missed=10 imagined=1
 ```
 
 노트북과 **똑같은 값**이어야 한다. 장비가 달라도 판정은 같아야 한다.
@@ -416,7 +416,7 @@ scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidenc
 <details>
 <summary><b>막혔을 때</b></summary>
 
-- **빨라졌는데 70이 아니다** — 6단계를 다시 본다. 크기를 박은 모델일 때 나는
+- **빨라졌는데 합격선(`accepted=68`)이 아니다** — 6단계를 다시 본다. 크기를 박은 모델일 때 나는
   증상이다. **속도를 논하기 전에 이것부터 잡는다.**
 - **정답지를 못 찾는다** — `--answers` 경로를 확인한다. 그 파일은 저장소에
   들어 있으므로 따로 복사할 필요가 없다.
@@ -440,7 +440,7 @@ scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidenc
 | 메모리 | 3.7GB 로 충분했다 (스왑 없음) | — |
 
 ```
-scored=72 accepted=70 (exact=58 delayed=3 occluded=9) | wrong=2 held=0 | evidence missed=10 imagined=1
+scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidence missed=10 imagined=1
 ```
 
 **노트북과 한 글자도 다르지 않다.** 여섯 틱의 좌석 수도 전부 일치했다

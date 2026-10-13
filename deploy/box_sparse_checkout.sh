@@ -24,7 +24,7 @@ before=$(find . -path ./.git -prune -o -type f -print | wc -l | tr -d ' ')
 #   engine/   판정 본체            python -m engine.seatnow
 #   edge/     카메라·전송·측정     python -m edge.{check_edge,export,bench,live_report,telemetry_upload}
 #   checks/   채점 (8단계)         python -m checks.score_answers
-#   install/  설치 당일 좌석 확인  install/calibrate.py
+#   install/  설치 당일            python -m install.check_install / install/calibrate.py
 #   layouts/  이 매장의 좌석 배치  판정이 매 틱 읽는다
 #   deploy/   서비스 파일·설정·SQL
 #   results/angle1_layout/angle_answer.md   채점용 정답지 (이 한 장만 쓴다)
@@ -59,7 +59,7 @@ missing=0
 for must in \
   engine/seatnow.py engine/seatnow_core.py \
   edge/publish.py edge/telemetry.py edge/telemetry_upload.py \
-  checks/score_answers.py install/calibrate.py \
+  checks/score_answers.py install/calibrate.py install/check_install.py \
   deploy/seatnow.service deploy/supabase/telemetry.sql \
   results/angle1_layout/angle_answer.md \
   requirements-edge.txt

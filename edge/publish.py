@@ -110,7 +110,7 @@ def live_payload(record: Dict[str, Any], cafe_id: str, box_version: str) -> Dict
 #    계산한다.  우리가 직접 써도 다음 자리 변동 때 덮어써진다.
 #  - `cafes.congestion` 은 check 제약으로 'available'/'full' 두 값만 받는다.
 #    우리 낱말(여유/보통/혼잡)은 데이터베이스가 거부한다.
-# 박스는 우리 표(`cafe_live`·`cafe_maps`)에만 쓴다.  손님 앱이 실시간 값을
+# 박스는 우리 표(`cafe_live`)에만 쓴다.  손님 앱이 실시간 값을
 # 보려면 `cafe_live` 를 읽어야 한다 (docs/앱연동.md).
 
 
@@ -256,6 +256,42 @@ class SupabasePublisher:
             },
             data=json.dumps(row, ensure_ascii=False).encode("utf-8"),
             timeout=self._timeout,
+        )
+
+    def send_batch(self, table: str, rows: List[Dict[str, Any]]) -> None:
+        """개선용 기록 한 묶음을 그 자리에서 보낸다 (`edge/telemetry_spool.py`).
+
+        `publish_live` 와 성질이 다르다.  저건 최신값만 중요해서 실패하면 버리지만,
+        이건 **한 줄도 버리면 안 되므로 실패를 그대로 올려보낸다** — 부르는 쪽이
+        파일을 그대로 두고 다음번에 다시 보낸다.
+
+        판정 루프에서 부르지 말 것.  기다리는 호출이다.
+        """
+        if not rows:
+            return
+        self._ensure_token()
+        response = self._insert_many(table, rows)
+        if response.status_code == 401:
+            self._token = None
+            self._ensure_token()
+            response = self._insert_many(table, rows)
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError(f"{table} HTTP {response.status_code}: {response.text[:200]}")
+        self._note_success()
+
+    def _insert_many(self, table: str, rows: List[Dict[str, Any]]):
+        return self._session.post(
+            f"{self._url}/rest/v1/{table}",
+            headers={
+                "apikey": self._anon_key,
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+                # 끊겨서 같은 파일을 다시 보낼 수 있다.  기본 키가 있는 표(하루 요약)는
+                # 덮어쓰고, 순간 기록 표는 기본 키가 bigserial 이라 그냥 들어간다.
+                "Prefer": "resolution=merge-duplicates,return=minimal",
+            },
+            data=json.dumps(rows, ensure_ascii=False, default=str).encode("utf-8"),
+            timeout=max(self._timeout, 30.0),
         )
 
     def _ensure_token(self) -> None:

@@ -8,6 +8,7 @@ import unittest
 
 from install.check_install import (
     CAMERA_MIN_HEIGHT,
+    seats_verdict,
     MAX_PUBLISH_AGE_S,
     TICK_BUDGET_S,
     camera_verdict,
@@ -49,6 +50,11 @@ class TickParsingTest(unittest.TestCase):
         "[ 20.6s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=3/0/0 inference=3299ms",
         "[ 35.6s] tables=12 occupied=3 empty=9 ignore=0 poses(seated/standing/unknown)=3/0/0 inference=3338ms",
     ]
+    #: 좌석 네모가 지금 화면과 안 맞을 때 실제로 나온 로그 (2026-10-13 집에서).
+    MISMATCHED = [
+        "[1600.5s] tables=12 occupied=0 empty=0 ignore=12 poses(seated/standing/unknown)=0/0/1 inference=3362ms",
+        "[1615.5s] tables=12 occupied=0 empty=0 ignore=12 poses(seated/standing/unknown)=0/0/1 inference=3356ms",
+    ]
 
     def test_reads_every_tick(self):
         ticks = parse_tick_lines(self.LOG)
@@ -78,6 +84,18 @@ class TickParsingTest(unittest.TestCase):
         ok, lines = judging_verdict(parse_tick_lines(log), hwaccel="vaapi")
         self.assertFalse(ok)
         self.assertTrue(any(str(TICK_BUDGET_S) in line for line in lines))
+
+    def test_all_seats_ignored_fails(self):
+        """좌석 네모가 지금 화면과 안 맞으면 전부 ignore 가 되고 앱에는 한 자리도 안 나간다."""
+        ok, lines = seats_verdict(parse_tick_lines(self.MISMATCHED))
+        self.assertFalse(ok)
+        text = " ".join(lines)
+        self.assertIn("좌석", text)
+        self.assertIn("12", text)
+
+    def test_normal_seats_pass(self):
+        ok, _ = seats_verdict(parse_tick_lines(self.LOG))
+        self.assertTrue(ok)
 
     def test_no_ticks_fails(self):
         ok, lines = judging_verdict([], hwaccel="vaapi")
@@ -120,6 +138,13 @@ class PublishTest(unittest.TestCase):
         ok, lines = publish_verdict(self.ROW, age_seconds=5.0, expected_cafe_id="dh-012")
         self.assertFalse(ok)
         self.assertTrue(any("dh-012" in line for line in lines))
+
+    def test_zero_seats_fails(self):
+        """자리 0개를 통과로 내면, 좌석을 그린 뒤 뭔가 틀어져도 합격으로 보인다."""
+        row = dict(self.ROW, total_tables=0, busy_tables=0, free_tables=0)
+        ok, lines = publish_verdict(row, age_seconds=5.0, expected_cafe_id="moonq")
+        self.assertFalse(ok)
+        self.assertTrue(any("자리" in line for line in lines))
 
     def test_gap_fails(self):
         row = dict(self.ROW, status="gap")

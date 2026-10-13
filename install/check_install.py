@@ -10,7 +10,8 @@
 
 1. **카메라가 연결됐나** — 영상이 들어오나, 크기·코덱·초당 장수가 맞나
 2. **판정이 도나** — 15초마다 한 줄씩 찍히나, 한 판정이 예산 안에 끝나나
-3. **서버로 나가나** — 앱이 읽는 줄이 방금 갱신됐나, 그게 이 카페 줄이 맞나
+3. **그린 좌석이 판정되나** — 네모가 화면 밖으로 빠지지 않았나
+4. **서버로 나가나** — 앱이 읽는 줄이 방금 갱신됐나, 그게 이 카페 줄이 맞나
 
 실패한 줄은 **무엇을 하라**까지 적는다.  이 글을 읽는 사람은 카메라를 들고
 사다리 위에 있지, 코드를 읽을 상황이 아니다.
@@ -40,7 +41,9 @@ MAX_PUBLISH_AGE_S = 25
 #: 모델을 처음 읽는 판정 하나는 느리다.  그걸로 불합격을 내지 않는다.
 WARMUP_TICKS = 1
 
-_TICK_RE = re.compile(r"\[\s*([\d.]+)s\]\s+tables=(\d+).*?inference=(\d+)ms")
+_TICK_RE = re.compile(
+    r"\[\s*([\d.]+)s\]\s+tables=(\d+).*?ignore=(\d+).*?inference=(\d+)ms"
+)
 _HWACCEL_RE = re.compile(r"하드웨어 디코딩 켜짐 \(([^)]+)\)")
 
 
@@ -48,6 +51,7 @@ _HWACCEL_RE = re.compile(r"하드웨어 디코딩 켜짐 \(([^)]+)\)")
 class Tick:
     at_seconds: float
     tables: int
+    ignored: int
     inference_ms: int
 
 
@@ -93,7 +97,14 @@ def parse_tick_lines(lines: Sequence[str]) -> List[Tick]:
     for line in lines:
         found = _TICK_RE.search(line)
         if found:
-            ticks.append(Tick(float(found.group(1)), int(found.group(2)), int(found.group(3))))
+            ticks.append(
+                Tick(
+                    float(found.group(1)),
+                    int(found.group(2)),
+                    int(found.group(3)),
+                    int(found.group(4)),
+                )
+            )
     return ticks
 
 
@@ -145,7 +156,36 @@ def judging_verdict(ticks: Sequence[Tick], hwaccel: Optional[str]) -> Tuple[bool
     return ok, lines
 
 
-# ── 3. 서버 전송 ─────────────────────────────────────────────────────────────
+def seats_verdict(ticks: Sequence[Tick]) -> Tuple[bool, List[str]]:
+    """그린 좌석이 실제로 판정되고 있나.
+
+    좌석 네모가 지금 화면과 안 맞으면 전부 "카메라가 못 보는 자리"로 빠지고
+    **앱에는 한 자리도 안 나간다.**  판정 줄은 멀쩡해 보이므로 따로 본다
+    (2026-10-13 집에서 실제로 겪었다: 카메라를 옮겼더니 12자리가 전부 빠졌다).
+    """
+    if not ticks:
+        return True, []  # 판정 자체가 없으면 2번에서 이미 걸렸다
+    last = ticks[-1]
+    judged = last.tables - last.ignored
+    if last.tables and last.ignored >= last.tables:
+        return False, [
+            f"✗ 그린 좌석 {last.tables}개가 **전부** 화면 밖으로 빠졌다 — 앱에 한 자리도 안 나간다.",
+            "  · 좌석 네모가 지금 카메라 화면과 안 맞는다. 카메라를 움직였으면 당연한 일이다",
+            "  · 자리를 다 잡은 **뒤에** 좌석을 다시 그린다 (문서/카페설치당일.md 7장)",
+            "  · 다른 매장에서 쓰던 좌석 파일이 그대로 들어 있지는 않은지 본다",
+        ]
+    lines = [f"좌석 {judged}개가 판정되고 있다 (그린 것 {last.tables}개)"]
+    ok = True
+    if last.ignored:
+        ok = False
+        lines.append(
+            f"  ✗ 그중 {last.ignored}개가 화면 밖으로 빠졌다."
+            " 그 자리는 앱에 안 나간다 — 카메라를 돌려 화면 안으로 넣거나, 포기할 자리면 적어둔다"
+        )
+    return ok, lines
+
+
+# ── 4. 서버 전송 ─────────────────────────────────────────────────────────────
 
 
 def publish_verdict(
@@ -168,6 +208,13 @@ def publish_verdict(
         f" (사용중 {row.get('busy_tables')} · 빈자리 {row.get('free_tables')}), 박스 코드 {row.get('box_version')}"
     ]
     ok = True
+
+    if not int(row.get("total_tables") or 0):
+        ok = False
+        lines.append(
+            "  ✗ **자리가 0개로 나가고 있다.** 앱에는 아무 자리도 안 보인다."
+            " 위 좌석 줄을 먼저 본다 — 그린 네모가 화면 밖으로 빠졌을 때 이렇게 된다"
+        )
 
     if cafe_id != expected_cafe_id:
         ok = False
@@ -367,7 +414,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     results.append(ok)
     print()
 
-    print("3. 서버 전송 (앱이 읽는 줄)")
+    print("3. 그린 좌석")
+    ok, lines = seats_verdict(parse_tick_lines(log))
+    for line in lines or ["(아직 볼 것이 없다 — 좌석을 그리기 전이면 정상)"]:
+        print(f"   {line}")
+    results.append(ok)
+    print()
+
+    print("4. 서버 전송 (앱이 읽는 줄)")
     row, age = read_live_row(env)
     ok, lines = publish_verdict(row, age, expected)
     for line in lines:

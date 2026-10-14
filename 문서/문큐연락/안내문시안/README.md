@@ -6,7 +6,6 @@
 |---|---|
 | `Main.dc.html` | **확정안.** 손님에게 말 거는 안내문 + 좌석 배치도 (A5 세로) |
 | `OptionB.dc.html` | 함께 붙일 표준 안내판 (A5 가로) |
-| `OptionA.dc.html` | 안 고른 시안 (A5 세로) |
 | `Sticker.dc.html` | 유리문 스티커 (지름 150mm) |
 | `canvas.json` | 캔버스 배치·쪽 나눔·메모 |
 

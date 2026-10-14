@@ -10,7 +10,7 @@ description: 정답지 한 장으로 판정 개선 루프를 끝까지 돈다 �
 사장님에게 물어보는 것은 **파인튜닝 여부와 기계 권한 밖의 카드**뿐이다.
 그 외의 오답은 물어보지 말고 고친다.
 
-설계 근거: `docs/superpowers/specs/2026-09-02-answer-key-loop-design.md`
+설계 근거: 지운 설계서 `docs/superpowers/specs/2026-09-02-answer-key-loop-design.md` (2026-10-14 삭제, `git log --diff-filter=D` 로 찾는다)
 
 ## 시작하기 전에 읽을 것
 

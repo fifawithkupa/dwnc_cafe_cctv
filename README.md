@@ -210,7 +210,7 @@ scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidenc
 | `results/` | 결과. 저장소엔 판독표·정답지·채점표만 올라간다 | `angle1_layout/angle_answer.md` 72칸 정답지, `채점표.md`, `원인진단.md` |
 | `tests/` | 유닛 테스트 **763개** (파일 35개, 모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
 | `문서/` | 절차·할 일·정리 (한국어, 비개발자 기준) | [`문서/README.md`](문서/README.md) 가 지도 |
-| `docs/` | 기술 문서·설계 스펙 | `edge-setup.md` 박스 12단계, `superpowers/specs/` 설계 |
+| `docs/` | 기술 문서·설계 스펙 | `edge-setup.md` 박스 12단계 |
 
 ---
 

@@ -4,7 +4,7 @@
     python3 -m install.check_install --shot /tmp/shot.jpg
 
 전부 연결한 직후, **자리를 잡기 전에** 돌린다.  연결이 안 된 상태로 카메라
-자리를 고르면 그 시간이 전부 헛일이 되기 때문이다 (문서/카페설치당일.md 3장).
+자리를 고르면 그 시간이 전부 헛일이 되기 때문이다 (문서/2_절차/카페설치당일.md 3장).
 
 보는 것 셋:
 
@@ -31,7 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
-#: 4MP 카메라를 쓰기로 했다 (문서/SEATNOW_전체정리.md §10).  이보다 작으면
+#: 4MP 카메라를 쓰기로 했다 (문서/3_배경/SEATNOW_전체정리.md §10).  이보다 작으면
 #: 먼 자리의 컵·가방이 안 잡힌다.
 CAMERA_MIN_HEIGHT = 1080
 #: 판단 주기 15초의 절반.  한 판정이 이 안에 끝나야 다음 판정이 안 밀린다.
@@ -171,7 +171,7 @@ def seats_verdict(ticks: Sequence[Tick]) -> Tuple[bool, List[str]]:
         return False, [
             f"✗ 그린 좌석 {last.tables}개가 **전부** 화면 밖으로 빠졌다 — 앱에 한 자리도 안 나간다.",
             "  · 좌석 네모가 지금 카메라 화면과 안 맞는다. 카메라를 움직였으면 당연한 일이다",
-            "  · 자리를 다 잡은 **뒤에** 좌석을 다시 그린다 (문서/카페설치당일.md 7장)",
+            "  · 자리를 다 잡은 **뒤에** 좌석을 다시 그린다 (문서/2_절차/카페설치당일.md 7장)",
             "  · 다른 매장에서 쓰던 좌석 파일이 그대로 들어 있지는 않은지 본다",
         ]
     lines = [f"좌석 {judged}개가 판정되고 있다 (그린 것 {last.tables}개)"]

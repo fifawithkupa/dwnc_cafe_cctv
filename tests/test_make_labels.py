@@ -1,4 +1,4 @@
-"""Tests for the labelling-fixture generator and validator (문서/plan.md T3)."""
+"""Tests for the labelling-fixture generator and validator (문서/1_지금할일/plan.md T3)."""
 
 from __future__ import annotations
 

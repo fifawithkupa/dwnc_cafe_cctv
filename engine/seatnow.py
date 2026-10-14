@@ -136,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "보내는 건 따로 돈다: python3 -m edge.telemetry_upload")
     parser.add_argument("--open-hours", type=str, default=None,
                         help='매장 영업시간 "09:00-22:00". 문 닫은 시간을 알아야 '
-                             '장식과 손님 짐을 구분할 수 있다 (문서/판정개선_데이터설계.md §4-1)')
+                             '장식과 손님 짐을 구분할 수 있다 (문서/3_배경/판정개선_데이터설계.md §4-1)')
     parser.add_argument("--telemetry-control-rate", type=float, default=0.01,
                         help="잘 돌아간 틱 중 대조군으로 남길 비율 (기본 1%%). "
                              "어려운 것만 모으면 배운 규칙이 편향된다")
@@ -337,7 +337,7 @@ def process_image(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
 def _open_telemetry(args, run_context, cafe_id: str):
     """`--telemetry-dir` 를 줬을 때만 기록기를 만든다.  아니면 None.
 
-    설계는 `문서/판정개선_데이터설계.md` §9·§10.  루프는 파일에 덧붙이기만 하고,
+    설계는 `문서/3_배경/판정개선_데이터설계.md` §9·§10.  루프는 파일에 덧붙이기만 하고,
     보내는 건 `python3 -m edge.telemetry_upload` 가 하루 한 번 따로 한다.
     만들다 실패해도 판정은 그대로 돈다 — 기록은 판정보다 덜 중요하다.
     """
@@ -835,7 +835,7 @@ def _publish_gap(publisher, seat_index: list, cafe_id: str, version: str, wall_c
 def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     """Judge a camera stream on a wall-clock schedule until told to stop.
 
-    This is the deployment loop.  It never writes video (문서/plan.md T10), it
+    This is the deployment loop.  It never writes video (문서/1_지금할일/plan.md T10), it
     judges the newest frames on every tick even while the stream is
     reconnecting, and every JSONL record carries what the 24/7 box is judged
     on: how late the tick started, how long it took, memory, decoder health.

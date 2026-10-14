@@ -561,6 +561,14 @@ def run_gui(frame, state, output_path, source):
                     f"({sum(len(zone.seats) for zone in zones)}석)"
                 )
             print(f"저장됨: {output_path} ({summary})")
+            if state.unassigned_chairs:
+                # 판정은 테이블에 붙은 의자만 그 자리의 근거로 쓴다.  보라색 ? 의자
+                # 위의 짐은 어느 자리도 사용중으로 만들지 못한다.
+                print(
+                    f"⚠ 어느 테이블에도 안 붙은 의자 {len(state.unassigned_chairs)}개 "
+                    f"(보라색 ?) — 그 의자 위의 짐은 판정에 안 쓰입니다. "
+                    f"의자 클릭 → [m] → 테이블 클릭으로 붙인 뒤 다시 [s]"
+                )
             if empty_zones:
                 # Saving this is fine -- drawing the bar and slicing it into
                 # seats are two steps and an install gets interrupted.  What

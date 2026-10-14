@@ -31,6 +31,9 @@ env.local
 # 판정 개선용 기록 (판정개선_데이터설계.md).  절대 저장소에 올리지 않는다 —
 # 사람 위치가 비율 형태로 들어 있다.  박스에서 쌓였다가 Supabase 로만 간다.
 results/live/telemetry/
+# 매장 박스에서 1주일마다 받아온 판정 기록 (edge/pull_box_logs.py).  계산값뿐이지만
+# 자리별 사람 위치가 들어 있어 저장소에 올리지 않는다.
+results/box_pull/
 *.ndjson
 *.sent
 

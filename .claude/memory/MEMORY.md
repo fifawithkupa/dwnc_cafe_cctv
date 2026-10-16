@@ -1,0 +1,9 @@
+- [자동 초안 먼저, 사람은 고치기만](prefers-draft-then-edit.md) — 수작업 단계를 백지에서 시작시키지 말 것
+- [정답지는 사람 눈이다](answer-key-is-human-eye-not-rules.md) — 가림 모름·확정 대기는 오답이 아니라 맞는 판단
+- [파인튜닝 외에는 물어보지 말 것](machine-fixes-everything-but-finetuning.md) — 기계가 고칠 수 있는 건 고치고 보고만 한다
+- [카페 설치 당일 프로토콜](cafe-install-day-protocol.md) — 순서는 전부 연결 → 연결 확인 3종(install/check_install.py) → 자리 잡기; 카메라는 DHCP, 찾을 땐 대역 전체 훑기
+- [Supabase 전송 상태](supabase-publish-state.md) — **문큐 카페 id 는 moonq**(snu-101 아님); boxes 도 moonq (2026-10-14); schema.sql 그냥 돌리면 앱 팀 데이터 지워짐
+- [문큐 설치 허가](snu-moonq-install-permission.md) — 첫 카페는 서울대 학생회관 437호 문큐(moonq), 영업 11:00~17:30; 학교 허가는 학생지원과 창구
+- [45초 가림 규칙 결정](occluded-streak-rule-decision.md) — 2026-09-14 사람 가림 모름 3판정이면 사용중·1판정에 복귀; 주말 카페 CCTV 재채점 예정, 발동 판정은 파인튜닝 재료
+- [문큐 오프라인 주간 수거](moonq-offline-weekly-pull.md) — 인터넷 없는 문큐, 주 1회 유선으로 판정 기록 받아오기; 박스 시계 하루 늦음
+- [컴퓨터 두 대: 개발 PC · 현장 노트북](two-computers-dev-and-field.md) — 2026-10-17~ 개발은 새 PC, 노트북은 카페용; env.local·box_pull 은 USB로; 메모는 .claude/memory/ git 동기화

@@ -1,6 +1,6 @@
 """Serve a local video file as a live RTSP stream, for testing without a camera.
 
-문서/1_지금할일/plan.md T5: the camera is not bought until the edge bench (T6) fixes the
+옛 계획표 T5 (2026-09): the camera is not bought until the edge bench (T6) fixes the
 resolution, but T8's stream reader and T9's Quick Sync decoding have to be
 verifiable before then.  This republishes an existing sample video as a real
 RTSP stream so the whole pipeline — decode, infer, tick — runs against a live

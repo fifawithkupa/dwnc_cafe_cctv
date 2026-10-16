@@ -81,7 +81,7 @@ CLIP_SPECS: Tuple[ClipSpec, ...] = (
 
 # 클립을 "만드는" 비용은 측정 대상이 아니다 -- 재는 것은 "푸는" 비용이다.
 # 그런데 만드는 쪽(소프트웨어 인코딩)이 메모리를 훨씬 많이 먹고, 4GB 박스는
-# 8MP 클립을 만들다 메모리가 모자랐다 (docs/edge-setup.md 9단계).  이 표는
+# 8MP 클립을 만들다 메모리가 모자랐다 (문서/2_절차/박스처음만들기.md 9단계).  이 표는
 # 그 박스가 만들 수 있었던 것과 없었던 것을 적은 문턱이지 정밀한 실측이
 # 아니다 -- 노트북(8스레드) 최고점은 8mp_h265 1.8GB, 8mp_h264 2.3GB,
 # 4mp_h265 1.0GB 였다 (2026-09-05).  박스는 어차피 클립을 만들면 안 되는
@@ -382,7 +382,7 @@ def format_missing_clips(skipped: Sequence[SkippedClip]) -> str:
     The clips are input to the measurement, not the measurement, so building
     them somewhere roomier and copying them over changes nothing about the
     numbers.  The receiving folder is created first because scp does not
-    create it (docs/edge-setup.md 3단계).
+    create it (문서/2_절차/박스처음만들기.md 3단계).
     """
     if not skipped:
         return ""
@@ -571,7 +571,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        print("ffmpeg를 찾지 못했다. docs/edge-setup.md 의 설치 절차를 볼 것.")
+        print("ffmpeg를 찾지 못했다. 문서/2_절차/박스처음만들기.md 의 설치 절차를 볼 것.")
         return 1
     if not args.source.exists():
         print(f"원본 영상이 없다: {args.source}")

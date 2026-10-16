@@ -196,7 +196,7 @@ def _ffmpeg_check() -> Check:
             name="ffmpeg 설치",
             ok=False,
             detail="없음",
-            fix="docs/edge-setup.md 의 ffmpeg 설치 절차를 따른다.",
+            fix="문서/2_절차/박스처음만들기.md 의 ffmpeg 설치 절차를 따른다.",
         )
     try:
         completed = subprocess.run(

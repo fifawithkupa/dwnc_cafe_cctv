@@ -5,7 +5,7 @@ frames" shape does not apply.  This reader keeps one ffmpeg process decoding
 continuously in a background thread into a small ring buffer, and a tick
 takes the *newest* 2n+1 frames.  The window is therefore trailing (past
 frames only) rather than centred: on a live stream there is no future frame
-to vote with (docs/superpowers/specs/2026-09-01-detection-inspection-harness-design.md §7).
+to vote with (지운 설계서 2026-09-01 detection-inspection-harness §7, git 기록에 있다).
 
 Two things the file path never had to worry about:
 
@@ -16,7 +16,7 @@ Two things the file path never had to worry about:
   failure as a *warning* and carries on in software, so the process exit
   code says nothing.  The reader keeps ffmpeg's stderr and flags known
   fallback messages in ``stats()``; the tick loop prints that loudly and
-  writes it into every record (문서/1_지금할일/plan.md §2 "T8에 딸려 갈 것").
+  writes it into every record (옛 계획표 T8 "딸려 갈 것", 2026-09-06 끝남).
 """
 
 from __future__ import annotations

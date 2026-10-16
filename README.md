@@ -178,7 +178,7 @@ scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidenc
 | 영상 | `--no-video` 기본. 주석 영상을 디스크에 쓰지 않는다 |
 
 박스에는 저장소 전체가 아니라 박스가 돌리는 것만 내려간다 (`deploy/box_sparse_checkout.sh`, 52개 파일). `문서/` 는 박스에 없다.
-코드를 고친 뒤 박스에 넣는 순서는 [`문서/2_절차/박스업데이트.md`](문서/2_절차/박스업데이트.md), 박스를 처음 만드는 12단계는 [`docs/edge-setup.md`](docs/edge-setup.md).
+코드를 고친 뒤 박스에 넣는 순서는 [`문서/2_절차/박스업데이트.md`](문서/2_절차/박스업데이트.md), 박스를 처음 만드는 12단계는 [`문서/2_절차/박스처음만들기.md`](문서/2_절차/박스처음만들기.md).
 
 ---
 
@@ -208,9 +208,8 @@ scored=72 accepted=68 (exact=58 delayed=3 occluded=7) | wrong=4 held=0 | evidenc
 | `deploy/` | 박스 서비스·설정·서버 표 | `seatnow.service`, `seatnow.env.example`, `install_service.sh`, `box_sparse_checkout.sh`, `supabase/schema.sql`(앱용 표), `supabase/telemetry.sql`(기록 표) |
 | `layouts/` | 매장별 좌석 파일 (판정의 입력) | `cafe_angle1.json` 지금 쓰는 것 |
 | `results/` | 결과. 저장소엔 판독표·정답지·채점표만 올라간다 | `angle1_layout/angle_answer.md` 72칸 정답지, `채점표.md`, `원인진단.md` |
-| `tests/` | 유닛 테스트 **763개** (파일 35개, 모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
+| `tests/` | 유닛 테스트 **795개** (파일 36개, 모델 없이 순수 로직) | 판정 규칙마다 실패 사례 좌표로 회귀 테스트 |
 | `문서/` | 절차·할 일·정리 (한국어, 비개발자 기준) | [`문서/README.md`](문서/README.md) 가 지도 |
-| `docs/` | 기술 문서·설계 스펙 | `edge-setup.md` 박스 12단계 |
 
 ---
 

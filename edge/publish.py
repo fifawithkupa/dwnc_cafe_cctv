@@ -3,7 +3,7 @@
 세 가지 순수 함수가 JSONL 한 줄을 ``cafe_live`` 한 줄로 바꾸고,
 ``SupabasePublisher`` 가 그것을 백그라운드에서 보낸다.  판정 루프는 여기서
 절대 기다리지 않는다 -- 인터넷이 끊기면 값을 버리고, 앱은 45초 규칙으로
-"확인 중"이 된다 (docs/앱연동.md).
+"확인 중"이 된다 (문서/4_대외/앱팀할일.md).
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ def live_payload(record: Dict[str, Any], cafe_id: str, box_version: str) -> Dict
 #  - `cafes.congestion` 은 check 제약으로 'available'/'full' 두 값만 받는다.
 #    우리 낱말(여유/보통/혼잡)은 데이터베이스가 거부한다.
 # 박스는 우리 표(`cafe_live`)에만 쓴다.  손님 앱이 실시간 값을
-# 보려면 `cafe_live` 를 읽어야 한다 (docs/앱연동.md).
+# 보려면 `cafe_live` 를 읽어야 한다 (문서/4_대외/앱팀할일.md).
 
 
 def gap_payload(

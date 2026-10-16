@@ -24,12 +24,12 @@ sudo apt install ffmpeg
 
 ```bash
 python -m unittest discover tests
-# 기대: Ran 763 tests ... OK
+# 기대: Ran 795 tests ... OK  (2026-10-17 기준 — 시험이 늘면 숫자도 는다)
 ```
 
 ## 2. 샘플 영상은 구글 드라이브에 있다 — 반드시 "오프라인 사용 가능"으로 고정할 것
 
-영상(`sample_raw/`)과 결과(`results/`)는 용량·개인정보 때문에 저장소에 없고
+영상(`sample_raw/`)은 용량·개인정보 때문에 저장소에 없고
 팀 구글 드라이브로 공유됩니다.
 
 **윈도우/맥은 [Google Drive for Desktop](https://www.google.com/drive/download/)을 쓰세요.**
@@ -48,7 +48,7 @@ ln -s "$HOME/Library/CloudStorage/GoogleDrive-<계정>/내 드라이브/SeatNow/
 
 > ⚠️ **고정(pin)을 건너뛰지 마세요.** 스트리밍 상태로 두면 실행할 때마다 영상 전체가
 > 네트워크로 다시 내려옵니다. `engine/seatnow.py`는 실행 메타데이터에 남길 sha256을 매번
-> 입력 영상 전체를 읽어 계산하는데(`engine/seatnow.py:287`), 정작 분석은 15초마다 몇 프레임만
+> 입력 영상 전체를 읽어 계산하는데(`engine/seatnow.py:606`), 정작 분석은 15초마다 몇 프레임만
 > 읽습니다. 특히 `edge/bench_sweep.py`는 그리드 1점당 영상을 1회씩 실행하므로
 > 12점 그리드면 전체 파일을 12번 내려받게 됩니다.
 
@@ -68,3 +68,16 @@ Apple Silicon이나 Windows에서 torch 설치가 꼬이면:
 1. `requirements.txt`에서 **torch 핀(`torch==2.2.2`)만 삭제**
 2. 다시 `pip install -r requirements.txt`
 3. **`numpy<2`는 그대로 유지**
+
+## 4. 컴퓨터를 새로 들였을 때 (클로드 코드 기억 메모)
+
+클로드 코드의 기억 메모는 저장소 `.claude/memory/` 에 있다. 새 컴퓨터에서는 저장소를 받은 뒤
+`.claude/settings.local.json` 을 만들어 그 폴더의 **절대경로**를 넣고 클로드 코드를 다시 연다:
+
+```json
+{ "autoMemoryDirectory": "C:/<저장소 경로>/.claude/memory" }
+```
+
+이 파일은 git 에 안 올라간다 (컴퓨터마다 경로가 달라서). git 으로 안 넘어가는
+`env.local`(서버 열쇠)·`results/box_pull/`(박스에서 받은 판정 기록)은 USB 로 옮긴다.
+자세한 역할 분담은 `CLAUDE.md` "컴퓨터 두 대".

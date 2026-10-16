@@ -811,7 +811,7 @@ def _publish_tick(publisher, record: dict, cafe_id: str, version: str) -> None:
 
     A transport problem must never stop the judging loop: the box keeps
     its own JSONL either way, and the app falls back to "확인 중" through
-    the 45s staleness rule (docs/앱연동.md).
+    the 45s staleness rule (문서/4_대외/앱팀할일.md).
     """
     if publisher is None:
         return
@@ -875,7 +875,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
     if hwaccel.fallback:
         print(
             "⚠️  하드웨어 디코딩이 잡히지 않았습니다 — 소프트웨어로 돕니다. "
-            "24시간 운영에서 15초 주기를 못 맞출 수 있습니다 (docs/edge-setup.md 4단계 '막혔을 때').",
+            "24시간 운영에서 15초 주기를 못 맞출 수 있습니다 (문서/2_절차/박스처음만들기.md 4단계 '막혔을 때').",
             flush=True,
         )
     run_context = _build_run_context(
@@ -982,7 +982,7 @@ def process_live(args: argparse.Namespace, analyzer: SeatNowAnalyzer) -> int:
                     run_context["decode"]["fallback_during_run"] = True
                     print(
                         "⚠️  하드웨어 디코더가 죽어서 스트림이 끊겼습니다 — 소프트웨어 디코딩으로 갈아탑니다. "
-                        "판정은 계속되지만 느려집니다 (docs/edge-setup.md 부록 B): "
+                        "판정은 계속되지만 느려집니다 (문서/2_절차/박스처음만들기.md 부록 B): "
                         + " | ".join(stats["hwaccel_messages"][:2]),
                         flush=True,
                     )
